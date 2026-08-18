@@ -430,19 +430,12 @@ impl<'ctx> SymValue<'ctx> {
                     bits: lo_bits,
                     ..
                 },
-            ) => {
-                if new_bits <= 64 {
-                    let new_value = (*hi << *lo_bits) | *lo;
-                    Self::Concrete {
-                        value: new_value,
-                        bits: new_bits,
-                        taint,
-                    }
-                } else {
-                    let hi_bv = self.to_bv(ctx);
-                    let lo_bv = other.to_bv(ctx);
-                    let new_ast = hi_bv.concat(&lo_bv);
-                    Self::symbolic_tainted(new_ast, new_bits, taint)
+            ) if new_bits <= 64 => {
+                let new_value = (*hi << *lo_bits) | *lo;
+                Self::Concrete {
+                    value: new_value,
+                    bits: new_bits,
+                    taint,
                 }
             }
             _ => {
@@ -577,17 +570,16 @@ impl<'ctx> SymValue<'ctx> {
                 },
             ) => {
                 let result_bits = (*bits).max(*b_bits);
-                if *b == 0 {
-                    Self::Unknown {
+                match a.checked_div(*b) {
+                    Some(value) => Self::Concrete {
+                        value,
                         bits: result_bits,
                         taint,
-                    }
-                } else {
-                    Self::Concrete {
-                        value: *a / *b,
+                    },
+                    None => Self::Unknown {
                         bits: result_bits,
                         taint,
-                    }
+                    },
                 }
             }
             _ => {

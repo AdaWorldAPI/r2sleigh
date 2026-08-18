@@ -918,12 +918,12 @@ impl<'a> FoldingContext<'a> {
                         branches_to_exit = true;
                     }
                 }
-                SSAOp::Store { addr, .. } => {
-                    if branches_to_exit || self.is_current_return_context_candidate(block.addr) {
-                        let offset = self.stack_slot_offset_for_var(addr);
-                        if offset.is_some() {
-                            return offset;
-                        }
+                SSAOp::Store { addr, .. }
+                    if branches_to_exit || self.is_current_return_context_candidate(block.addr) =>
+                {
+                    let offset = self.stack_slot_offset_for_var(addr);
+                    if offset.is_some() {
+                        return offset;
                     }
                 }
                 _ => {}

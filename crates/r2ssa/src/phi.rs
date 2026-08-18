@@ -51,7 +51,7 @@ impl PhiPlacement {
         let mut placement = Self::new();
 
         let mut defs_by_name: Vec<(&String, &HashSet<u64>)> = defs.iter().collect();
-        defs_by_name.sort_unstable_by(|(lhs, _), (rhs, _)| lhs.cmp(rhs));
+        defs_by_name.sort_unstable_by_key(|(lhs, _)| *lhs);
 
         for (var_name, def_blocks) in defs_by_name {
             let mut def_list: Vec<u64> = def_blocks.iter().copied().collect();
