@@ -1955,10 +1955,8 @@ fn arg_slot_for_value_ref(
                         ..
                     },
                 ..
-            } => {
-                if root.var != value_ref.var {
-                    return arg_slot_for_value_ref(info, root, env, arg_slot_map, depth + 1);
-                }
+            } if root.var != value_ref.var => {
+                return arg_slot_for_value_ref(info, root, env, arg_slot_map, depth + 1);
             }
             _ => {}
         }

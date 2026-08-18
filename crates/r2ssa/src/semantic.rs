@@ -456,16 +456,16 @@ fn collect_access_summaries(
                     uses.push(location);
                     defs.push(location);
                 }
-                SSAOp::Call { .. } | SSAOp::CallInd { .. } => {
-                    if call_sites.by_inst.contains_key(&inst_id) {
-                        let location = MemoryLocation {
-                            object: escaped_unknown,
-                            offset: 0,
-                            size: 0,
-                        };
-                        uses.push(location);
-                        defs.push(location);
-                    }
+                SSAOp::Call { .. } | SSAOp::CallInd { .. }
+                    if call_sites.by_inst.contains_key(&inst_id) =>
+                {
+                    let location = MemoryLocation {
+                        object: escaped_unknown,
+                        offset: 0,
+                        size: 0,
+                    };
+                    uses.push(location);
+                    defs.push(location);
                 }
                 _ => {}
             }
@@ -899,10 +899,8 @@ fn canonical_value_root<'a>(facts: Option<&'a DecompilePrepFacts>, var: &'a SSAV
 fn const_value(var: &SSAVar) -> Option<u64> {
     let value_str = if let Some(value) = var.name.strip_prefix("const:") {
         value
-    } else if let Some(value) = var.name.strip_prefix("ram:") {
-        value
     } else {
-        return None;
+        var.name.strip_prefix("ram:")?
     };
     let value_str = value_str.split('_').next().unwrap_or(value_str);
     if let Some(dec) = value_str

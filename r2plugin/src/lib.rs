@@ -894,11 +894,11 @@ pub extern "C" fn r2il_block_jump(block: *const R2ILBlock) -> u64 {
         match op {
             R2ILOp::Branch { target }
             | R2ILOp::Call { target }
-            | R2ILOp::CBranch { target, .. } => {
+            | R2ILOp::CBranch { target, .. }
                 // Only return if target is a constant (direct jump)
-                if target.space == r2il::SpaceId::Const || target.space == r2il::SpaceId::Ram {
-                    return target.offset;
-                }
+                if target.space == r2il::SpaceId::Const || target.space == r2il::SpaceId::Ram =>
+            {
+                return target.offset;
             }
             _ => {}
         }

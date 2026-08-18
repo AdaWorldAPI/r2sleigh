@@ -2076,10 +2076,7 @@ fn canonicalize_value_root(root: &SSAVar, roots: &BTreeMap<SSAVar, SSAVar>) -> S
     let mut current = root.clone();
     let mut seen = HashSet::new();
 
-    loop {
-        let Some(next) = roots.get(&current) else {
-            break;
-        };
+    while let Some(next) = roots.get(&current) {
         if *next == current || !seen.insert(current.clone()) {
             break;
         }
