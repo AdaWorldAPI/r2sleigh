@@ -25,7 +25,8 @@ x86 = ["sleigh-config/x86"]
 arm = ["sleigh-config/ARM"]
 mips = ["sleigh-config/MIPS"]
 riscv = ["sleigh-config/RISCV"]
-all-archs = ["x86", "arm", "mips", "riscv"]
+m6502 = ["sleigh-config/6502"]
+all-archs = ["x86", "arm", "mips", "riscv", "m6502"]
 
 [dependencies.sleigh-config]
 version = "1.0"
