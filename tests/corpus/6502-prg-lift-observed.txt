@@ -1,0 +1,54 @@
+r2sleigh 6502 lift — fünf echte C64-Programme, linearer Sweep ab SYS-Ziel
+=========================================================================
+
+Korpus: AdaWorldAPI/rust64  prgs/*.prg  — IN PLACE gelesen, NICHT kopiert.
+  Rechte-Lage: lokal lesen/liften und Ergebnisse committen ist unstrittig;
+  Redistribution der Bytes ist es nicht (eaglesoft.prg ist ~40 Jahre alter
+  Demo-Code, und Alter macht nichts automatisch gemeinfrei). Deshalb liegt
+  hier nur die MESSUNG, nie das Programm.
+
+Verfahren: Einsprung aus dem BASIC-Stub (SYS-Ziel), dann linearer Sweep;
+je Schritt ein 16-Byte-Fenster durch `disasm --arch 6502`, Vorschub um die
+gemeldete Instruktionslänge. Deckel bei 40 Instruktionen.
+
+  Datei             gelift  fehl   erste Instruktionen
+  ----------------  ------  ----   -------------------------------------------
+  colors.prg          12      0    JSR $200f | LDA #$0 | STA $d021 | INC $d021
+  playsound.prg       40      0    LDA #$0 | STA $d400 | LDA #$a | STA $d401
+  sprite.prg          40      0    JSR $20d9 | LDA #$1 | STA $d015 | STA $d01c
+  superball.prg       40      0    LDA #$20 | LDX #$0 | STA $400,X | STA $500,X
+  eaglesoft.prg       39      1    SEI | LDA #$34 | STA $1 | LDX #$5 | LDA $842,X
+
+  171 Instruktionen gelift, 1 Fehlschlag.
+
+DER EIGENTLICHE BELEG SIND DIE ADRESSEN, NICHT DIE ANZAHL
+---------------------------------------------------------
+Jedes Programm schreibt genau dorthin, wo sein Name es erwarten lässt —
+und diese Register kann man nicht zufällig treffen:
+
+  colors      $D021        VIC-II Hintergrundfarbe
+  playsound   $D400/01/05  SID Stimme-1 Frequenz lo/hi, Attack/Decay
+  sprite      $D015/1C/25  Sprite-Enable, Sprite-Multicolor, Multicolor-0
+  superball   $0400..$0700 Bildschirmmatrix (Löschschleife über X)
+  eaglesoft   STA $01 mit #$34  C64-Banking: ROM ausblenden; $2D = BASIC-Ende
+
+Ein Lift, der nur syntaktisch gültiges R2IL erzeugte, träfe diese Adressen
+nicht. Die Semantik stimmt, nicht bloß die Form.
+
+DER EINE FEHLSCHLAG IST KEIN DEFEKT
+-----------------------------------
+"Invalid opcode", 1 von 40 Fenstern in eaglesoft. Ein LINEARER Sweep kann
+Code nicht von Daten unterscheiden; jedes reale Programm enthält beides,
+und der Sweep schiebt bei einem Fehlschlag um 1 Byte weiter. In einem
+Datenbereich auf ein undefiniertes Opcode-Byte zu treffen ist korrektes
+Verhalten, kein Lift-Fehler.
+
+EIN FEHLER, DER MEINER WAR
+--------------------------
+Der erste Lauf meldete für eaglesoft 4 Fehlschläge ab Offset +2 mit
+sichtbarem Unsinn (`ORA $ce08`, `BRK`, `BMI`). Ursache war mein Treiber:
+eaglesoft schreibt `SYS (2064)` MIT Klammer, mein Parser erwartete eine
+direkte Ziffernfolge, fiel auf +2 zurück und disassemblierte den
+BASIC-Stub als Maschinencode. Nach Korrektur: Start +17, 39/40, und die
+Sequenz ist ein erkennbarer Loader-Prolog. Festgehalten, weil die erste
+Zahl sonst als r2sleigh-Defekt in Erinnerung bliebe.

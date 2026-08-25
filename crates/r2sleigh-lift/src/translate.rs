@@ -25,6 +25,14 @@ pub trait PcodeSource {
 
     /// Get the space ID from a space index (for LOAD/STORE operations).
     fn space_from_index(&self, idx: u64) -> SpaceId;
+
+    /// Width of an address in this architecture's default code space, if known.
+    ///
+    /// Defaulted to `None` so a source that cannot answer keeps today's
+    /// behaviour exactly; see [`cf_target`] for why anything asks.
+    fn addr_size(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// Errors that can occur during translation.
@@ -202,9 +210,46 @@ pub fn translate_store<S: PcodeSource>(source: &S) -> Result<R2ILOp> {
 ///
 /// P-code spec: CBRANCH(dest, cond) - destination first, condition second.
 pub fn translate_cbranch<S: PcodeSource>(source: &S) -> Result<R2ILOp> {
-    let target = require_input(source, 0, "CBRANCH")?;
+    let target = cf_target(source, 0, "CBRANCH")?;
     let cond = require_input(source, 1, "CBRANCH")?;
     Ok(R2ILOp::CBranch { target, cond })
+}
+
+/// Require a CONTROL-FLOW target operand, normalised to the address width.
+///
+/// # Why this exists, and why it is not `require_input`
+///
+/// A branch target varnode in an address space carries its destination in the
+/// OFFSET. Its `size` is whatever the SLEIGH operand constructor happened to
+/// export, and for a constructor that doubles as a data operand that is the
+/// DATA width, not the address width.
+///
+/// The 6502 is the clear case (`6502.slaspec:120`):
+///
+/// ```text
+/// ADDR16: imm16  is imm16  { export *:1 imm16; }
+/// ```
+///
+/// `ADDR16` serves both `LDA ADDR16` — where `*:1` is right, one byte of an
+/// 8-bit machine's RAM — and `goto ADDR16`, where SLEIGH branches to the
+/// varnode's ADDRESS and the size is residue. So the target arrives 1 byte
+/// wide in a 2-byte address space, and `r2il`'s
+/// `op.controlflow.target_width_mismatch` rejects it.
+///
+/// **No information is discarded by normalising.** The address lives in the
+/// offset, which is untouched; the size on a control-flow target was never
+/// meaningful for the branch. Correcting it here lets r2il keep a genuinely
+/// useful invariant — *a branch target's size IS the address width* — instead
+/// of relaxing the rule and leaving every consumer to wonder.
+///
+/// Const-space targets are left alone: those are relative displacements, and
+/// r2il's validator deliberately exempts them.
+pub fn cf_target<S: PcodeSource>(source: &S, idx: usize, name: &'static str) -> Result<Varnode> {
+    let target = require_input(source, idx, name)?;
+    match (target.space, source.addr_size()) {
+        (SpaceId::Const, _) | (_, None) => Ok(target),
+        (_, Some(width)) => Ok(Varnode::new(target.space, target.offset, width)),
+    }
 }
 
 /// Translate a SUBPIECE operation.
@@ -356,5 +401,92 @@ mod tests {
             }
             _ => panic!("Expected PtrAdd"),
         }
+    }
+}
+
+#[cfg(test)]
+mod cf_target_tests {
+    use super::*;
+
+    /// A source that answers a fixed address width, so the rule is testable
+    /// without a loaded SLEIGH spec.
+    struct Src {
+        target: Varnode,
+        addr_size: Option<u32>,
+    }
+
+    impl PcodeSource for Src {
+        fn output(&self) -> Option<Varnode> {
+            None
+        }
+        fn input(&self, idx: usize) -> Option<Varnode> {
+            (idx == 0).then(|| self.target.clone())
+        }
+        fn input_raw_offset(&self, _idx: usize) -> Option<u64> {
+            None
+        }
+        fn input_count(&self) -> usize {
+            1
+        }
+        fn space_from_index(&self, _idx: u64) -> SpaceId {
+            SpaceId::Ram
+        }
+        fn addr_size(&self) -> Option<u32> {
+            self.addr_size
+        }
+    }
+
+    /// The 6502 case, exactly: `ADDR16` exports `*:1`, so a branch target
+    /// arrives 1 byte wide in a 2-byte address space.
+    #[test]
+    fn a_ram_target_is_widened_to_the_address_size() {
+        let src = Src {
+            target: Varnode::new(SpaceId::Ram, 0x433, 1),
+            addr_size: Some(2),
+        };
+        let t = cf_target(&src, 0, "BRANCH").unwrap();
+        assert_eq!(t.size, 2, "the target must carry the ADDRESS width");
+        assert_eq!(t.offset, 0x433, "the address itself must be untouched");
+        assert_eq!(t.space, SpaceId::Ram);
+    }
+
+    /// The half that stops this from being a blunt overwrite: a const-space
+    /// target is a relative displacement, not an address, and r2il's validator
+    /// deliberately exempts it. Widening one would corrupt a p-code-relative
+    /// branch.
+    #[test]
+    fn a_const_target_is_left_alone() {
+        let src = Src {
+            target: Varnode::new(SpaceId::Const, 3, 1),
+            addr_size: Some(8),
+        };
+        let t = cf_target(&src, 0, "CBRANCH").unwrap();
+        assert_eq!(t.size, 1, "const displacements must not be widened");
+        assert_eq!(t.offset, 3);
+    }
+
+    /// A source that cannot answer keeps today's behaviour exactly — the
+    /// defaulted trait method must not silently change any existing lift.
+    #[test]
+    fn an_unknown_address_size_changes_nothing() {
+        let src = Src {
+            target: Varnode::new(SpaceId::Ram, 0x1000, 1),
+            addr_size: None,
+        };
+        let t = cf_target(&src, 0, "BRANCH").unwrap();
+        assert_eq!(t.size, 1);
+    }
+
+    /// Already-correct targets pass through unchanged — the rule normalises,
+    /// it does not merely "set to 8".
+    #[test]
+    fn a_correctly_sized_target_is_unchanged() {
+        let src = Src {
+            target: Varnode::new(SpaceId::Ram, 0x400000, 8),
+            addr_size: Some(8),
+        };
+        let t = cf_target(&src, 0, "CALL").unwrap();
+        assert_eq!(t.size, 8);
+        assert_eq!(t.offset, 0x400000);
     }
 }

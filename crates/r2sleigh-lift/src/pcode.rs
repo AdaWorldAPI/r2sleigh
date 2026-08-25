@@ -332,7 +332,8 @@ impl PcodeTranslator {
             PcodeOp::Store => translate::translate_store(&self.wrap(raw)).map_err(translate_err),
 
             PcodeOp::Branch => {
-                let target = self.require_input(raw, 0, "BRANCH")?;
+                let target =
+                    translate::cf_target(&self.wrap(raw), 0, "BRANCH").map_err(translate_err)?;
                 Ok(R2ILOp::Branch { target })
             }
 
@@ -342,17 +343,20 @@ impl PcodeTranslator {
             }
 
             PcodeOp::BranchInd => {
-                let target = self.require_input(raw, 0, "BRANCHIND")?;
+                let target =
+                    translate::cf_target(&self.wrap(raw), 0, "BRANCHIND").map_err(translate_err)?;
                 Ok(R2ILOp::BranchInd { target })
             }
 
             PcodeOp::Call => {
-                let target = self.require_input(raw, 0, "CALL")?;
+                let target =
+                    translate::cf_target(&self.wrap(raw), 0, "CALL").map_err(translate_err)?;
                 Ok(R2ILOp::Call { target })
             }
 
             PcodeOp::CallInd => {
-                let target = self.require_input(raw, 0, "CALLIND")?;
+                let target =
+                    translate::cf_target(&self.wrap(raw), 0, "CALLIND").map_err(translate_err)?;
                 Ok(R2ILOp::CallInd { target })
             }
 
@@ -376,7 +380,8 @@ impl PcodeTranslator {
             }
 
             PcodeOp::Return => {
-                let target = self.require_input(raw, 0, "RETURN")?;
+                let target =
+                    translate::cf_target(&self.wrap(raw), 0, "RETURN").map_err(translate_err)?;
                 Ok(R2ILOp::Return { target })
             }
 
