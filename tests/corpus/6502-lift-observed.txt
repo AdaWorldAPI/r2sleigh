@@ -1,0 +1,31 @@
+r2sleigh 6502 lift — erste Messung gegen das Konformitäts-Korpus
+Korpus: 6502_functional_test.bin (sha256 fa12bfc7…), Einsprungsequenz ab $0400
+Kommando: cargo run -p r2sleigh-cli --features m6502 -- disasm --arch 6502 --bytes <16-Byte-Fenster>
+
+off=+0    CLD           size=1   Copy { dst: D, src: 0x0 }
+off=+1    LDX #0xff     size=2   Copy tmp<-0xff; Copy X<-tmp; IntEqual Z<-(X==0); IntSLess N<-(X<s0)
+off=+3    TXS           size=1   Copy { dst: S, src: X }
+off=+4    LDA #0x0      size=2   Copy tmp<-0x0; Copy A<-tmp; IntEqual Z<-(A==0); IntSLess N<-(A<s0)
+off=+6    STA 0x200     size=3   Copy { dst: [0x200]:1, src: A }
+off=+9    LDX #0x5      size=2   Copy tmp<-0x5; Copy X<-tmp; IntEqual Z; IntSLess N
+off=+11   JMP 0x433     —        FEHLER (siehe unten)
+
+6/7 korrekt, inklusive der Flag-Semantik (Z aus Gleichheit, N aus signed-less-than)
+und der 1-Byte-Speicherbreite bei STA.
+
+OFFENER DEFEKT — Kontrollfluss
+------------------------------
+  r2il validation failed with 1 issue(s):
+    [op.controlflow.target_width_mismatch] block.ops[0].target.size:
+      expected size 2, got 1
+
+Der Validator hat recht, nicht das Korpus:
+  * 6502.slaspec:6  ->  define space RAM type=ram_space size=2 default;
+  * r2il validate.rs:1118 effective_arch_addr_size() löst korrekt auf 2 auf —
+    und seine Fallback-Kette (addr_size>1, sonst PC-Registerbreite, sonst
+    Default-Space) zeigt, dass r2il kleine Architekturen bereits vorsieht.
+
+Also emittiert der LIFT ein 1-Byte-Sprungziel, wo der 6502-Adressraum 2 Byte
+breit ist. Datenoperationen liften korrekt; Verzweigungen brechen. Nicht in
+diesem Change repariert — die Ursache liegt in der P-code->R2IL-Absenkung und
+verdient eine eigene Messung.
