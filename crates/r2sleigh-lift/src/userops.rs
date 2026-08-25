@@ -14,6 +14,14 @@ fn arch_to_slaspec(arch: &str) -> Option<(&'static str, &'static str)> {
         "aarch64" | "arm64" | "arm64e" => Some(("AARCH64", "AARCH64_AppleSilicon.slaspec")),
         "riscv64" | "rv64" | "rv64gc" => Some(("RISCV", "riscv.lp64d.slaspec")),
         "riscv32" | "rv32" | "rv32gc" => Some(("RISCV", "riscv.ilp32d.slaspec")),
+        // 8-bit. The NMOS 6502 and its CMOS successor are separate slaspecs in
+        // Ghidra's own tree, and they are NOT interchangeable: the 65C02 adds
+        // opcodes the NMOS part leaves undefined, and fixes NMOS bugs a
+        // conformance corpus deliberately exercises. Aliasing them would make a
+        // 6502 test pass against 65C02 semantics, which is the silent-wrong
+        // answer this table exists to prevent.
+        "6502" | "mos6502" | "nmos6502" => Some(("6502", "6502.slaspec")),
+        "65c02" | "cmos6502" => Some(("6502", "65c02.slaspec")),
         _ => None,
     }
 }
@@ -176,4 +184,53 @@ pub fn userop_map_for_arch(arch: &str) -> HashMap<u32, String> {
     }
 
     map
+}
+
+#[cfg(test)]
+mod arch_table_tests {
+    use super::arch_to_slaspec;
+
+    /// The 6502 family resolves, and the two parts do NOT alias.
+    ///
+    /// The aliasing case is the one worth pinning: the 65C02 adds opcodes the
+    /// NMOS 6502 leaves undefined and fixes NMOS bugs that a conformance corpus
+    /// deliberately exercises. If both spellings resolved to one slaspec, an
+    /// NMOS test would be graded against CMOS semantics and would *pass* —
+    /// a silent-wrong answer, not a failure.
+    #[test]
+    fn the_6502_family_resolves_and_the_two_parts_stay_distinct() {
+        let nmos = arch_to_slaspec("6502").expect("6502 must resolve");
+        let cmos = arch_to_slaspec("65c02").expect("65c02 must resolve");
+
+        assert_eq!(nmos, ("6502", "6502.slaspec"));
+        assert_eq!(cmos, ("6502", "65c02.slaspec"));
+
+        // Same processor directory, DIFFERENT spec. Both halves matter: a
+        // wrong directory fails loudly, a shared spec fails silently.
+        assert_eq!(nmos.0, cmos.0, "both live in Ghidra's 6502 processor dir");
+        assert_ne!(nmos.1, cmos.1, "the two parts must not share a slaspec");
+
+        // The aliases callers actually type.
+        for a in ["mos6502", "nmos6502"] {
+            assert_eq!(arch_to_slaspec(a), Some(nmos), "alias {a}");
+        }
+        assert_eq!(arch_to_slaspec("cmos6502"), Some(cmos));
+    }
+
+    /// Case-insensitivity is a property of the table, not of the caller.
+    #[test]
+    fn arch_lookup_is_case_insensitive() {
+        assert_eq!(arch_to_slaspec("65C02"), arch_to_slaspec("65c02"));
+        assert!(arch_to_slaspec("65C02").is_some());
+    }
+
+    /// An unknown arch must be `None`, never a nearest match. A lifter that
+    /// silently substituted a neighbouring ISA would produce plausible R2IL
+    /// for the wrong machine.
+    #[test]
+    fn an_unknown_arch_is_rejected_not_approximated() {
+        for a in ["6800", "z80", "6502x", "", "sparc"] {
+            assert_eq!(arch_to_slaspec(a), None, "{a} must not resolve");
+        }
+    }
 }
