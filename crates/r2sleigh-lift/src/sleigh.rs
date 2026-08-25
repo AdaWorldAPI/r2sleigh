@@ -45,7 +45,17 @@ pub fn extract_arch_spec(sleigh: &GhidraSleigh, arch_name: &str) -> ArchSpec {
     let default_space = sleigh.default_code_space();
     for space in sleigh.address_spaces() {
         let is_default = space.name == default_space.name;
-        let addr_size = space.word_size as u32;
+        // `address_size`, NOT `word_size`. They are different fields on
+        // libsla's AddressSpace and mean different things: address_size is how
+        // wide an address into this space is, word_size how many bytes one
+        // addressable unit spans. A Ghidra spec that omits `wordsize=` gets 1 —
+        // and NEITHER x86-64 (`ia.sinc:13`) NOR the 6502 (`6502.slaspec:6`)
+        // declares one, so reading word_size here made `arch.addr_size` equal 1
+        // for EVERY architecture. Nothing failed loudly because
+        // `r2il::validate::effective_arch_addr_size` falls back to the PC
+        // register's width when addr_size <= 1 — a fallback that reads as
+        // defensive but was in fact carrying every architecture.
+        let addr_size = space.address_size as u32;
         let space_endianness = Endianness::from_big_endian(space.big_endian);
 
         ctx.add_space_with_endianness(&space.name, addr_size, is_default, Some(space_endianness));
