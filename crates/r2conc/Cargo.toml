@@ -10,3 +10,18 @@ description = "Concrete slab executor for R2IL: zero-copy machine state (one fla
 [dependencies]
 r2il = { path = "../r2il" }
 thiserror.workspace = true
+
+[features]
+default = []
+# PROBE-R2IL-LIVE-REGFILE only. Gated because enabling it compiles Ghidra's
+# 6502 SLEIGH specification from source (minutes), which the default
+# `cargo test -p r2conc` has no reason to pay for.
+probe-6502 = ["sleigh-config/6502"]
+
+[dev-dependencies]
+r2sleigh-lift = { path = "../r2sleigh-lift" }
+sleigh-config = { version = "1.0", default-features = false }
+
+[[test]]
+name = "live_regfile"
+required-features = ["probe-6502"]

@@ -99,6 +99,11 @@ pub enum ConcError {
         /// Source varnode size in bytes.
         size: u32,
     },
+    /// A control transfer whose target lies in the constant space — a
+    /// p-code-relative branch within one machine instruction, which this
+    /// executor's machine-address [`Control`] vocabulary cannot express.
+    #[error("branch target in Const space: a p-code-relative branch, not an address")]
+    PcodeRelativeBranch,
     /// The op is outside the concrete subset. Loud by design.
     #[error("op outside the concrete subset: {0}")]
     Unsupported(&'static str),
@@ -123,10 +128,34 @@ pub enum Control {
 ///
 /// `register` and `ram` are **borrowed** — the state lives with the
 /// caller. `unique` is owned scratch (never persisted, per the space's own
-/// contract). `Custom(n)` slabs are registered explicitly — the 6502
-/// lift mints `Custom` spaces (its `RAM` aliases case-sensitively), so a
-/// caller that forgets one gets [`ConcError::UnknownSpace`], not a
-/// silently conjured slab.
+/// contract). `Custom(n)` slabs are registered explicitly, so a caller
+/// that forgets one gets [`ConcError::UnknownSpace`], not a silently
+/// conjured slab.
+///
+/// # Correction (2026-08-26, measured)
+///
+/// An earlier revision of this doc said the 6502 lift mints `Custom`
+/// spaces because the space-alias map is case-sensitive (the 6502 names
+/// its space `RAM`; the map's keys are lowercase). **That conflated two
+/// different code paths, and is false for the one that matters here.**
+///
+/// - TRUE of `r2sleigh_lift::context::LiftContext` / `ArchSpec`: its
+///   alias map is seeded with lowercase keys and looked up by exact
+///   match, so `"RAM"` misses and a fresh `Custom(n)` is minted. That is
+///   the *metadata* path.
+/// - FALSE of the `Vec<R2ILOp>` stream this executor consumes:
+///   `r2sleigh_lift::disasm::translate_space` dispatches on libsla's
+///   `AddressSpaceType`, never on the space's name. The 6502 declares
+///   `RAM type=ram_space`, which libsla reports as `Processor`, which
+///   maps to [`SpaceId::Ram`]. Case never enters the decision.
+///
+/// Measured directly: lifting `LSR $F0` at `$C004` yields
+/// `Copy { dst: tmp, src: [0xf0]:1 }`, and `[..]` is `format_varnode`'s
+/// rendering for [`SpaceId::Ram`]. So 6502 memory arrives here as `Ram`,
+/// and `Custom(n)` support is correct machinery this architecture simply
+/// does not need. The generalizable lesson: **a finding about a data
+/// structure is not automatically a finding about every path that touches
+/// it.**
 pub struct SlabState<'a> {
     register: &'a mut [u8],
     ram: &'a mut [u8],
@@ -167,8 +196,9 @@ impl<'a> SlabState<'a> {
         }
     }
 
-    /// Register the slab for a `Custom(n)` space (e.g. the 6502's own
-    /// case-sensitive `RAM` alias). Last registration for an id wins.
+    /// Register the slab for a `Custom(n)` space. Last registration for an
+    /// id wins. (See the type's Correction note: the 6502 is NOT an
+    /// example of this — its memory lifts to [`SpaceId::Ram`].)
     pub fn with_custom(mut self, id: u32, slab: &'a mut [u8]) -> Self {
         self.custom.retain(|(i, _)| *i != id);
         self.custom.push((id, slab));
@@ -243,6 +273,16 @@ impl<'a> SlabState<'a> {
     fn deref(&mut self, space: SpaceId, addr: &Varnode, size: u32) -> Result<Varnode, ConcError> {
         let a = self.read(addr)?;
         Ok(Varnode::new(space, a, size))
+    }
+
+    /// The address a DIRECT control transfer names: the target varnode's
+    /// own offset. Refuses a constant-space target, which is a
+    /// p-code-relative branch rather than an address (see [`Self::step`]).
+    fn direct_target(target: &Varnode) -> Result<u64, ConcError> {
+        if target.space == SpaceId::Const {
+            return Err(ConcError::PcodeRelativeBranch);
+        }
+        Ok(target.offset)
     }
 
     /// Execute one op. Sequencing is the caller's; see [`Control`].
@@ -423,15 +463,27 @@ impl<'a> SlabState<'a> {
 
             // Direct control transfer: the target varnode's OFFSET is the
             // address (p-code semantics — no load, no read).
-            Op::Branch { target } => Ok(Control::Jump(target.offset)),
+            //
+            // EXCEPT when the target sits in the CONSTANT space, which in
+            // p-code does not name an address at all: it is a branch
+            // relative to the current *p-code index within one machine
+            // instruction*. This executor's `Control` vocabulary addresses
+            // machine instructions, so it cannot express that — and per
+            // this crate's own contract it refuses rather than misreading
+            // a relative displacement as an absolute address, which is
+            // exactly the silent-wrong the design exists to prevent. A
+            // NOT-taken conditional branch to constant space still falls
+            // through correctly, because falling through is what it means;
+            // only the taken transfer is inexpressible.
+            Op::Branch { target } => Self::direct_target(target).map(Control::Jump),
             Op::CBranch { target, cond } => {
                 if self.read(cond)? != 0 {
-                    Ok(Control::Jump(target.offset))
+                    Self::direct_target(target).map(Control::Jump)
                 } else {
                     Ok(Control::Next)
                 }
             }
-            Op::Call { target } => Ok(Control::Call(target.offset)),
+            Op::Call { target } => Self::direct_target(target).map(Control::Call),
             // Indirect: the target's VALUE is the address.
             Op::BranchInd { target } => Ok(Control::Jump(self.read(target)?)),
             Op::CallInd { target } => Ok(Control::Call(self.read(target)?)),
@@ -738,7 +790,7 @@ mod tests {
     fn load_store_deref_and_custom_spaces() {
         let mut r = [0u8; 8];
         let mut m = [0u8; 16];
-        let mut zp = [0u8; 4]; // the 6502's own case-sensitive `RAM` alias
+        let mut zp = [0u8; 4]; // a synthetic custom space, not the 6502's
         let mut st = SlabState::new(&mut r, &mut m, 0).with_custom(1, &mut zp);
         let addr = reg(0, 1);
         st.write(&addr, 5).unwrap();
@@ -826,6 +878,59 @@ mod tests {
         assert_eq!(
             st.step(&R2ILOp::CBranch { target: t2, cond }),
             Ok(Control::Next)
+        );
+    }
+
+    /// A control transfer into CONST space is a p-code-relative branch,
+    /// not an address, and is refused rather than silently misread as one.
+    /// Two-sided on the taken/not-taken axis: the NOT-taken conditional
+    /// falls through correctly (falling through IS its meaning), and the
+    /// paired Ram-space arm proves the refusal discriminates on the SPACE
+    /// rather than rejecting every branch.
+    #[test]
+    fn a_constant_space_branch_target_is_refused_not_misread_as_an_address() {
+        let mut r = [0u8; 8];
+        let mut m = [0u8; 16];
+        let mut st = SlabState::new(&mut r, &mut m, 0);
+        let rel = konst(3, 8); // p-code-relative: "skip 3 ops", NOT address 3
+        assert_eq!(
+            st.step(&R2ILOp::Branch {
+                target: rel.clone()
+            }),
+            Err(ConcError::PcodeRelativeBranch)
+        );
+        assert_eq!(
+            st.step(&R2ILOp::Call {
+                target: rel.clone()
+            }),
+            Err(ConcError::PcodeRelativeBranch)
+        );
+        let cond = reg(0, 1);
+        st.write(&cond, 1).unwrap();
+        assert_eq!(
+            st.step(&R2ILOp::CBranch {
+                target: rel.clone(),
+                cond: cond.clone()
+            }),
+            Err(ConcError::PcodeRelativeBranch)
+        );
+        // Not taken: falling through is exactly what a not-taken branch
+        // means, so it is expressible and must NOT be refused.
+        st.write(&cond, 0).unwrap();
+        assert_eq!(
+            st.step(&R2ILOp::CBranch {
+                target: rel,
+                cond: cond.clone()
+            }),
+            Ok(Control::Next)
+        );
+        // Anti-vacuity: the same shape in Ram space is still accepted, so
+        // the guard discriminates on the space and does not just reject.
+        assert_eq!(
+            st.step(&R2ILOp::Branch {
+                target: Varnode::new(SpaceId::Ram, 3, 1)
+            }),
+            Ok(Control::Jump(3))
         );
     }
 
