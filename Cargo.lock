@@ -446,6 +446,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "r2conc"
+version = "0.1.0"
+dependencies = [
+ "r2il",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "r2dec"
 version = "0.1.0"
 dependencies = [
