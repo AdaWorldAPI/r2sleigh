@@ -125,6 +125,23 @@
 //! GPL-3.0, fetched-not-vendored on this machine); using it later is a
 //! legitimate deepening, claiming it now would be false.
 //!
+//! # What actually gates this file (measured 2026-08-26)
+//!
+//! **Nothing automated.** `.github/workflows/ci.yml` declares
+//! `cargo test --workspace --all-features`, which WOULD enable
+//! `probe-6502` and run everything below — but the repository has **zero
+//! workflow runs, ever** (`/actions/runs` → `total_count: 0`); the
+//! workflow is written for a self-hosted runner that is not registered.
+//! So the gate is local, and a future session should not read the CI
+//! config and conclude otherwise. Run it by hand before trusting it:
+//!
+//! ```text
+//! cargo test -p r2conc --features probe-6502
+//! cargo clippy -p r2conc --features probe-6502 --all-targets -- -D warnings
+//! ```
+//!
+//! A gate that never runs is not a gate.
+//!
 //! # Disable-run log (each verified red-then-green before commit)
 //!
 //! | # | disable | observed red |
