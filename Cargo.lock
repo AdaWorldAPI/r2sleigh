@@ -450,6 +450,8 @@ name = "r2conc"
 version = "0.1.0"
 dependencies = [
  "r2il",
+ "r2sleigh-lift",
+ "sleigh-config",
  "thiserror 2.0.17",
 ]
 
