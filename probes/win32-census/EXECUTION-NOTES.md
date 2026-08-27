@@ -110,6 +110,34 @@ demand-faulted — the census measured **48 `BranchInd` and 14
 register-indirect calls**, so the unpredictable fraction is real but small
 on this fixture.
 
+### Operator ruling (2026-08-27): eager hydration is acceptable, and it
+### makes the prefetch walk a SCALE concern rather than a day-one one
+
+*"If it's a 7 MB file that runs 7× speed if hydrated, I'm fine with that."*
+
+Taken as settled, and it changes what the open item actually is. The cache
+wall above is about **scattered** faults landing inside the execution loop.
+If paying the materialization cost up front is acceptable, the simplest
+answer is not a prefetch walk at all — it is **eager hydration at load**:
+one bulk pass, sequential, before execution starts. That is strictly
+simpler than walking decoded blocks ahead of a cursor, and on a working set
+that fits it produces the same end state with none of the machinery.
+
+So the honest ordering is:
+
+1. **Working set fits** (a 7 MB image — the overwhelmingly common case for a
+   legacy line-of-business binary): hydrate eagerly. No prefetcher, no
+   cursor, no ahead-of-execution walk. Done.
+2. **Working set does not fit** (corpus-scale sweeps, or an image whose
+   touched pages exceed what is worth resident): only then does the
+   prefetch walk earn its complexity, because only then is there something
+   eager hydration cannot simply do.
+
+The prefetch walk stays recorded above because case 2 is real at dowry
+scale — a customer estate, not one binary. But it is **not** a prerequisite
+for the single-binary path, and building it first would be optimizing an
+unmeasured case while the measured one had a one-line answer.
+
 **The falsifier, so this cannot become folklore:** measure faults (or
 first-touch count) per executed instruction with hydration lazy, then with
 the prefetch walk enabled, on the same binary. If the walk does not
@@ -158,4 +186,4 @@ catching.
 | `Ram`/`Custom` aliasing | **open** — same memory, two space ids |
 | persisted-row safety | **open** — depends on the `Custom(n)` fix |
 | prefetch: DECODE cache | **not needed yet** — exists as `pre_lift`; triggers named above |
-| prefetch: LANE hydration | **open** — the cache wall reserve-don't-claim creates; no mechanism exists |
+| prefetch: LANE hydration | **ruled** — eager hydration at load for a working set that fits; the ahead-of-cursor walk is a scale-out item, not a prerequisite |
