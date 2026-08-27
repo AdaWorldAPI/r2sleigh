@@ -5,6 +5,13 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Manual trigger. Needed in practice, not decoration: enabling Actions on
+  # a repository does NOT retroactively create runs for events that already
+  # happened, so without this the only way to prove a newly-enabled (or
+  # newly-provisioned) runner works is to wait for the next push. It is also
+  # the honest way to re-run after a runner is registered or libz3 is
+  # installed, rather than pushing an empty commit to kick CI.
+  workflow_dispatch:
 
 # Cancel in-progress runs for the same branch/PR
 concurrency:
