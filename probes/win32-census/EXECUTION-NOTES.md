@@ -176,6 +176,76 @@ Until one of those is the actual workload, adding cache machinery would be
 optimizing an unmeasured path — the failure mode this repo's own probes keep
 catching.
 
+## The scale boundary — and a distinction the eager ruling above hides
+
+*"If we start to use R2IL for entire ontologies in the 300 MB–3 GB range we
+need lance-graph-ontology's cache IN FRONT of R2IL lifting, as a non-eager
+op too."* (operator, 2026-08-27)
+
+Correct, and the measurements make it sharper than "large inputs need
+laziness". **Two different quantities were being called "hydration", and
+only one of them is 7 MB.**
+
+| | the memory IMAGE | the lifted IR |
+|---|---|---|
+| what it is | the binary's own bytes: `.text`, `.data`, stack | the `Vec<R2ILOp>` those bytes lift to |
+| 7 MB input | 7 MB | **~2.2 GB** |
+| eager? | yes — the ruling above | **no, not even at 7 MB** |
+
+### Measured, not estimated
+
+- `size_of::<R2ILOp>()` = **464 bytes** (`Varnode` = 112, `R2ILBlock` = 128).
+- This census: 12 408 ops from 7 688 bytes of `.text` = **1.614 ops/byte**.
+- Therefore lifted IR is **≈ 749× the input size**.
+
+| input | lifted IR |
+|---|---|
+| 3 MB of `.text` (a 7 MB binary) | **2.2 GB** |
+| 300 MB | **225 GB** |
+| 3 GB | **2.2 TB** |
+
+So the eager-hydration ruling holds **for the image** and does not transfer
+to the IR. Even the single-binary case cannot materialize its own lift
+eagerly; at ontology scale it is not a tuning question but an
+impossibility.
+
+### The inversion this forces
+
+`lance-graph-ontology` cache **in front of** R2IL lifting is not a
+performance layer bolted on — it changes which operation is primary:
+
+```
+today:      lower  ->  address  ->  execute        (lift is a load-time pass)
+at scale:   address -> [cache hit? serve : lower] -> execute
+```
+
+Lifting becomes a **cache-miss path**, per-region and on demand, never a
+whole-image pass. That is the substrate's own doctrine rather than a new
+idea — *the key prerenders nodes with zero value decode*. If a classid plus
+a cascade path answers the query, the value is never decoded and the region
+is never lifted. Lifting is what happens when the key **cannot** answer.
+
+Reserve-don't-claim then applies unchanged at this scale, and is what makes
+it tractable: reserving 3 GB of *address space* is nearly free because
+addresses are not bytes; claiming a region is what costs, and only touched
+regions are ever claimed.
+
+### Prerequisite nobody has looked at: 464 bytes per op
+
+Before any GB-scale lifting is contemplated, `R2ILOp`'s footprint is the
+first thing to attack, and it is almost all metadata. `Varnode` is 112 bytes
+carrying an inline `Option<VarnodeMetadata>` whose seven `Option` fields
+dominate; the payload (`space` + `offset` + `size`) is ~24. Boxing or
+interning the metadata plausibly gets an op to ~128 bytes — **3.6×** — which
+moves 300 MB from 225 GB to 62 GB. Still not eager, but it changes what a
+cache tier has to hold.
+
+**Stated as CONJECTURE:** the 128-byte figure is arithmetic on the field
+widths, not a measured refactor. The measurement that would settle it is a
+`size_of` after boxing `VarnodeMetadata`, plus a benchmark proving the extra
+indirection does not cost more in the interpreter's hot loop than it saves
+in cache residency — that trade is exactly the kind that can invert.
+
 ## Summary
 
 | concern | status |
@@ -186,4 +256,7 @@ catching.
 | `Ram`/`Custom` aliasing | **open** — same memory, two space ids |
 | persisted-row safety | **open** — depends on the `Custom(n)` fix |
 | prefetch: DECODE cache | **not needed yet** — exists as `pre_lift`; triggers named above |
-| prefetch: LANE hydration | **ruled** — eager hydration at load for a working set that fits; the ahead-of-cursor walk is a scale-out item, not a prerequisite |
+| prefetch: LANE hydration (IMAGE) | **ruled** — eager at load for a working set that fits; ahead-of-cursor walk is scale-out |
+| eager materialization of lifted IR | **no — 749x expansion, 2.2 GB from a 7 MB binary**; lifting must be a cache-miss path |
+| ontology scale (300 MB–3 GB) | **open** — needs lance-graph-ontology cache in front of lifting; inverts lower->address into address->lift-on-miss |
+| `R2ILOp` = 464 bytes | **open prerequisite** — metadata-dominated; ~3.6x reduction is arithmetic, not measured |
