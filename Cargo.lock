@@ -527,6 +527,7 @@ version = "0.1.0"
 dependencies = [
  "libsla",
  "r2il",
+ "serde_json",
  "sleigh-config",
  "thiserror 2.0.17",
 ]

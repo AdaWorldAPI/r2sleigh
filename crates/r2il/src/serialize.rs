@@ -225,6 +225,8 @@ impl From<AddressSpaceV1> for AddressSpace {
             valid_ranges: Vec::new(),
             bank_id: None,
             segment_id: None,
+            // Pre-alias rows carry no alias information.
+            aliases: None,
         }
     }
 }
@@ -253,6 +255,8 @@ impl From<AddressSpaceV2> for AddressSpace {
             valid_ranges: Vec::new(),
             bank_id: None,
             segment_id: None,
+            // Pre-alias rows carry no alias information.
+            aliases: None,
         }
     }
 }

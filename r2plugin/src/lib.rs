@@ -1696,6 +1696,9 @@ pub extern "C" fn r2il_block_varnodes(
                 r2il::SpaceId::Ram => 2,
                 r2il::SpaceId::Unique => 3,
                 r2il::SpaceId::Custom(n) => 4 + (n as u8),
+                // Dedup key only. Every unresolved handle shares one bucket,
+                // matching `SpaceId`'s own over-match rule.
+                r2il::SpaceId::Unresolved => u8::MAX,
             };
             let key = (space_id, vn.offset, vn.size);
             if seen.contains(&key) {
@@ -1715,6 +1718,10 @@ pub extern "C" fn r2il_block_varnodes(
                 r2il::SpaceId::Unique => (format!("tmp:0x{:x}", vn.offset), space_label(vn.space)),
                 r2il::SpaceId::Custom(n) => (
                     format!("space{}:0x{:x}", n, vn.offset),
+                    space_label(vn.space),
+                ),
+                r2il::SpaceId::Unresolved => (
+                    format!("unresolved:0x{:x}", vn.offset),
                     space_label(vn.space),
                 ),
             };
@@ -1742,6 +1749,7 @@ fn space_label(space: r2il::SpaceId) -> String {
         r2il::SpaceId::Ram => "ram".to_string(),
         r2il::SpaceId::Unique => "unique".to_string(),
         r2il::SpaceId::Custom(id) => format!("custom:{}", id),
+        r2il::SpaceId::Unresolved => "unresolved".to_string(),
     }
 }
 
