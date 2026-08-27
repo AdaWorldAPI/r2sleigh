@@ -10,3 +10,10 @@ r2il = { path = "../r2il" }
 libsla.workspace = true
 sleigh-config.workspace = true
 thiserror.workspace = true
+
+[features]
+x86 = ["sleigh-config/x86"]
+
+[[example]]
+name = "win32_census"
+required-features = ["x86"]
