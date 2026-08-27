@@ -1065,7 +1065,7 @@ fn validate_varnode(
         ));
     }
 
-    if let Some(meta) = &vn.meta {
+    if let Some(meta) = vn.meta.as_deref() {
         if let Some(bank_id) = &meta.bank_id
             && bank_id.trim().is_empty()
         {
