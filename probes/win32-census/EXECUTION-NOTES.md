@@ -68,7 +68,57 @@ stable and collapses the aliasing question. It needs its own falsifier
 (same binary, two processes, identical `space` fields) and must not change
 the 6502 result, which is already `Ram` and byte-parity green.
 
-## Not yet needed — prefetch / block caching
+## Prefetch — TWO different subsystems, and the first version of this
+## section only addressed one of them
+
+**Correction (operator, 2026-08-27).** What follows below was written about
+the **decode** cache — memoizing lifted `R2ILBlock`s by machine address.
+That analysis stands. But it silently answered only half the question,
+because *reserve-don't-claim + hydrate-on-first-access* introduces a
+**second, unrelated** prefetch problem on the **data** side, and the two
+share nothing but the word.
+
+| | decode prefetch | lane hydration prefetch |
+|---|---|---|
+| what is cold | the lifted ops for an address | the reserved-but-unclaimed backing lane |
+| cost of a miss | one libsla decode (~µs) | a page fault / allocation (~µs, but **scattered**) |
+| access pattern | follows control flow | follows the data the program touches |
+| already exists? | yes — `pre_lift`'s `BTreeMap` | **no** |
+
+### The cache wall
+
+Lazy hydration does not remove the cost of materializing a lane; it
+**relocates** it, from a bulk pass at startup into a spray of faults across
+the execution loop. That is the wall: the aggregate work is similar or
+worse, but it now lands interleaved with execution, where each stall
+drains the pipeline and evicts whatever the interpreter had warm. A design
+that reserves aggressively and claims lazily has *chosen* this failure mode
+unless it also prefetches.
+
+**Why this substrate is unusually well placed to avoid it:** the access
+pattern is not a guess. `pre_lift` has already decoded the instruction
+stream before execution starts, so every `Load`/`Store` varnode in the
+upcoming window is *statically visible* — the addresses to warm can be read
+off the ops rather than predicted from history. A hardware prefetcher
+guesses; this one can simply look.
+
+Sketch, not implemented: walk the decoded blocks ahead of the execution
+cursor, collect the constant-address `Ram`/`Custom(n)` varnodes, and warm
+those lanes before the cursor reaches them. Indirect accesses
+(register-computed addresses) are invisible to that walk and remain
+demand-faulted — the census measured **48 `BranchInd` and 14
+register-indirect calls**, so the unpredictable fraction is real but small
+on this fixture.
+
+**The falsifier, so this cannot become folklore:** measure faults (or
+first-touch count) per executed instruction with hydration lazy, then with
+the prefetch walk enabled, on the same binary. If the walk does not
+measurably reduce first-touch stalls it is not earning its complexity. And
+it must be measured on a working set that **exceeds** the warm set —
+prefetch is definitionally free of benefit on an image small enough to stay
+resident, which is exactly the shape of the current fixture.
+
+## Not yet needed — the DECODE cache specifically
 
 **No tweak required yet, and here is why rather than an assumption.**
 
@@ -107,4 +157,5 @@ catching.
 | `Custom(n)` stability | **BROKEN on x86-64** — non-deterministic per process |
 | `Ram`/`Custom` aliasing | **open** — same memory, two space ids |
 | persisted-row safety | **open** — depends on the `Custom(n)` fix |
-| prefetch / block cache | **not needed yet** — exists as `pre_lift`; triggers named above |
+| prefetch: DECODE cache | **not needed yet** — exists as `pre_lift`; triggers named above |
+| prefetch: LANE hydration | **open** — the cache wall reserve-don't-claim creates; no mechanism exists |
