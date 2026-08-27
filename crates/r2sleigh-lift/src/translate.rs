@@ -326,7 +326,7 @@ mod tests {
                 0 => SpaceId::Ram,
                 1 => SpaceId::Register,
                 2 => SpaceId::Unique,
-                n => SpaceId::Custom(n as u32),
+                _ => SpaceId::Unresolved,
             }
         }
     }

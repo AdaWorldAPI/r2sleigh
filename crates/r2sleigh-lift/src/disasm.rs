@@ -94,7 +94,14 @@ impl<'a> PcodeSource for DisasmInstructionWrapper<'a> {
         if let Some(space) = spaces.get(idx as usize) {
             self.disasm.translate_space(space)
         } else {
-            SpaceId::Custom(idx as u32)
+            // `idx` is LOAD/STORE input-0, which Ghidra p-code encodes as the
+            // host `AddrSpace*` POINTER rather than an index -- so the lookup
+            // above misses and the value in hand is run-local.
+            //
+            // It used to be truncated into `Custom(idx as u32)`. See
+            // `SpaceId::Unresolved` for why that was wrong in two ways at
+            // once (unreproducible lift, unreproducible persisted row).
+            SpaceId::Unresolved
         }
     }
 }
@@ -248,6 +255,7 @@ impl Disassembler {
             SpaceId::Unique => format!("tmp:0x{:x}", vn.offset),
             SpaceId::Ram => format!("[0x{:x}]:{}", vn.offset, vn.size),
             SpaceId::Custom(n) => format!("space{}:0x{:x}", n, vn.offset),
+            SpaceId::Unresolved => format!("unresolved:0x{:x}", vn.offset),
         }
     }
 

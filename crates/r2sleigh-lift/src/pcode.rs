@@ -265,11 +265,13 @@ impl<'a> PcodeSource for RawPcodeSourceWrapper<'a> {
     }
 
     fn space_from_index(&self, idx: u64) -> SpaceId {
+        // See `SpaceId::Unresolved`: a miss here means `idx` was a host
+        // pointer, not an index. Dropping it keeps the lift reproducible.
         self.translator
             .space_map
             .get(idx as usize)
             .copied()
-            .unwrap_or(SpaceId::Custom(idx as u32))
+            .unwrap_or(SpaceId::Unresolved)
     }
 }
 
@@ -303,7 +305,7 @@ impl PcodeTranslator {
             .space_map
             .get(raw.space_idx as usize)
             .copied()
-            .unwrap_or(SpaceId::Custom(raw.space_idx));
+            .unwrap_or(SpaceId::Unresolved);
 
         Ok(Varnode::new(space, raw.offset, raw.size))
     }
@@ -690,6 +692,76 @@ fn translate_err(e: translate::TranslateError) -> PcodeError {
 
 #[cfg(test)]
 mod tests {
+    // ---- the Custom(n) non-determinism falsifier ----------------------
+    //
+    // Runs the REAL fallback in `PcodeTranslator::convert_varnode`, not a
+    // reconstruction of it. The three space_idx values are the ones actually
+    // measured across three processes lifting the same x86-64 binary: they
+    // are truncated host `AddrSpace*` pointers, which is what Ghidra p-code
+    // puts in a LOAD/STORE's input-0 constant.
+    //
+    // DISABLE: restore `.unwrap_or(SpaceId::Custom(raw.space_idx))` in
+    // `convert_varnode` and this fails on the first assert_eq.
+    #[test]
+    fn unresolvable_space_pointers_from_three_runs_convert_identically() {
+        use super::{PcodeTranslator, RawVarnode};
+
+        let tr = PcodeTranslator::default_spaces();
+
+        // Anti-vacuity: these must genuinely miss the space map, or the
+        // test proves nothing about the fallback.
+        let measured = [1_062_180_976u32, 2_279_590_000, 1_968_052_336];
+        for idx in measured {
+            assert!(
+                idx as usize >= 4,
+                "fixture {idx} must fall outside the 4-entry default map"
+            );
+        }
+        assert_ne!(measured[0], measured[1]);
+        assert_ne!(measured[1], measured[2]);
+
+        let lifted: Vec<_> = measured
+            .iter()
+            .map(|&idx| {
+                tr.convert_varnode(&RawVarnode::new(idx, 0x4020, 8))
+                    .expect("convert")
+            })
+            .collect();
+
+        // Three different run-local pointers, one identical varnode.
+        assert_eq!(lifted[0], lifted[1]);
+        assert_eq!(lifted[1], lifted[2]);
+        assert!(lifted[0].space.is_unresolved());
+
+        // And the lift is flagged unpersistable, so a write path can refuse
+        // an unreproducible row instead of storing a dead process's pointer.
+        assert!(!lifted[0].is_persistable());
+    }
+
+    /// The silence twin: a space index that DOES resolve is untouched.
+    /// Without this, a `convert_varnode` that returned `Unresolved` for
+    /// everything would pass the test above.
+    #[test]
+    fn a_resolvable_space_index_still_resolves() {
+        use super::{PcodeTranslator, RawVarnode};
+        use r2il::SpaceId;
+
+        let tr = PcodeTranslator::default_spaces();
+        for (idx, want) in [
+            (0u32, SpaceId::Const),
+            (1, SpaceId::Ram),
+            (2, SpaceId::Register),
+            (3, SpaceId::Unique),
+        ] {
+            let vn = tr
+                .convert_varnode(&RawVarnode::new(idx, 0x10, 4))
+                .expect("convert");
+            assert_eq!(vn.space, want);
+            assert!(!vn.space.is_unresolved());
+            assert!(vn.is_persistable());
+        }
+    }
+
     use super::*;
 
     #[test]

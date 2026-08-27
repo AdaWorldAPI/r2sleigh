@@ -17,3 +17,6 @@ x86 = ["sleigh-config/x86"]
 [[example]]
 name = "win32_census"
 required-features = ["x86"]
+
+[dev-dependencies]
+serde_json = "1"

@@ -108,6 +108,23 @@ impl Varnode {
     ///
     /// Prefer this over touching `.meta` directly — it hides the box, so a
     /// later change of storage strategy does not ripple through readers.
+    /// Whether this varnode may be written to a persisted row.
+    ///
+    /// False exactly when its space is [`SpaceId::Unresolved`] — a handle the
+    /// lifter could not resolve, whose only available value was a run-local
+    /// host pointer. A row containing one cannot be reproduced by a later
+    /// run, so a write path must refuse it rather than store a fact about a
+    /// dead process.
+    ///
+    /// This is a guard to be CALLED, not an automatic one. `Serialize` still
+    /// succeeds (it renders the self-describing token `"Unresolved"`),
+    /// because serde also backs in-process cache keys and diagnostic JSON,
+    /// where refusing would break correct callers. See [`SpaceId::Unresolved`]
+    /// for why that trade was made deliberately.
+    pub fn is_persistable(&self) -> bool {
+        !self.space.is_unresolved()
+    }
+
     pub fn meta(&self) -> Option<&VarnodeMetadata> {
         self.meta.as_deref()
     }

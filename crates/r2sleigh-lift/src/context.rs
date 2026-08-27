@@ -138,6 +138,7 @@ impl LiftContext {
                 valid_ranges: Vec::new(),
                 bank_id: None,
                 segment_id: None,
+                aliases: None,
             };
             self.arch.add_space(space);
             return space_id;
@@ -159,6 +160,7 @@ impl LiftContext {
             valid_ranges: Vec::new(),
             bank_id: None,
             segment_id: None,
+            aliases: None,
         };
         self.arch.add_space(space);
         self.space_map.insert(name.into(), space_id);

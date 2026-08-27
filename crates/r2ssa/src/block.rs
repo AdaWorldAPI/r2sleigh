@@ -124,6 +124,7 @@ fn varnode_to_name(vn: &Varnode, disasm: &Disassembler) -> String {
         SpaceId::Const => format!("const:{:x}", vn.offset),
         SpaceId::Ram => format!("ram:{:x}", vn.offset),
         SpaceId::Custom(id) => format!("space{}:{:x}", id, vn.offset),
+        SpaceId::Unresolved => format!("unresolved:{:x}", vn.offset),
     }
 }
 
@@ -149,6 +150,7 @@ fn space_name(space: &SpaceId) -> String {
         SpaceId::Const => "const".to_string(),
         SpaceId::Unique => "unique".to_string(),
         SpaceId::Custom(id) => format!("space_{}", id),
+        SpaceId::Unresolved => "unresolved".to_string(),
     }
 }
 
