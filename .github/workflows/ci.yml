@@ -39,6 +39,31 @@ jobs:
           fi
       - name: Prepare shared target dir
         run: mkdir -p "$CARGO_TARGET_DIR"
+      - name: Ensure libz3 (r2sym / r2plugin link against it)
+        # `r2sym` and `r2plugin` declare `z3 = "0.20.0"`, which links the
+        # SYSTEM libz3 — there is no bundled/static feature enabled, and
+        # `--all-features` on workspace members does not turn on a
+        # dependency's own features. Without libz3 every job that compiles
+        # the workspace dies at link time with
+        # `rust-lld: error: unable to find library -lz3`, which reads as a
+        # toolchain problem rather than a missing package.
+        #
+        # `scripts/setup-runner.sh` step 5 already installs this when a
+        # self-hosted runner is provisioned. This step is the idempotent
+        # safety net for a runner that was provisioned before that step
+        # existed, or by hand: it is a NO-OP on a correct runner and never
+        # reinstalls. It mirrors the same `dpkg -l` guard the setup script
+        # uses, so the two cannot disagree about what "installed" means.
+        run: |
+          if ldconfig -p | grep -q libz3; then
+            echo "libz3 present: $(ldconfig -p | grep -m1 libz3)"
+            exit 0
+          fi
+          echo "::warning::libz3 missing on this runner; installing. Provision runners with scripts/setup-runner.sh to avoid this."
+          if ! sudo apt-get install -y -qq libz3-dev; then
+            echo "::error::libz3-dev unavailable. See scripts/setup-runner.sh (step 5) — it builds Z3 from source as a fallback."
+            exit 1
+          fi
       - name: Print versions
         run: |
           echo "rustc:      $(rustc --version)"
@@ -70,6 +95,31 @@ jobs:
           fi
       - name: Prepare shared target dir
         run: mkdir -p "$CARGO_TARGET_DIR"
+      - name: Ensure libz3 (r2sym / r2plugin link against it)
+        # `r2sym` and `r2plugin` declare `z3 = "0.20.0"`, which links the
+        # SYSTEM libz3 — there is no bundled/static feature enabled, and
+        # `--all-features` on workspace members does not turn on a
+        # dependency's own features. Without libz3 every job that compiles
+        # the workspace dies at link time with
+        # `rust-lld: error: unable to find library -lz3`, which reads as a
+        # toolchain problem rather than a missing package.
+        #
+        # `scripts/setup-runner.sh` step 5 already installs this when a
+        # self-hosted runner is provisioned. This step is the idempotent
+        # safety net for a runner that was provisioned before that step
+        # existed, or by hand: it is a NO-OP on a correct runner and never
+        # reinstalls. It mirrors the same `dpkg -l` guard the setup script
+        # uses, so the two cannot disagree about what "installed" means.
+        run: |
+          if ldconfig -p | grep -q libz3; then
+            echo "libz3 present: $(ldconfig -p | grep -m1 libz3)"
+            exit 0
+          fi
+          echo "::warning::libz3 missing on this runner; installing. Provision runners with scripts/setup-runner.sh to avoid this."
+          if ! sudo apt-get install -y -qq libz3-dev; then
+            echo "::error::libz3-dev unavailable. See scripts/setup-runner.sh (step 5) — it builds Z3 from source as a fallback."
+            exit 1
+          fi
       - name: Ensure radare2 + headers
         run: |
           check_radare2() {
@@ -146,6 +196,20 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
+      - name: Ensure libz3 (r2sym / r2plugin link against it)
+        # Same guard as the other jobs. `cargo e2e-test` is an alias that
+        # compiles workspace crates, so this job hits the same -lz3 wall;
+        # it simply has no shared-target-dir step to hang the check on.
+        run: |
+          if ldconfig -p | grep -q libz3; then
+            echo "libz3 present: $(ldconfig -p | grep -m1 libz3)"
+            exit 0
+          fi
+          echo "::warning::libz3 missing on this runner; installing. Provision runners with scripts/setup-runner.sh to avoid this."
+          if ! sudo apt-get install -y -qq libz3-dev; then
+            echo "::error::libz3-dev unavailable. See scripts/setup-runner.sh (step 5) — it builds Z3 from source as a fallback."
+            exit 1
+          fi
       - name: Run Rust E2E tests
         run: cargo e2e-test
 
@@ -171,6 +235,31 @@ jobs:
           fi
       - name: Prepare shared target dir
         run: mkdir -p "$CARGO_TARGET_DIR"
+      - name: Ensure libz3 (r2sym / r2plugin link against it)
+        # `r2sym` and `r2plugin` declare `z3 = "0.20.0"`, which links the
+        # SYSTEM libz3 — there is no bundled/static feature enabled, and
+        # `--all-features` on workspace members does not turn on a
+        # dependency's own features. Without libz3 every job that compiles
+        # the workspace dies at link time with
+        # `rust-lld: error: unable to find library -lz3`, which reads as a
+        # toolchain problem rather than a missing package.
+        #
+        # `scripts/setup-runner.sh` step 5 already installs this when a
+        # self-hosted runner is provisioned. This step is the idempotent
+        # safety net for a runner that was provisioned before that step
+        # existed, or by hand: it is a NO-OP on a correct runner and never
+        # reinstalls. It mirrors the same `dpkg -l` guard the setup script
+        # uses, so the two cannot disagree about what "installed" means.
+        run: |
+          if ldconfig -p | grep -q libz3; then
+            echo "libz3 present: $(ldconfig -p | grep -m1 libz3)"
+            exit 0
+          fi
+          echo "::warning::libz3 missing on this runner; installing. Provision runners with scripts/setup-runner.sh to avoid this."
+          if ! sudo apt-get install -y -qq libz3-dev; then
+            echo "::error::libz3-dev unavailable. See scripts/setup-runner.sh (step 5) — it builds Z3 from source as a fallback."
+            exit 1
+          fi
 
       - name: Build release (all architectures)
         run: cargo build --release --features all-archs
