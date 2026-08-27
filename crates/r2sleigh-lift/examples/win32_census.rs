@@ -42,7 +42,7 @@
 
 use std::collections::BTreeMap;
 
-use r2il::{R2ILOp, SpaceId};
+use r2il::{OpColumns, OpTag, R2ILOp, SpaceId};
 use r2sleigh_lift::Disassembler;
 use sleigh_config::processor_x86::{PSPEC_X86_64, SLA_X86_64};
 
@@ -255,6 +255,11 @@ fn main() {
     buf.extend(std::iter::repeat_n(0u8, LIFT_WINDOW));
 
     let mut c = Census::default();
+    // Columnar projection built alongside the AoS scan, purely so the two
+    // can be compared on REAL data. See the equivalence check after the
+    // sweep — synthetic streams cannot falsify a projection the way 12 000
+    // ops of actual x86-64 can.
+    let mut cols = OpColumns::default();
     let mut off = 0usize;
     while off < len {
         let addr = text_lo + off as u64;
@@ -276,6 +281,7 @@ fn main() {
                 }
                 c.instructions += 1;
                 c.bytes_swept += size as u64;
+                cols.extend(&block.ops);
                 for (op_idx, op) in block.ops.iter().enumerate() {
                     c.ops_total += 1;
                     *c.ops_by_kind.entry(kind_of(op)).or_insert(0) += 1;
@@ -378,6 +384,44 @@ fn main() {
     );
 
     let captured = c.ops_total - c.callother_total;
+    // ── columnar equivalence, on the real stream ─────────────────────────
+    //
+    // The SoA projection exists so scans can be vectorized later. It is only
+    // worth anything if it answers IDENTICALLY to the AoS scan — and the
+    // place that gets proven is here, on a real binary, not on a five-op
+    // fixture. A projection that silently disagreed would be worse than no
+    // projection: every consumer would inherit the discrepancy.
+    assert_eq!(
+        cols.len() as u64,
+        c.ops_total,
+        "columns must carry exactly one entry per op"
+    );
+    let hist = cols.tag_histogram();
+    assert_eq!(
+        hist[OpTag::CallOther as usize],
+        c.callother_total,
+        "columnar CallOther count disagrees with the AoS scan"
+    );
+    assert_eq!(
+        hist[OpTag::Call as usize],
+        c.call_direct,
+        "columnar Call count disagrees with the AoS scan"
+    );
+    assert_eq!(
+        hist[OpTag::CallInd as usize],
+        c.call_indirect,
+        "columnar CallInd count disagrees with the AoS scan"
+    );
+    assert_eq!(
+        cols.find_tag(OpTag::CallOther).len() as u64,
+        c.callother_total,
+        "find_tag and the histogram disagree with each other"
+    );
+    println!(
+        "\n== columnar equivalence == OK  ({} ops projected; CallOther/Call/CallInd match)",
+        cols.len()
+    );
+
     println!("\n== headline ==");
     println!(
         "  ops with p-code semantics : {captured} / {} = {:.4}%",

@@ -1724,7 +1724,9 @@ pub extern "C" fn r2il_block_varnodes(
                 space: space_str,
                 offset: vn.offset,
                 size: vn.size,
-                meta: vn.meta.clone(),
+                // Unbox at the DTO boundary: the box is r2il-internal storage
+                // (see Varnode::meta), not something a JSON export inherits.
+                meta: vn.meta.as_deref().cloned(),
             });
         }
     }

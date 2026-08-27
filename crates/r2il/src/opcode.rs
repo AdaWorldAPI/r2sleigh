@@ -1248,3 +1248,10 @@ impl R2ILBlock {
         self.switch_info = Some(info);
     }
 }
+
+/// Companion pin to `varnode`'s: the op is what the stream is made of.
+/// 464 -> 144 after boxing `VarnodeMetadata`. See that assertion for why the
+/// number is load-bearing rather than cosmetic.
+const _: () = {
+    assert!(core::mem::size_of::<R2ILOp>() == 144);
+};

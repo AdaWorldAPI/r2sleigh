@@ -908,7 +908,7 @@ fn merge_inferred_semantics(dst: &mut InferredSemantics, src: InferredSemantics)
 }
 
 fn varnode_existing_inference(vn: &Varnode) -> InferredSemantics {
-    let Some(meta) = vn.meta.as_ref() else {
+    let Some(meta) = vn.meta.as_deref() else {
         return InferredSemantics::default();
     };
 
@@ -1034,7 +1034,7 @@ fn apply_inferred_to_varnode(vn: &mut Varnode, inferred: &HashMap<VnKey, Inferre
         return;
     };
 
-    let mut meta = vn.meta.clone().unwrap_or_default();
+    let mut meta = vn.meta.as_deref().cloned().unwrap_or_default();
     let mut changed = false;
 
     if let Some(storage) = extra.storage_class {
@@ -1068,7 +1068,7 @@ fn apply_inferred_to_varnode(vn: &mut Varnode, inferred: &HashMap<VnKey, Inferre
     }
 
     if changed {
-        vn.meta = Some(meta);
+        vn.meta = Some(Box::new(meta));
     }
 }
 
@@ -1839,7 +1839,7 @@ mod tests {
         let R2ILOp::Load { addr, .. } = &block.ops[0] else {
             panic!("expected load op");
         };
-        let meta = addr.meta.as_ref().expect("address metadata");
+        let meta = addr.meta.as_deref().expect("address metadata");
         assert_eq!(meta.pointer_hint, Some(PointerHint::PointerLike));
         assert_eq!(meta.storage_class, Some(StorageClass::Stack));
 
@@ -1874,7 +1874,7 @@ mod tests {
         let R2ILOp::CallInd { target } = &block.ops[0] else {
             panic!("expected callind op");
         };
-        let meta = target.meta.as_ref().expect("target metadata");
+        let meta = target.meta.as_deref().expect("target metadata");
         assert_eq!(meta.pointer_hint, Some(PointerHint::CodePointer));
     }
 
@@ -1912,7 +1912,7 @@ mod tests {
         let R2ILOp::IntAdd { dst, .. } = &block.ops[0] else {
             panic!("expected intadd");
         };
-        let dst_meta = dst.meta.as_ref().expect("tmp metadata");
+        let dst_meta = dst.meta.as_deref().expect("tmp metadata");
         assert_eq!(dst_meta.storage_class, Some(StorageClass::Global));
         assert_eq!(dst_meta.pointer_hint, Some(PointerHint::PointerLike));
 
@@ -1967,11 +1967,11 @@ mod tests {
     fn semantic_metadata_marks_mmio_permissions_as_volatile_non_cacheable() {
         let mut block = R2ILBlock::new(0x1000, 4);
         let mut src = reg(0x20, 8);
-        src.meta = Some(r2il::VarnodeMetadata {
+        src.meta = Some(Box::new(r2il::VarnodeMetadata {
             storage_class: Some(StorageClass::Volatile),
             pointer_hint: Some(PointerHint::PointerLike),
             ..Default::default()
-        });
+        }));
         block.push(R2ILOp::Copy {
             dst: Varnode::unique(0x200, 8),
             src,
@@ -2007,11 +2007,11 @@ mod tests {
     fn semantic_metadata_does_not_downgrade_existing_hints() {
         let mut block = R2ILBlock::new(0x1000, 4);
         let mut addr = reg(0x20, 8);
-        addr.meta = Some(r2il::VarnodeMetadata {
+        addr.meta = Some(Box::new(r2il::VarnodeMetadata {
             storage_class: Some(StorageClass::Global),
             pointer_hint: Some(PointerHint::CodePointer),
             ..Default::default()
-        });
+        }));
         block.push(R2ILOp::Load {
             dst: reg(0x10, 8),
             space: SpaceId::Ram,
@@ -2042,7 +2042,7 @@ mod tests {
         let R2ILOp::Load { addr, .. } = &block.ops[0] else {
             panic!("expected load");
         };
-        let meta = addr.meta.as_ref().expect("address metadata");
+        let meta = addr.meta.as_deref().expect("address metadata");
         assert_eq!(meta.storage_class, Some(StorageClass::Global));
         assert_eq!(meta.pointer_hint, Some(PointerHint::CodePointer));
         let op_meta = block.op_metadata(0).expect("existing op metadata");
