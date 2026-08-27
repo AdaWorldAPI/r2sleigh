@@ -26,6 +26,7 @@
 //! block.push(R2ILOp::Copy { dst: eax, src: imm });
 //! ```
 
+pub mod columns;
 pub mod endianness;
 pub mod memory;
 pub mod metadata;
@@ -37,6 +38,7 @@ pub mod validate;
 pub mod varnode;
 
 // Re-export main types at crate root
+pub use columns::{OpColumns, OpTag, SpaceTag};
 pub use endianness::Endianness;
 pub use memory::{AtomicKind, MemoryOrdering, MemoryPermissions, MemoryRange};
 pub use metadata::{
