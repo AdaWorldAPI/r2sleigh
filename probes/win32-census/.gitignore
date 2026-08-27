@@ -1,0 +1,7 @@
+# The census fixture is committed as C SOURCE, never as a binary: a checked-in
+# PE is a fixture nobody can audit, and it would drift silently from the .c it
+# claims to be built from. Rebuild it with the one command in README.md:
+#
+#   x86_64-w64-mingw32-gcc -O1 -o legacy_app.exe legacy_app.c \
+#       -lgdi32 -luser32 -ladvapi32
+legacy_app.exe
