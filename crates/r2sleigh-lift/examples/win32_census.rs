@@ -396,6 +396,28 @@ fn main() {
         c.ops_total,
         "columns must carry exactly one entry per op"
     );
+
+    // Optional column dump, for the SIMD-crossover probe (default off).
+    //
+    // `r2il` deliberately has no `ndarray` dependency (see `columns.rs`), so
+    // the question "does vectorizing these scans pay?" can only be answered
+    // by a CONSUMER that holds one. This writes the three columns in a flat
+    // LE form so such a consumer can measure against the real lift instead
+    // of a synthetic stream. Format: u64 n, then n*u8 tag, n*u8 space,
+    // n*u64 offset.
+    if let Ok(path) = std::env::var("WIN32_CENSUS_COLUMNS_OUT") {
+        let n = cols.len();
+        let mut buf = Vec::with_capacity(8 + n * 10);
+        buf.extend_from_slice(&(n as u64).to_le_bytes());
+        buf.extend_from_slice(&cols.tag);
+        buf.extend_from_slice(&cols.space);
+        for &o in &cols.offset {
+            buf.extend_from_slice(&o.to_le_bytes());
+        }
+        std::fs::write(&path, &buf).expect("column dump");
+        eprintln!("[columns] wrote {n} ops to {path}");
+    }
+
     let hist = cols.tag_histogram();
     assert_eq!(
         hist[OpTag::CallOther as usize],
