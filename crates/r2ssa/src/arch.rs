@@ -179,15 +179,10 @@ impl From<Arc<ArchSpec>> for Arch {
     }
 }
 
-/// Two architectures are one when their identity and every table a function reads agree.
+/// Every table is the specification's alone, so two architectures are one when their specifications are.
 impl PartialEq for Arch {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-            || (self.0.spec.name == other.0.spec.name
-                && self.0.spec.variant == other.0.spec.variant
-                && self.0.registers_by_name == other.0.registers_by_name
-                && self.0.projections == other.0.projections
-                && self.0.memory_model == other.0.memory_model)
+        Arc::ptr_eq(&self.0, &other.0) || self.0.spec == other.0.spec
     }
 }
 
@@ -247,4 +242,25 @@ fn outermost_registers(spec: &ArchSpec) -> Box<[CanonicalStorageId]> {
         });
     }
     outermost.into_boxed_slice()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Equal specifications make equal architectures however built; a return register, which
+    /// only the result slot reads, tells two apart.
+    #[test]
+    fn two_architectures_are_one_when_their_specifications_are() {
+        let spec = || {
+            let mut spec = ArchSpec::new("equality");
+            spec.add_register(r2il::RegisterDef::new("r0", 0, 8));
+            spec.add_register(r2il::RegisterDef::new("r1", 8, 8));
+            spec
+        };
+        assert_eq!(Arch::new(spec()), Arch::new(spec()));
+        let mut returning = spec();
+        returning.return_registers = vec![r2il::RegisterDef::new("r1", 8, 8)];
+        assert_ne!(Arch::new(spec()), Arch::new(returning));
+    }
 }
