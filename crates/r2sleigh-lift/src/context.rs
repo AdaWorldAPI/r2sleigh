@@ -12,7 +12,12 @@ pub struct LiftContext {
     /// Architecture specification being built
     pub arch: ArchSpec,
 
-    /// Mapping from Sleigh space names to SpaceId
+    /// Mapping from Sleigh space names, lowercased by [`space_key`], to SpaceId.
+    ///
+    /// SLEIGH specs spell a space in either case: the 6502 declares its main
+    /// memory as `RAM`. Matching case-insensitively keeps this metadata path in
+    /// step with `disasm::translate_space`, which picks the `SpaceId` from
+    /// libsla's space type and never looks at the name.
     space_map: HashMap<String, SpaceId>,
 
     /// Counter for unique space IDs
@@ -43,7 +48,7 @@ impl LiftContext {
 
         // Rebuild space map from the arch spec
         for space in &arch.spaces {
-            space_map.insert(space.name.clone(), space.id);
+            space_map.insert(space_key(&space.name), space.id);
         }
 
         // Also add standard space aliases
@@ -122,7 +127,7 @@ impl LiftContext {
         endianness: Option<Endianness>,
     ) -> SpaceId {
         // Check if it's a standard space
-        if let Some(&space_id) = self.space_map.get(name) {
+        if let Some(&space_id) = self.space_map.get(&space_key(name)) {
             // Update the existing space definition
             let space = AddressSpace {
                 id: space_id,
@@ -161,14 +166,14 @@ impl LiftContext {
             aliases: None,
         };
         self.arch.add_space(space);
-        self.space_map.insert(name.into(), space_id);
+        self.space_map.insert(space_key(name), space_id);
 
         space_id
     }
 
-    /// Look up a space ID by name.
+    /// Look up a space ID by name, ignoring ASCII case.
     pub fn get_space(&self, name: &str) -> Option<SpaceId> {
-        self.space_map.get(name).copied()
+        self.space_map.get(&space_key(name)).copied()
     }
 
     /// Add a register definition.
@@ -187,6 +192,12 @@ impl LiftContext {
     pub fn finish(self) -> ArchSpec {
         self.arch
     }
+}
+
+/// The `space_map` key for a SLEIGH space name: ASCII-lowercased, so `RAM` and
+/// `ram` name the same space.
+fn space_key(name: &str) -> String {
+    name.to_ascii_lowercase()
 }
 
 #[cfg(test)]
@@ -212,6 +223,30 @@ mod tests {
         let custom = ctx.add_space("io", 2, false);
         assert!(matches!(custom, SpaceId::Custom(0)));
         assert_eq!(ctx.get_space("io"), Some(SpaceId::Custom(0)));
+    }
+
+    /// The 6502 names its main memory `RAM`. It must resolve to the fixed
+    /// `SpaceId::Ram`, as the lifted ops already do, not mint a custom space;
+    /// a genuinely custom space still gets one, and keeps its own spelling.
+    #[test]
+    fn test_space_names_match_case_insensitively() {
+        let mut ctx = LiftContext::new("6502");
+        assert_eq!(ctx.add_space("RAM", 2, true), SpaceId::Ram);
+        assert_eq!(ctx.get_space("Ram"), Some(SpaceId::Ram));
+        assert_eq!(ctx.add_space("OTHER", 2, false), SpaceId::Custom(0));
+        assert_eq!(ctx.get_space("other"), Some(SpaceId::Custom(0)));
+        let arch = ctx.finish();
+        let ram = arch.spaces.iter().find(|s| s.id == SpaceId::Ram).unwrap();
+        assert_eq!(ram.name, "RAM", "the spec's own spelling is kept");
+        assert!(
+            !arch.spaces.iter().any(|s| s.id == SpaceId::Custom(1)),
+            "RAM must not have minted a second custom space"
+        );
+
+        // Rebuilding the context from the spec keeps the same mapping.
+        let ctx = LiftContext::from_arch_spec(arch);
+        assert_eq!(ctx.get_space("ram"), Some(SpaceId::Ram));
+        assert_eq!(ctx.get_space("Other"), Some(SpaceId::Custom(0)));
     }
 
     #[test]
