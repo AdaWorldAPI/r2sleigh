@@ -56,7 +56,7 @@ pub fn format_op(disasm: &Disassembler, op: &R2ILOp) -> String {
         } => {
             let result_str = result
                 .as_ref()
-                .map(&vn)
+                .map(vn)
                 .unwrap_or_else(|| "none".to_string());
             format!(
                 "StoreConditional {{ result: {}, space: {:?}, addr: {}, val: {}, ordering: {:?} }}",
@@ -272,7 +272,7 @@ pub fn format_op(disasm: &Disassembler, op: &R2ILOp) -> String {
         } => {
             let out_str = output
                 .as_ref()
-                .map(&vn)
+                .map(vn)
                 .unwrap_or_else(|| "none".to_string());
             let in_str: Vec<String> = inputs.iter().map(&vn).collect();
             let userop_str = match disasm.userop_name(*userop) {
