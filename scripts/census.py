@@ -10,11 +10,11 @@
                                                    median release time and peak RSS per case, and
                                                    the allocation count from alloc-count builds;
                                                    fails when HEAD exceeds a budget x BASE
-  census.py exponent --r2s R2S [--min-instructions N] [--sample N] [--out FILE] BINARY...
-                                                   how `pdd` cost and peak RSS grow with a
-                                                   function's instructions (ROADMAP LX's exit):
-                                                   instructions retired by `afl; pdd @ f` less
-                                                   `afl`'s, under `perf stat` (Linux)
+  census.py exponent --r2s R2S [--min-instructions N] [--sample N] [--max-exponent X]
+                    [--out FILE] BINARY...         how `pdd` instructions retired, CPU time and
+                                                   peak RSS grow with a function's instructions
+                                                   (ROADMAP LX's exit): `afl; pdd @ f` less `afl`,
+                                                   under `perf stat` (Linux); fails above X
 
 With no binaries, `run` reads the repository's own: tests/coverage/pinned,
 tests/fixtures and, where the coverage sweep compiled them, tests/coverage/artifacts/bin.
@@ -236,18 +236,22 @@ def time_cases(args):
 
 
 def retired(binary, command, executable):
-    """User-space instructions retired by one run, and its peak RSS in MB; `perf` is Linux's."""
+    """User-space instructions retired, CPU milliseconds and peak RSS in MB of one run that
+    exited cleanly; `perf` is Linux's."""
     with tempfile.NamedTemporaryFile() as counts:
-        child = subprocess.Popen(["perf", "stat", "-x,", "-e", "instructions:u", "-o", counts.name,
-                                  executable, "-q", "-c", command, str(binary)],
+        child = subprocess.Popen(["perf", "stat", "-x,", "-e", "instructions:u,task-clock",
+                                  "-o", counts.name, executable, "-q", "-c", command, str(binary)],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # wait4 reports the largest resident set among the child and what it reaped.
-        _, _, usage = os.wait4(child.pid, 0)
+        _, status, usage = os.wait4(child.pid, 0)
         text = Path(counts.name).read_text()
-    count = next((int(line.split(",")[0]) for line in text.splitlines() if "instructions" in line), None)
-    if count is None:
-        sys.exit(f"perf counted no instructions: {text.strip()[:200]}")
-    return count, usage.ru_maxrss / 1024
+    if os.waitstatus_to_exitcode(status) != 0:
+        sys.exit(f"{binary.name}: `{command}` exited {os.waitstatus_to_exitcode(status)}; no row")
+    counted = {line.split(",")[2].split(":")[0]: float(line.split(",")[0])
+               for line in text.splitlines() if line.count(",") >= 2 and line.split(",")[0][:1].isdigit()}
+    if "instructions" not in counted or "task-clock" not in counted:
+        sys.exit(f"perf counted no instructions or task-clock: {text.strip()[:200]}")
+    return int(counted["instructions"]), counted["task-clock"], usage.ru_maxrss / 1024
 
 
 def instruction_counts(binary, executable):
@@ -288,21 +292,30 @@ def exponent(args):
         print(f"{binary.name}: {len(large)} functions of {args.min_instructions}+ instructions", flush=True)
         if not large:
             continue
-        base_cost, base_peak = retired(binary, "afl", args.r2s)
+        base_cost, base_ms, base_peak = retired(binary, "afl", args.r2s)
         for address, count in evenly(large, args.sample):
-            cost, peak = retired(binary, f"afl; pdd @ {address:#x}", args.r2s)
-            rows.append((binary.name, address, count, max(cost - base_cost, 1), peak - base_peak))
-            print(f"  {address:#x} {count} {(cost - base_cost) / 1e6:.1f}M {peak - base_peak:.0f}MB", flush=True)
+            cost, ms, peak = retired(binary, f"afl; pdd @ {address:#x}", args.r2s)
+            row = (count, max(cost - base_cost, 1), max(ms - base_ms, 0.1), peak - base_peak)
+            rows.append((binary.name, address, *row))
+            print(f"  {address:#x} {count} {row[1] / 1e6:.1f}M {row[2]:.0f}ms {row[3]:.0f}MB", flush=True)
     if args.out:
-        Path(args.out).write_text("".join(f"{b}\t{a:#x}\t{n}\t{c}\t{p:.1f}\n" for b, a, n, c, p in rows))
+        Path(args.out).write_text("".join(f"{b}\t{a:#x}\t{n}\t{c}\t{t:.1f}\t{p:.1f}\n"
+                                          for b, a, n, c, t, p in rows))
     if len(rows) < 3:
         sys.exit("fewer than three functions: no fit")
-    slope, r2 = fit([(n, c) for _, _, n, c, _ in rows])
-    print(f"cost: instructions^{slope:.2f} (R^2 {r2:.2f}) over {len(rows)} functions")
-    grown = [(n, p) for _, _, n, _, p in rows if p > 1]
-    if len(grown) >= 3:
-        slope, r2 = fit(grown)
-        print(f"peak RSS above afl's: instructions^{slope:.2f} (R^2 {r2:.2f}) over {len(grown)} functions")
+    over = []
+    for label, column in (("instructions retired", 3), ("CPU time", 4), ("peak RSS above afl's", 5)):
+        points = [(row[2], row[column]) for row in rows if row[column] > (1 if column == 5 else 0)]
+        if len(points) < 3:
+            continue
+        slope, r2 = fit(points)
+        print(f"{label}: instructions^{slope:.2f} (R^2 {r2:.2f}) over {len(points)} functions")
+        if args.max_exponent is not None and slope > args.max_exponent:
+            over.append(f"{label} grows as instructions^{slope:.2f}, above {args.max_exponent}")
+    for line in over:
+        print(line, file=sys.stderr)
+    if over:
+        sys.exit(1)
 
 
 def main():
@@ -334,6 +347,7 @@ def main():
     p.add_argument("--r2s", required=True)
     p.add_argument("--min-instructions", type=int, default=300)
     p.add_argument("--sample", type=int, default=40)
+    p.add_argument("--max-exponent", type=float)
     p.add_argument("--out")
     p.add_argument("binaries", nargs="+")
     p.set_defaults(func=exponent)
