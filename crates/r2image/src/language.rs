@@ -16,14 +16,18 @@ pub(crate) fn read(file: &object::File<'_>, symbols: &[Symbol]) -> Languages {
     let decorated = file.format() == object::BinaryFormat::MachO
         || file.format() == object::BinaryFormat::Pe && !file.is_64();
     let units = compile_units(file);
-    let stated = Stated::read(file, symbols, &units);
+    let go_version = go_version(file);
+    let go_assembly = go_assembly(file, symbols);
+    // Build information or a pclntab found where Go's own readers look states Go, named or not.
+    let go_found = go_version.is_some() || go_assembly.is_some();
+    let stated = Stated::read(file, symbols, &units, go_found);
     let mangled = mangled(symbols, decorated, &|language| stated.states(language));
     let program = stated.program();
     Languages {
         program,
         ranges: disjoint(units, mangled),
-        go_version: go_version(file),
-        go_assembly: go_assembly(file, symbols),
+        go_version,
+        go_assembly,
     }
 }
 
@@ -198,6 +202,7 @@ impl Stated {
         file: &object::File<'_>,
         symbols: &[Symbol],
         units: &[(Range<u64>, SourceLanguage)],
+        go_found: bool,
     ) -> Self {
         let section = |name: &str| file.section_by_name(name).is_some();
         let unit = |language: SourceLanguage| units.iter().any(|(_, stated)| *stated == language);
@@ -221,6 +226,7 @@ impl Stated {
             ]
             .iter()
             .any(|name| section(name))
+                || go_found
                 || unit(SourceLanguage::Go),
             rust: file
                 .section_by_name(".comment")
