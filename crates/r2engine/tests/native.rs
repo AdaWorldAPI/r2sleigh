@@ -3319,8 +3319,7 @@ fn stored_value_origin(artifact: &r2ssa::SsaArtifact, instruction: u64) -> SSAOp
     let graph = artifact.graph();
     let mut value = graph
         .insts_for_instruction(instruction)
-        .iter()
-        .find_map(|inst| match &graph.inst(*inst)?.payload {
+        .find_map(|inst| match &graph.inst(inst)?.payload {
             InstPayload::Op(SSAOp::Store { val, .. }) => Some(*val),
             _ => None,
         })
@@ -4317,8 +4316,7 @@ fn a_buffer_an_unknown_call_is_handed_runs_to_the_nearest_save_slot() {
     let object_stored_at = |instruction: u64| {
         graph
             .insts_for_instruction(instruction)
-            .iter()
-            .find_map(|inst| match &graph.inst(*inst)?.payload {
+            .find_map(|inst| match &graph.inst(inst)?.payload {
                 InstPayload::Op(SSAOp::Store { addr, space, .. }) => {
                     objects.object_for_value(*addr, *space)
                 }
