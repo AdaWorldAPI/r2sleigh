@@ -3007,6 +3007,11 @@ impl SSAFunction {
         self.written = crate::lanes::Written::capture(self);
     }
 
+    /// Keep of the record only what the sealed function's readers ask.
+    pub(crate) fn seal_written(&mut self) {
+        self.written = std::mem::take(&mut self.written).sealed();
+    }
+
     pub fn arena(&self) -> &OpArena {
         self.blocks.arena()
     }

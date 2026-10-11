@@ -149,6 +149,15 @@ impl Written {
         self.by_op.is_empty()
     }
 
+    /// What a sealed function keeps: which extensions are the convention's. What each operation
+    /// wrote is read by interface recovery alone, before the seal, and is a vector per operation.
+    pub(crate) fn sealed(self) -> Self {
+        Self {
+            by_op: IdMap::default(),
+            conventional: self.conventional,
+        }
+    }
+
     /// Take the record of a function before anything rewrites it.
     pub fn capture(function: &SSAFunction) -> Self {
         let mut by_var = IdMap::<VarId, Bytes>::default();
