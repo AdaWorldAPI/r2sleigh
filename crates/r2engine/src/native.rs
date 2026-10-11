@@ -347,7 +347,8 @@ pub fn analysed(
     program: &dyn Program,
     entry: u64,
 ) -> Result<Prepared, NativeRefusal> {
-    analyse(target, program, entry, &walk(target, program, entry)?)
+    let walk = std::sync::Arc::new(walk(target, program, entry)?);
+    analyse(target, program, entry, &walk)
 }
 
 /// Prepare one function from its walk; the query `Analysed` reads the walk from `Walked`.
@@ -355,7 +356,7 @@ pub(crate) fn analysed_from(
     target: &NativeTarget<'_>,
     program: &dyn Program,
     entry: u64,
-    walk: &Walk,
+    walk: &std::sync::Arc<Walk>,
 ) -> Result<Prepared, NativeRefusal> {
     analyse(target, program, entry, walk)
 }
@@ -424,7 +425,8 @@ pub fn walk(
 /// about its values used to walk, lift and prepare the same body twice.
 pub struct Prepared {
     artifact: std::sync::Arc<TrustedSsaArtifact>,
-    root: Walked,
+    /// The walk the query database holds, shared rather than copied.
+    walk: std::sync::Arc<Walk>,
     facts: Vec<crate::CalleeFacts>,
     declared: Vec<r2types::SourceOwnedCalleeSignature>,
     ptr_bits: u32,
@@ -470,7 +472,7 @@ impl Prepared {
 
     /// The walked body's blocks, dispatches followed, and where the walk could not follow.
     pub fn body(&self) -> &crate::body::Body {
-        &self.root.body
+        &self.walk.root.body
     }
 
     pub fn artifact(&self) -> &std::sync::Arc<TrustedSsaArtifact> {
@@ -479,12 +481,13 @@ impl Prepared {
 
     /// What the program calls the function this analysis is of.
     pub fn name(&self) -> &str {
-        &self.root.name
+        &self.walk.root.name
     }
 
     /// The lift of each block of the body this analysis read, dispatches followed.
     pub fn lifted(&self) -> Vec<r2il::R2ILBlock> {
-        self.root
+        self.walk
+            .root
             .body
             .blocks
             .iter()
@@ -660,7 +663,7 @@ fn request(
 ) -> EngineFunctionDecompileRequestInput {
     let Prepared {
         artifact,
-        root,
+        walk,
         facts,
         declared,
         ptr_bits,
@@ -669,6 +672,7 @@ fn request(
         tables: _,
     } = prepared;
     let block_count = artifact.source_block_count();
+    let root = &walk.root;
     let signatures = declared_signatures(target, root, extents);
     EngineFunctionDecompileRequestInput::single_function(
         EngineFunctionInput {
@@ -962,7 +966,7 @@ fn analyse(
     target: &NativeTarget<'_>,
     program: &dyn Program,
     entry: u64,
-    walk: &Walk,
+    walk: &std::sync::Arc<Walk>,
 ) -> Result<Prepared, NativeRefusal> {
     // A convention whose boundaries carry what none states refuses before anything is read.
     if let Some(reason) = target.convention.refused {
@@ -975,7 +979,6 @@ fn analyse(
         machine: machine(target)?,
         control: program.control().ssa_execution_control(),
     };
-    let (root, tables) = (walk.root.clone(), walk.tables.clone());
     let ptr_bits = crate::engine_effective_ptr_bits(target.arch);
 
     let Read {
@@ -983,13 +986,13 @@ fn analyse(
         facts,
         declared,
         unread,
-    } = read_callees(&native, target, &root, entry, ptr_bits);
+    } = read_callees(&native, target, &walk.root, entry, ptr_bits);
 
     let (artifact, _) = native.resolve(entry, walk, &callees, true)?;
-    let tables = tables.iter().map(DispatchTable::of).collect();
+    let tables = walk.tables.iter().map(DispatchTable::of).collect();
     Ok(Prepared {
         artifact,
-        root,
+        walk: std::sync::Arc::clone(walk),
         facts,
         declared,
         ptr_bits,
