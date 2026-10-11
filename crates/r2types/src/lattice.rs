@@ -264,39 +264,59 @@ impl TypeLattice {
                     (Some(len), _) | (None, Some(len)) => Some(len),
                     (None, None) => None,
                 };
-                let slot = state.open(arena, a, b);
-                #[cfg(test)]
-                AGGREGATE_PAIRS.with(|built| built.set(built.get() + 1));
-                let elem = Self::meet_pair(arena, a_elem, b_elem, state);
                 let stride = (a_stride == b_stride).then_some(a_stride).flatten();
-                state.close(arena, slot, Type::Array { elem, len, stride }, a, b)
+                Self::meet_aggregate(arena, state, a, b, |arena, state| Type::Array {
+                    elem: Self::meet_pair(arena, a_elem, b_elem, state),
+                    len,
+                    stride,
+                })
             }
             (Type::Struct(a_shape), Type::Struct(b_shape)) => {
-                // Width subtyping: below both is every field of either, a shared offset met.
-                let slot = state.open(arena, a, b);
-                #[cfg(test)]
-                AGGREGATE_PAIRS.with(|built| built.set(built.get() + 1));
-                let mut fields = a_shape.fields.clone();
-                for (offset, b_field) in b_shape.fields {
-                    let field = match fields.remove(&offset) {
-                        Some(a_field) => StructField {
-                            name: agreed(a_field.name, b_field.name),
-                            ty: Self::meet_pair(arena, a_field.ty, b_field.ty, state),
-                        },
-                        None => b_field,
-                    };
-                    fields.insert(offset, field);
-                }
-                let name = agreed(a_shape.name, b_shape.name);
-                state.close(
-                    arena,
-                    slot,
-                    Type::Struct(StructShape { name, fields }),
-                    a,
-                    b,
-                )
+                Self::meet_aggregate(arena, state, a, b, |arena, state| {
+                    Type::Struct(Self::meet_structs(arena, state, a_shape, b_shape))
+                })
             }
             _ => arena.bottom(),
+        }
+    }
+
+    /// An aggregate pair's meet, its id reserved before its children so a pair met twice below
+    /// is built once and a back edge closes onto it.
+    fn meet_aggregate(
+        arena: &mut TypeArena,
+        state: &mut ProductState,
+        a: TypeId,
+        b: TypeId,
+        build: impl FnOnce(&mut TypeArena, &mut ProductState) -> Type,
+    ) -> TypeId {
+        let slot = state.open(arena, a, b);
+        #[cfg(test)]
+        AGGREGATE_PAIRS.with(|built| built.set(built.get() + 1));
+        let ty = build(arena, state);
+        state.close(arena, slot, ty, a, b)
+    }
+
+    /// Width subtyping: below both is every field of either, a shared offset met.
+    fn meet_structs(
+        arena: &mut TypeArena,
+        state: &mut ProductState,
+        a: StructShape,
+        b: StructShape,
+    ) -> StructShape {
+        let mut fields = a.fields;
+        for (offset, b_field) in b.fields {
+            let field = match fields.remove(&offset) {
+                Some(a_field) => StructField {
+                    name: agreed(a_field.name, b_field.name),
+                    ty: Self::meet_pair(arena, a_field.ty, b_field.ty, state),
+                },
+                None => b_field,
+            };
+            fields.insert(offset, field);
+        }
+        StructShape {
+            name: agreed(a.name, b.name),
+            fields,
         }
     }
 }
@@ -513,15 +533,15 @@ mod tests {
                 let len = if pick & 2 != 0 { None } else { *len };
                 Shape::Array(Box::new(widen(elem, seed)), len)
             }
-            Shape::Struct(fields) => {
-                let mut kept = BTreeMap::new();
-                for (offset, ty) in fields {
-                    if !seed.next().unwrap_or(0).is_multiple_of(3) {
-                        kept.insert(*offset, widen(ty, seed));
-                    }
-                }
-                Shape::Struct(kept)
-            }
+            Shape::Struct(fields) => Shape::Struct(
+                fields
+                    .iter()
+                    .filter_map(|(offset, ty)| {
+                        let keep = !seed.next().unwrap_or(0).is_multiple_of(3);
+                        keep.then(|| (*offset, widen(ty, seed)))
+                    })
+                    .collect(),
+            ),
             Shape::Bottom => {
                 let leaves = [
                     Shape::Bool,
@@ -560,20 +580,17 @@ mod tests {
                 let m = TypeLattice::meet(&mut arena, a, b);
                 assert!(TypeLattice::is_subtype(&arena, m, a));
                 assert!(TypeLattice::is_subtype(&arena, m, b));
-                for &c in &all {
-                    if TypeLattice::is_subtype(&arena, c, a)
-                        && TypeLattice::is_subtype(&arena, c, b)
-                    {
-                        assert!(
-                            TypeLattice::is_subtype(&arena, c, m),
-                            "{:?} is below {:?} and {:?} but not their meet {:?}",
-                            arena.get(c),
-                            arena.get(a),
-                            arena.get(b),
-                            arena.get(m)
-                        );
-                    }
-                }
+                let below = |c: TypeId, t: TypeId| TypeLattice::is_subtype(&arena, c, t);
+                let missed = all
+                    .iter()
+                    .find(|&&c| below(c, a) && below(c, b) && !below(c, m));
+                assert!(
+                    missed.is_none(),
+                    "{missed:?} is below {:?} and {:?} but not their meet {:?}",
+                    arena.get(a),
+                    arena.get(b),
+                    arena.get(m)
+                );
             }
         }
     }
