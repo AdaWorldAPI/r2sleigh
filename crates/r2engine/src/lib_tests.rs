@@ -401,7 +401,11 @@ fn x86_64_result_call_effect() -> r2ssa::SourceCallEffect {
     .expect("a call effect")
 }
 
-fn x86_64_result_arch() -> r2il::ArchSpec {
+fn x86_64_result_arch() -> r2ssa::Arch {
+    r2ssa::Arch::new(x86_64_result_arch_spec())
+}
+
+fn x86_64_result_arch_spec() -> r2il::ArchSpec {
     let mut arch = r2il::ArchSpec::new("x86-64");
     arch.addr_size = 8;
     arch.set_memory_endianness(r2il::Endianness::Little);
@@ -422,8 +426,12 @@ fn x86_64_result_arch() -> r2il::ArchSpec {
     arch
 }
 
-fn x86_64_exact_rdi_arch() -> r2il::ArchSpec {
-    let mut arch = x86_64_result_arch();
+fn x86_64_exact_rdi_arch() -> r2ssa::Arch {
+    r2ssa::Arch::new(x86_64_exact_rdi_arch_spec())
+}
+
+fn x86_64_exact_rdi_arch_spec() -> r2il::ArchSpec {
+    let mut arch = x86_64_result_arch_spec();
     arch.add_register(r2il::RegisterDef::new("rdi", 0x10, 8));
     arch
 }
@@ -433,13 +441,15 @@ fn x86_64_exact_rdi_arch() -> r2il::ArchSpec {
 fn a_render_target_is_the_machines_identity_and_width() {
     let mut arch = r2il::ArchSpec::new("amd64");
     arch.addr_size = 8;
-    let requested = EngineRenderTarget::for_arch(Some(&arch), 64);
+    let requested = EngineRenderTarget::for_arch(Some(&r2ssa::Arch::from(arch.clone())), 64);
     assert_eq!(requested.architecture, "amd64");
-    assert_eq!(requested.to_decompiler_config().ptr_size, 64);
+    assert_eq!(requested.ptr_bits, 64);
 
-    let prepared =
-        r2ssa::SsaArtifact::for_decompile(&const_return_blocks(0x401000, 0), Some(&arch))
-            .expect("prepared");
+    let prepared = r2ssa::SsaArtifact::for_decompile(
+        &const_return_blocks(0x401000, 0),
+        Some(&r2ssa::Arch::from(arch)),
+    )
+    .expect("prepared");
     assert_eq!(EngineRenderTarget::for_prepared(&prepared), Some(requested));
     assert!(
         EngineRenderTarget::for_arch(None, 32)
@@ -487,7 +497,7 @@ fn analyze_request_input_builder_owns_parts_and_pointer_width() {
         function_name: "sym.input_builder".to_string(),
         function_addr: 0x402000,
         blocks: const_return_blocks(0x402000, 0),
-        arch: Some(arch),
+        arch: Some(arch.into()),
         source_snapshot: Some(test_source_snapshot("sym.input_builder/rev1")),
         ptr_bits: None,
         semantic_metadata_enabled: true,
@@ -565,14 +575,18 @@ fn interproc_summary_build_uses_only_trusted_callee_bodies() {
     let root_prepared = Arc::new(
         r2ssa::SsaArtifact::for_decompile_with_interface(
             &root_blocks,
-            Some(&arch),
+            Some(&r2ssa::Arch::from(arch.clone())),
             interface.clone(),
         )
         .expect("root prepared"),
     );
     let helper_prepared = Arc::new(
-        r2ssa::SsaArtifact::for_decompile_with_interface(&helper_blocks, Some(&arch), interface)
-            .expect("helper prepared"),
+        r2ssa::SsaArtifact::for_decompile_with_interface(
+            &helper_blocks,
+            Some(&r2ssa::Arch::from(arch.clone())),
+            interface,
+        )
+        .expect("helper prepared"),
     );
     let analysis = EngineAnalysis::from_prepared_ssa(Arc::clone(&root_prepared));
     // A body that is not source-owned is refused when its contribution is
@@ -771,7 +785,7 @@ impl EngineSession {
     ) -> EngineDecompileResponse {
         let execution = request.analysis.execution.clone();
         match self.seal_function(request) {
-            Ok(sealed) => self.render_sealed(&sealed, RenderTier::C, &execution),
+            Ok(sealed) => self.render_sealed(&sealed, &execution),
             Err(refused) => *refused,
         }
     }
@@ -868,13 +882,13 @@ fn controlled_r2dec_sealed() -> SealedFunctionAnalysis {
             ptr_bits: 64,
         },
         metrics: EngineMetrics::default(),
+        import_stub: None,
     }
 }
 
 /// Its C, asked under a fresh control.
 fn render_request(sealed: &SealedFunctionAnalysis) -> EngineDecompileRequest<'_> {
     EngineDecompileRequest {
-        tier: RenderTier::C,
         sealed,
         execution: EngineExecutionControl::default(),
     }
@@ -920,34 +934,43 @@ impl r2ssa::SsaWorkControl for StopRenderAtPoll {
     }
 }
 
+/// The renderer polls while it writes the control and once more to render the certified body.
 #[test]
-fn engine_decompiler_input_retains_exact_source_owned_facts() {
-    let sealed = controlled_r2dec_sealed();
-    let request = render_request(&sealed);
-    let source = request.sealed.source_owned_facts.shared_source();
-    let input = decompiler_input_for_engine_request(&request);
-
-    assert!(input.source_owned_facts().shares_source(&source));
-    assert_eq!(
-        input.function_facts().decompile_route(),
-        request.function_facts().decompile_route()
-    );
+fn inner_stops_map_to_engine_refusals_and_keep_exact_audits() {
+    inner_stops_keep_exact_audits(&[EnginePhase::Structuring, EnginePhase::Rendering]);
 }
 
-#[test]
-fn r2dec_inner_stops_map_to_engine_refusals_and_keep_exact_audits() {
+/// The first poll whose stop refuses each phase, stopping at every poll in turn.
+fn first_stop_in_each_phase(
+    session: &EngineSession,
+    request: &EngineDecompileRequest<'_>,
+    total_polls: usize,
+    phases: &[EnginePhase],
+) -> HashMap<EnginePhase, usize> {
+    let mut observed = HashMap::new();
+    for stop_at in 1..=total_polls {
+        let stop = StopRenderAtPoll::new(stop_at, r2ssa::SsaExecutionStopReason::Cancelled);
+        let response = session.decompile_with_r2dec_control(request.clone(), &stop);
+        let phase = (phases.iter().copied())
+            .find(|phase| {
+                response.metrics.phase_timings.iter().any(|timing| {
+                    timing.phase == *phase && timing.status == EnginePhaseStatus::Refused
+                })
+            })
+            .expect("stopped render must mark one render phase refused");
+        observed.entry(phase).or_insert(stop_at);
+    }
+    observed
+}
+
+/// A stop at each poll refuses the phase the pipeline polled in, and only that one: each phase in
+/// `polled` is reached by some poll, and no other is.
+fn inner_stops_keep_exact_audits(polled: &[EnginePhase]) {
     let session = EngineSession::new();
     let sealed = controlled_r2dec_sealed();
     let request = render_request(&sealed);
-    let decompiler_input = decompiler_input_for_engine_request(&request);
-    let legacy_output = r2dec::Decompiler::new(request.sealed.render_target.to_decompiler_config())
-        .decompile_input(&decompiler_input);
     let counting = CountingRenderControl::default();
     let controlled = session.decompile_with_r2dec_control(request.clone(), &counting);
-    assert!(
-        legacy_output.contains("return"),
-        "the exact control fixture must reach native rendering: {legacy_output}"
-    );
     assert!(
         controlled.output.text().contains("return"),
         "the engine path must render the same exact fixture: {}",
@@ -958,39 +981,32 @@ fn r2dec_inner_stops_map_to_engine_refusals_and_keep_exact_audits() {
         EffectObligationAudit::NOT_RUN,
         "the completed native render must retain its exact effect audit"
     );
-    assert_eq!(
-        controlled.render_refusal, None,
-        "the exact fixture must not cross a renderer refusal boundary"
+    assert!(
+        controlled.output.function().is_some(),
+        "the exact fixture must not be refused: {}",
+        controlled.output
     );
     let completed_effect_obligations = controlled.effect_obligations();
     let total_polls = counting.polls.get();
     assert!(total_polls > 3, "r2dec pipeline must expose inner polls");
 
-    let mut observed = HashMap::new();
-    for stop_at in 1..=total_polls {
-        let stop = StopRenderAtPoll::new(stop_at, r2ssa::SsaExecutionStopReason::Cancelled);
-        let response = session.decompile_with_r2dec_control(request.clone(), &stop);
-        let phase = [EnginePhase::Normalization, EnginePhase::Rendering]
-            .into_iter()
-            .find(|phase| {
-                response.metrics.phase_timings.iter().any(|timing| {
-                    timing.phase == *phase && timing.status == EnginePhaseStatus::Refused
-                })
-            })
-            .expect("stopped render must mark one render phase refused");
-        observed.entry(phase).or_insert(stop_at);
-        if observed.len() == 2 {
-            break;
-        }
-    }
+    // The phases a render stop can land in, in the order they run; which a pipeline polls in is its own.
+    let render_phases = [
+        EnginePhase::Normalization,
+        EnginePhase::Structuring,
+        EnginePhase::Rendering,
+    ];
+    let mut observed = first_stop_in_each_phase(&session, &request, total_polls, &render_phases);
+    // The last poll stops the rendering itself, after everything before it completed.
     observed.insert(EnginePhase::Rendering, total_polls);
+    let reached = render_phases
+        .into_iter()
+        .filter(|phase| observed.contains_key(phase))
+        .collect::<Vec<_>>();
+    assert_eq!(reached, polled, "polls={total_polls}: {observed:?}");
 
-    for phase in [EnginePhase::Normalization, EnginePhase::Rendering] {
-        let stop_at = *observed.get(&phase).unwrap_or_else(|| {
-            panic!(
-                "missing deterministic {phase:?} stop (polls={total_polls}, output={legacy_output})"
-            )
-        });
+    for &phase in polled {
+        let stop_at = observed[&phase];
         let reason = if phase == EnginePhase::Rendering {
             r2ssa::SsaExecutionStopReason::DeadlineExceeded
         } else {
@@ -1021,16 +1037,15 @@ fn r2dec_inner_stops_map_to_engine_refusals_and_keep_exact_audits() {
             1,
             "only the interrupted phase is refused"
         );
-        let normalization_status = if phase == EnginePhase::Rendering {
-            EnginePhaseStatus::Folded
-        } else {
-            EnginePhaseStatus::Refused
+        // Each render phase before the stopped one completed, and none after it ran.
+        let order = |of: EnginePhase| render_phases.iter().position(|p| *p == of);
+        let status = |of: EnginePhase| match order(of).cmp(&order(phase)) {
+            std::cmp::Ordering::Less => EnginePhaseStatus::Folded,
+            std::cmp::Ordering::Equal => EnginePhaseStatus::Refused,
+            std::cmp::Ordering::Greater => EnginePhaseStatus::NotExecuted,
         };
-        let structuring_status = if phase == EnginePhase::Rendering {
-            EnginePhaseStatus::Folded
-        } else {
-            EnginePhaseStatus::NotExecuted
-        };
+        let normalization_status = status(EnginePhase::Normalization);
+        let structuring_status = status(EnginePhase::Structuring);
         assert_eq!(
             response.metrics.phase_timings[EnginePhase::Normalization as usize].status,
             normalization_status
@@ -1090,16 +1105,8 @@ fn r2dec_inner_stops_map_to_engine_refusals_and_keep_exact_audits() {
 
 #[test]
 fn r2dec_stop_mapping_preserves_all_decompiler_phases_and_reasons() {
-    // Production r2dec deliberately refuses executable Standard rendering before its
-    // structurer, while every non-Standard route exits at a summary boundary. The r2dec
-    // assignment-consensus test therefore exercises the actual inner Structuring stop;
-    // this engine test covers its exact cross-crate phase/reason mapping without weakening
-    // that fail-closed authorization boundary.
+    // Each renderer phase maps to its engine phase, with the reason spelled and the ledger kept.
     for (decompile_phase, engine_phase) in [
-        (
-            r2dec::DecompileWorkPhase::Normalization,
-            EnginePhase::Normalization,
-        ),
         (
             r2dec::DecompileWorkPhase::Structuring,
             EnginePhase::Structuring,
@@ -1113,8 +1120,6 @@ fn r2dec_stop_mapping_preserves_all_decompiler_phases_and_reasons() {
             let mapped = engine_render_stop_from_decompiler(
                 r2dec::DecompileExecutionStop::new(decompile_phase, reason),
                 Some(stop_test_ledger()),
-                PlacementAudit::NotRun,
-                Some(DecompileRenderRefusal::UnrepresentableOperation),
             );
             let counted = effect_obligations_of((*mapped.obligation_ledger).as_ref());
             assert_eq!(mapped.phase, engine_phase);
@@ -1134,15 +1139,7 @@ fn r2dec_stop_mapping_preserves_all_decompiler_phases_and_reasons() {
                     + counted.gapped
                     + counted.unaccounted
             );
-            assert_eq!(mapped.placement_audit, PlacementAudit::NotRun);
-            assert_eq!(
-                mapped.render_refusal.as_deref(),
-                Some(&DecompileRenderRefusal::UnrepresentableOperation)
-            );
-            assert_eq!(
-                mapped.normalization_completed,
-                !matches!(decompile_phase, r2dec::DecompileWorkPhase::Normalization)
-            );
+            assert!(mapped.normalization_completed);
             assert_eq!(
                 mapped.structuring_completed,
                 matches!(decompile_phase, r2dec::DecompileWorkPhase::Rendering)
@@ -1287,8 +1284,6 @@ fn refused_effect_obligations_produce_a_typed_engine_refusal() {
             FunctionFacts::default().with_input_quality(sentinel_quality.clone()),
         )),
         obligation_ledger,
-        PlacementAudit::NotRun,
-        None,
     );
 
     assert_eq!(response.effect_obligations(), effect_obligations);
@@ -1330,117 +1325,6 @@ fn refused_effect_obligations_produce_a_typed_engine_refusal() {
         })
         .is_some(),
         "nonzero refusal counts fail closed independently of disposition"
-    );
-}
-
-#[test]
-fn refused_placement_produces_a_typed_engine_refusal() {
-    let placement_audit = PlacementAudit::Refused(PlacementAuditRefusal::ReadBeforeAssignment {
-        binding_index: 3,
-        instruction_id: 11,
-        input_index: 2,
-    });
-    let reason = placement_refusal_reason(placement_audit)
-        .expect("refused placement must refuse the native engine outcome");
-    let mut metrics = EngineMetrics::default();
-    metrics.record_phase(
-        EnginePhase::Rendering,
-        EnginePhaseStatus::Refused,
-        Duration::from_micros(18),
-    );
-    let response = refused_decompile_response_with_metrics_and_audits(
-        "sym.placement_refusal",
-        &reason,
-        None,
-        metrics,
-        EngineDiagnostics::default(),
-        None,
-        None,
-        placement_audit,
-        None,
-    );
-
-    assert_eq!(response.placement_audit, placement_audit);
-    assert_eq!(
-        response.metrics.phase_timings[EnginePhase::Rendering as usize].status,
-        EnginePhaseStatus::Refused,
-    );
-    assert_eq!(
-        response.diagnostics.route_reason.as_deref(),
-        Some(reason.as_str())
-    );
-    assert!(
-        response
-            .diagnostics
-            .refusal
-            .as_deref()
-            .is_some_and(|value| value.contains(&reason))
-    );
-    assert!(response.output.text().starts_with("/* r2sleigh refused"));
-    assert!(placement_refusal_reason(PlacementAudit::Applied).is_none());
-    assert!(placement_refusal_reason(PlacementAudit::NotRun).is_none());
-}
-
-#[test]
-fn renderer_boundary_refusal_produces_a_typed_engine_refusal() {
-    let render_refusal = DecompileRenderRefusal::MissingMachineProjectionAuthorization(
-        r2dec::MachineProjectionRefusalOrigin::op_lowering(),
-    );
-    let reason = render_refusal_reason(render_refusal, &FunctionFacts::default());
-    let render_time = Duration::from_micros(19);
-    let mut metrics = EngineMetrics::default();
-    metrics.record_phase(
-        EnginePhase::Rendering,
-        EnginePhaseStatus::Refused,
-        render_time,
-    );
-    let response = refused_decompile_response_with_metrics_and_audits(
-        "sym.render_refusal",
-        &reason,
-        None,
-        metrics,
-        EngineDiagnostics::default(),
-        None,
-        None,
-        PlacementAudit::NotRun,
-        Some(render_refusal),
-    );
-
-    assert_eq!(response.render_refusal, Some(render_refusal));
-    assert_eq!(
-        response.effect_obligations(),
-        EffectObligationAudit::NOT_RUN
-    );
-    assert_eq!(
-        response.metrics.phase_timings[EnginePhase::Rendering as usize].status,
-        EnginePhaseStatus::Refused
-    );
-    assert_eq!(
-        response.diagnostics.route_reason.as_deref(),
-        Some(reason.as_str())
-    );
-    assert!(
-        response
-            .diagnostics
-            .refusal
-            .as_deref()
-            .is_some_and(|value| value.contains(reason.as_str()))
-    );
-    assert!(response.output.text().starts_with("/* r2sleigh refused"));
-    assert!(!response.output.text().contains("() {"));
-}
-
-#[test]
-fn variadic_count_refusal_names_the_missing_callsite_evidence() {
-    let reason = render_refusal_reason(
-        DecompileRenderRefusal::VariadicCallsiteArgumentCount(
-            r2ssa::VariadicCallsiteArgumentCountRefusal::FormatArgumentNotLiteral,
-        ),
-        &FunctionFacts::default(),
-    );
-    assert_eq!(
-        reason,
-        "native rendering refused: variadic callsite argument count: format_argument_not_literal"
     );
 }
 
@@ -1899,7 +1783,6 @@ fn decompile_function_from_input_refuses_incomplete_lifted_function() {
         trusted_ssa: None,
         callee_facts: Vec::new(),
         declared_signatures: Vec::new(),
-        tier: RenderTier::C,
     });
 
     assert!(
@@ -1965,7 +1848,6 @@ fn decompile_function_from_input_refuses_inconsistent_lift_quality() {
         trusted_ssa: None,
         callee_facts: Vec::new(),
         declared_signatures: Vec::new(),
-        tier: RenderTier::C,
     });
 
     assert!(
@@ -2027,7 +1909,6 @@ fn decompile_function_from_input_refuses_zero_lifted_function() {
         trusted_ssa: None,
         callee_facts: Vec::new(),
         declared_signatures: Vec::new(),
-        tier: RenderTier::C,
     });
 
     assert!(
@@ -2083,7 +1964,6 @@ fn decompile_function_from_input_refuses_zero_expected_blocks() {
         trusted_ssa: None,
         callee_facts: Vec::new(),
         declared_signatures: Vec::new(),
-        tier: RenderTier::C,
     });
 
     assert!(
@@ -2139,7 +2019,6 @@ fn decompile_function_from_input_attaches_complete_input_quality() {
         trusted_ssa: None,
         callee_facts: Vec::new(),
         declared_signatures: Vec::new(),
-        tier: RenderTier::C,
     });
 
     let quality = response
@@ -2335,7 +2214,6 @@ fn decompile_function_does_not_invent_raw_payload_strings() {
 fn decompile_request_builder_owns_analysis_policy() {
     let request = EngineFunctionDecompileRequest::full_semantics_for_function(
         EngineFunctionDecompileRequestInput {
-            tier: RenderTier::C,
             function: EngineFunctionInput {
                 function_name: "sym.demo".to_string(),
                 function_addr: 0x401000,

@@ -67,8 +67,11 @@ mod tests {
         merge.push(R2ILOp::Return {
             target: reg(0x80, 8),
         });
-        SSAFunction::from_blocks_raw(&[entry, left, right, merge], Some(&arch))
-            .expect("two phi merge SSA")
+        SSAFunction::from_blocks_raw(
+            &[entry, left, right, merge],
+            Some(&crate::Arch::from(arch.clone())),
+        )
+        .expect("two phi merge SSA")
     }
 
     /// A merge's storage belongs to the merge, not to its position in the block.
@@ -810,6 +813,26 @@ impl SsaGraph {
             InstPayload::Op(op) => Some(op),
             InstPayload::Phi { .. } => None,
         }
+    }
+
+    /// The `CallUse` reads construction minted just before `call`: the carriers it may read.
+    pub fn call_boundary_reads(&self, call: InstId) -> Vec<InstId> {
+        let Some(block) = self.inst(call).and_then(|inst| self.block(inst.block)) else {
+            return Vec::new();
+        };
+        let before = block
+            .insts
+            .iter()
+            .position(|inst| *inst == call)
+            .unwrap_or(0);
+        (block.insts[..before].iter().rev())
+            .take_while(|inst| {
+                self.inst(**inst).is_some_and(|inst| {
+                    matches!(inst.payload, InstPayload::Op(SSAOp::CallUse { .. }))
+                })
+            })
+            .copied()
+            .collect()
     }
 
     pub fn use_sites(&self, id: ValueId) -> &[UseSite] {

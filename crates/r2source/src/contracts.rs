@@ -725,6 +725,26 @@ impl SourceRoleRegisterNames {
     }
 }
 
+/// The registers an unproven result may be in: the integer result register, and the float one
+/// where the body writes both on its way out. A call takes the one its caller reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SourceResultCarriers {
+    pub integer: CanonicalStorageId,
+    pub float: Option<CanonicalStorageId>,
+}
+
+impl SourceResultCarriers {
+    /// Whether `storage` is one of them: the integer register, or a lane at the float one's low end.
+    pub fn holds(&self, storage: CanonicalStorageId) -> bool {
+        storage == self.integer
+            || self.float.is_some_and(|float| {
+                storage.space == float.space
+                    && storage.offset == float.offset
+                    && storage.size <= float.size
+            })
+    }
+}
+
 /// Coherent, revision-bound function interface injected by the source owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SourceFunctionInterface {
@@ -779,6 +799,9 @@ pub struct SourceFunctionInterface {
     body_proven_return_address: bool,
     /// Whether the body reads an argument slot past its parameters, so its arity is unproven.
     reads_past_parameters: bool,
+    /// Where the result is unproven, the registers it may be in: each call takes the one its
+    /// caller reads.
+    result_carriers: Option<SourceResultCarriers>,
     /// What the logical types are read from (doc/adr-provenance.md):
     /// `DebugInfo` where the binary declares the body, `Declared` where a
     /// library's prototype was found by an import's name, `CarrierWidth`
@@ -1234,6 +1257,7 @@ impl SourceFunctionInterface {
             variadic: false,
             body_proven_return_address: false,
             reads_past_parameters: false,
+            result_carriers: None,
             types: crate::confidence::Confidence::of(crate::confidence::Basis::Convention),
         })
     }
@@ -1285,6 +1309,7 @@ impl SourceFunctionInterface {
             variadic: self.variadic,
             body_proven_return_address: self.body_proven_return_address,
             reads_past_parameters: self.reads_past_parameters,
+            result_carriers: self.result_carriers,
             types: self.types.clone(),
             ..rebuilt
         })
@@ -1443,6 +1468,18 @@ impl SourceFunctionInterface {
     /// parameter count as the call's arity.
     pub const fn reads_past_parameters(&self) -> bool {
         self.reads_past_parameters
+    }
+
+    /// Record the registers the unproven result may be in.
+    #[must_use]
+    pub const fn with_result_carriers(mut self, carriers: SourceResultCarriers) -> Self {
+        self.result_carriers = Some(carriers);
+        self
+    }
+
+    /// The registers an unproven result may be in (doc/adr-resolved-bodies.md, "Caller reads").
+    pub const fn result_carriers(&self) -> Option<SourceResultCarriers> {
+        self.result_carriers
     }
 
     /// Whether the declaration says arguments continue past the fixed ones.
@@ -2173,11 +2210,23 @@ impl SourceCallSiteInterface {
         mut self,
         callee: SourceFunctionInterface,
     ) -> Result<Self, SourceCallSiteInterfaceError> {
-        let expected_result = match callee.return_kind() {
-            SourceFunctionReturn::Void => SourceCallResult::Void,
-            SourceFunctionReturn::Register { storage } => SourceCallResult::Register { storage },
+        let expected_result = match (callee.return_kind(), callee.result_carriers(), self.result) {
+            (SourceFunctionReturn::Void, ..) => SourceCallResult::Void,
+            (SourceFunctionReturn::Register { storage }, ..) => {
+                SourceCallResult::Register { storage }
+            }
+            // A carrier the unproven result may be in: its parameters are still the call's.
+            (
+                SourceFunctionReturn::Unproven,
+                Some(carriers),
+                SourceCallResult::Register { storage },
+            ) if carriers.holds(storage) => SourceCallResult::Register { storage },
+            // A call that reads no result of an unproven one is a statement.
+            (SourceFunctionReturn::Unproven, Some(_), SourceCallResult::Void) => {
+                SourceCallResult::Void
+            }
             // An unproven result is no claim, so no exact contract holds it.
-            SourceFunctionReturn::Unproven => {
+            (SourceFunctionReturn::Unproven, ..) => {
                 return Err(SourceCallSiteInterfaceError::IncompatibleCalleeInterface);
             }
         };
@@ -3609,15 +3658,27 @@ pub struct SourceConventionSlots {
     abi_class: SourceAbiClass,
     argument_slots: Box<[CanonicalStorageId]>,
     result_slot: Option<CanonicalStorageId>,
-    /// The floating-point argument registers, in order, counted apart from
-    /// the integer ones.
+    /// The floating-point argument registers, in order: counted apart from the integer
+    /// ones, or with them where `shared_positions` says so.
     float_argument_slots: Box<[CanonicalStorageId]>,
+    /// The nth argument takes the nth slot of its class whatever class came before, as
+    /// Microsoft x64's positional pairs have it.
+    shared_positions: bool,
     /// Where a floating-point result is left.
     float_result_slot: Option<CanonicalStorageId>,
     stack_arguments: Option<SourceStackArgumentPlacement>,
     /// Every variadic argument travels on the stack from the first slot,
     /// whatever registers the fixed prefix leaves free: Apple's arm64 ABI.
     variadic_tail_on_stack: bool,
+    /// The entry stack pointer's residue modulo an alignment, where the convention states one.
+    entry_stack: Option<SourceEntryStack>,
+}
+
+/// `sp % alignment == residue` at a function's first instruction, as the convention states it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SourceEntryStack {
+    pub alignment: u32,
+    pub residue: u32,
 }
 
 /// Where the convention puts an argument its registers cannot carry.
@@ -3705,6 +3766,17 @@ impl SourceConventionSlots {
         self.float_result_slot
     }
 
+    #[must_use]
+    pub const fn with_shared_positions(mut self, shared: bool) -> Self {
+        self.shared_positions = shared;
+        self
+    }
+
+    /// Whether integer and float arguments count one position sequence together.
+    pub const fn shared_positions(&self) -> bool {
+        self.shared_positions
+    }
+
     /// Whether the variadic tail starts on the stack whatever registers are
     /// free, as Apple's arm64 ABI has it.
     pub const fn variadic_tail_on_stack(&self) -> bool {
@@ -3715,6 +3787,15 @@ impl SourceConventionSlots {
     pub fn with_variadic_tail_on_stack(mut self, on_stack: bool) -> Self {
         self.variadic_tail_on_stack = on_stack;
         self
+    }
+
+    pub fn with_entry_stack(mut self, entry_stack: Option<SourceEntryStack>) -> Self {
+        self.entry_stack = entry_stack.filter(|stack| stack.residue < stack.alignment);
+        self
+    }
+
+    pub const fn entry_stack(&self) -> Option<SourceEntryStack> {
+        self.entry_stack
     }
 
     /// Build the candidate slots, rejecting anything that is not a well-formed
@@ -3747,9 +3828,11 @@ impl SourceConventionSlots {
             argument_slots: argument_slots.into_boxed_slice(),
             result_slot,
             float_argument_slots: Box::default(),
+            shared_positions: false,
             float_result_slot: None,
             stack_arguments: None,
             variadic_tail_on_stack: false,
+            entry_stack: None,
         })
     }
 

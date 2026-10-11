@@ -32,7 +32,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ast::{CExpr, CFunction, CStmt, CType};
+use crate::ast::{BinaryOp, CExpr, CFunction, CStmt, CType};
 
 /// One P-code flag computed from two operands of one width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -46,15 +46,6 @@ pub enum FlagOp {
 }
 
 impl FlagOp {
-    /// The flag the machine projection names.
-    pub(crate) const fn of(op: r2ssa::MachineArithmeticFlagOp) -> Self {
-        match op {
-            r2ssa::MachineArithmeticFlagOp::UnsignedCarry => Self::Carry,
-            r2ssa::MachineArithmeticFlagOp::SignedCarry => Self::SignedCarry,
-            r2ssa::MachineArithmeticFlagOp::SignedBorrow => Self::SignedBorrow,
-        }
-    }
-
     const fn spelling(self) -> &'static str {
         match self {
             Self::Carry => "carry",
@@ -82,20 +73,6 @@ pub enum FloatOp {
 }
 
 impl FloatOp {
-    /// The helper the machine projection's operation is, or none for
-    /// negation, which is C's own operator.
-    pub(crate) const fn of(op: r2ssa::MachineFloatUnaryOp) -> Option<Self> {
-        Some(match op {
-            r2ssa::MachineFloatUnaryOp::Negate => return None,
-            r2ssa::MachineFloatUnaryOp::Absolute => Self::Absolute,
-            r2ssa::MachineFloatUnaryOp::SquareRoot => Self::SquareRoot,
-            r2ssa::MachineFloatUnaryOp::Ceiling => Self::Ceiling,
-            r2ssa::MachineFloatUnaryOp::Floor => Self::Floor,
-            r2ssa::MachineFloatUnaryOp::Round => Self::Round,
-            r2ssa::MachineFloatUnaryOp::IsNan => Self::IsNan,
-        })
-    }
-
     const fn spelling(self) -> &'static str {
         match self {
             Self::Absolute => "abs",
@@ -430,6 +407,12 @@ pub enum ResidualCause {
     NeverAssigned,
     /// A conversion to or from a float C has no type for.
     UnrepresentableFloat,
+    /// A float converted to an integer that does not hold it, which C leaves undefined.
+    UndefinedConversion,
+    /// The most negative value divided by -1, which neither p-code nor C gives a quotient.
+    UndefinedQuotient,
+    /// The bits of a result register above the declared result, which the ABI leaves undefined.
+    UnspecifiedAbove,
     /// A marked gap: an operation, or a branch or dispatch test, the renderer
     /// could not lower. The gap's own marker says which.
     Gap,
@@ -444,6 +427,9 @@ impl ResidualCause {
             Self::UnadmittedArgument => "unadmitted-argument",
             Self::NeverAssigned => "never-assigned",
             Self::UnrepresentableFloat => "unrepresentable-float",
+            Self::UndefinedConversion => "undefined-conversion",
+            Self::UndefinedQuotient => "undefined-quotient",
+            Self::UnspecifiedAbove => "unspecified-above",
             Self::Gap => "gap",
         }
     }
@@ -470,6 +456,36 @@ pub(crate) fn residual(ty: &CType, cause: ResidualCause) -> Option<CExpr> {
         CExpr::cast(ty.clone(), call)
     } else {
         call
+    })
+}
+
+/// `x`, a float with no effect, toward zero into a signed `int_bits` integer where C defines it, and
+/// a residual elsewhere (C17 6.3.1.4; doc/adr-floating-point.md, decision 5).
+pub(crate) fn guarded_truncation(x: CExpr, float_bits: u32, int_bits: u32) -> Option<CExpr> {
+    let significand = match float_bits {
+        32 => 24,
+        64 => 53,
+        _ => return None,
+    };
+    if !matches!(int_bits, 8 | 16 | 32 | 64) {
+        return None;
+    }
+    let ty = CType::int(int_bits);
+    let limit = 2f64.powi(i32::try_from(int_bits).ok()? - 1);
+    // The tests read the value again: one occurrence carries its observations, as a read once.
+    let tested = x.clone_without_render_observations();
+    // The bound below the range is exact where the format holds `-limit - 1`, else `-limit` is.
+    let (op, bound) = if int_bits < significand {
+        (BinaryOp::Gt, -limit - 1.0)
+    } else {
+        (BinaryOp::Ge, -limit)
+    };
+    let low = CExpr::binary(op, tested.clone(), CExpr::FloatLit(bound, float_bits));
+    let high = CExpr::binary(BinaryOp::Lt, tested, CExpr::FloatLit(limit, float_bits));
+    Some(CExpr::Ternary {
+        cond: Box::new(CExpr::binary(BinaryOp::And, low, high)),
+        then_expr: Box::new(CExpr::cast(ty.clone(), x)),
+        else_expr: Box::new(residual(&ty, ResidualCause::UndefinedConversion)?),
     })
 }
 
@@ -515,6 +531,15 @@ pub(crate) fn helpers_called(function: &CFunction) -> BTreeSet<Helper> {
     helpers
 }
 
+/// Whether an expression evaluates a residual somewhere inside it.
+pub(crate) fn holds_residual(expr: &CExpr) -> bool {
+    let mut found = false;
+    expr.visit(&mut |inner| {
+        found |= matches!(inner, CExpr::Call { func, .. } if is_residual_callee(func).is_some());
+    });
+    found
+}
+
 /// How many residuals a function holds: one for each residual call and each
 /// marked gap, which is exactly how many sites the emitter numbers.
 pub(crate) fn count_residuals(function: &CFunction) -> usize {
@@ -529,126 +554,6 @@ pub(crate) fn count_residuals(function: &CFunction) -> usize {
     calls + function.body.iter().map(count_gaps).sum::<usize>()
 }
 
-/// Every marker standing over a residual the occurrence it marks evaluates.
-///
-/// A marker on an expression covers the residuals inside that expression. A
-/// marker on a statement covers the residuals in the statement's own
-/// expressions -- its value, its test, its header -- and not those in the
-/// statements it nests: an `if` whose arm traps still performs its test. A
-/// marked gap is a residual where it stands, covered by the markers of the
-/// statements it is the value of. One walk, the markers above the current
-/// node kept on a stack.
-pub(crate) fn markers_over_residuals(body: &[CStmt]) -> BTreeSet<crate::ast::RenderObservationId> {
-    let mut found = BTreeSet::new();
-    let mut over = Vec::new();
-    for stmt in body {
-        stmt_markers_over_residuals(stmt, &mut over, &mut found);
-    }
-    found
-}
-
-fn stmt_markers_over_residuals(
-    stmt: &CStmt,
-    over: &mut Vec<crate::ast::RenderObservationId>,
-    found: &mut BTreeSet<crate::ast::RenderObservationId>,
-) {
-    // A nested statement starts with nothing over it: what marks the
-    // statement holding it is not discharged by the nested one's residuals.
-    let nested = |stmt: &CStmt, found: &mut BTreeSet<_>| {
-        stmt_markers_over_residuals(stmt, &mut Vec::new(), found);
-    };
-    match stmt {
-        CStmt::Observed { ids, stmt } => {
-            let depth = over.len();
-            over.extend(ids.iter());
-            stmt_markers_over_residuals(stmt, over, found);
-            over.truncate(depth);
-        }
-        CStmt::StructuredRegion { stmt, .. } => stmt_markers_over_residuals(stmt, over, found),
-        CStmt::Expr(expr)
-        | CStmt::Decl {
-            init: Some(expr), ..
-        }
-        | CStmt::Return(Some(expr)) => expr_markers_over_residuals(expr, over, found),
-        CStmt::Gap(_) => found.extend(over.iter().copied()),
-        CStmt::Block(body) => {
-            for stmt in body {
-                nested(stmt, found);
-            }
-        }
-        CStmt::If {
-            cond,
-            then_body,
-            else_body,
-        } => {
-            expr_markers_over_residuals(cond, over, found);
-            nested(then_body, found);
-            if let Some(else_body) = else_body {
-                nested(else_body, found);
-            }
-        }
-        CStmt::While { cond, body } | CStmt::DoWhile { body, cond } => {
-            expr_markers_over_residuals(cond, over, found);
-            nested(body, found);
-        }
-        CStmt::For {
-            init,
-            cond,
-            update,
-            body,
-        } => {
-            if let Some(init) = init {
-                stmt_markers_over_residuals(init, over, found);
-            }
-            for expr in cond.iter().chain(update) {
-                expr_markers_over_residuals(expr, over, found);
-            }
-            nested(body, found);
-        }
-        CStmt::Switch {
-            expr,
-            cases,
-            default,
-        } => {
-            expr_markers_over_residuals(expr, over, found);
-            for stmt in cases
-                .iter()
-                .flat_map(|case| &case.body)
-                .chain(default.iter().flatten())
-            {
-                nested(stmt, found);
-            }
-        }
-        CStmt::Empty
-        | CStmt::Decl { init: None, .. }
-        | CStmt::Return(None)
-        | CStmt::Break
-        | CStmt::Continue
-        | CStmt::Goto(_)
-        | CStmt::Label(_)
-        | CStmt::Comment(_) => {}
-    }
-}
-
-fn expr_markers_over_residuals(
-    expr: &CExpr,
-    over: &mut Vec<crate::ast::RenderObservationId>,
-    found: &mut BTreeSet<crate::ast::RenderObservationId>,
-) {
-    let depth = over.len();
-    over.extend(expr.observation_ids().iter().copied());
-    let expr = expr.unobserved();
-    if let CExpr::Call { func, .. } = expr
-        && is_residual_callee(func).is_some()
-    {
-        found.extend(over.iter().copied());
-    }
-    for child in expr.children() {
-        expr_markers_over_residuals(child, over, found);
-    }
-    over.truncate(depth);
-}
-
 fn stmt_holds_gap(stmt: &CStmt) -> bool {
     count_gaps(stmt) > 0
 }
@@ -658,7 +563,6 @@ fn count_gaps(stmt: &CStmt) -> usize {
     let each = |stmts: &[CStmt]| stmts.iter().map(count_gaps).sum::<usize>();
     match stmt.unobserved() {
         CStmt::Gap(_) => 1,
-        CStmt::StructuredRegion { stmt, .. } => count_gaps(stmt),
         CStmt::Block(body) => each(body),
         CStmt::If {
             then_body,
@@ -684,54 +588,60 @@ pub(crate) const INCLUDES: &[&str] = &["#include <stdint.h>"];
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::ast::RenderObservationId;
 
-    /// A marker covers the residuals its own occurrence evaluates -- inside
-    /// its expression, in its statement's test, in a gap it stands on -- and
-    /// not those in a statement it nests: an `if` whose arm traps has still
-    /// performed its test.
+    /// The range a truncation is defined on: the bound below is `-2^(n-1) - 1` exclusive where the
+    /// float format holds it, else `-2^(n-1)` inclusive; above, `2^(n-1)` exclusive.
     #[test]
-    fn a_marker_covers_the_residuals_its_occurrence_evaluates() {
-        let [test, arm, value, gap, clean] = [0, 1, 2, 3, 4].map(RenderObservationId::from_index);
-        let trap = || {
-            residual(&CType::uint(64), ResidualCause::NeverAssigned)
-                .expect("a residual of an integer")
+    fn a_truncation_is_guarded_by_the_range_c_defines() {
+        let symbols = std::cell::RefCell::new(crate::symbol::SymbolTable::new());
+        let x = || CExpr::var(crate::symbol::declare(&symbols, "x"));
+        let bounds = |float_bits, int_bits| match guarded_truncation(x(), float_bits, int_bits) {
+            Some(CExpr::Ternary {
+                cond, else_expr, ..
+            }) => {
+                let CExpr::Binary { left, right, .. } = *cond else {
+                    panic!("a conjunction")
+                };
+                let bound = |side: &CExpr| match side {
+                    CExpr::Binary {
+                        op, right: limit, ..
+                    } => match limit.as_ref() {
+                        CExpr::FloatLit(value, _) => (*op, *value),
+                        other => panic!("a float literal: {other:?}"),
+                    },
+                    other => panic!("a comparison: {other:?}"),
+                };
+                assert!(
+                    is_residual_callee(match *else_expr {
+                        CExpr::Call { ref func, .. } => func,
+                        ref other => panic!("a residual: {other:?}"),
+                    })
+                    .is_some()
+                );
+                (bound(&left), bound(&right))
+            }
+            other => panic!("a guarded cast: {other:?}"),
         };
-        let body = vec![
-            CStmt::observe_all(
-                [test],
-                CStmt::If {
-                    cond: CExpr::binary(crate::ast::BinaryOp::Eq, trap(), CExpr::IntLit(0)),
-                    then_body: Box::new(CStmt::observe_all(
-                        [arm],
-                        CStmt::Return(Some(CExpr::observe_all([value], trap()))),
-                    )),
-                    else_body: None,
-                },
-            ),
-            CStmt::observe_all(
-                [gap],
-                CStmt::Gap(crate::ast::GapMarker {
-                    kind: "UnresolvedBranchCondition".to_owned(),
-                    origin: "structure".to_owned(),
-                    block_addr: 0x1000,
-                    op_idx: 0,
-                    ops: 0,
-                }),
-            ),
-            CStmt::observe_all(
-                [clean],
-                CStmt::If {
-                    cond: CExpr::IntLit(1),
-                    then_body: Box::new(CStmt::Return(Some(trap()))),
-                    else_body: None,
-                },
-            ),
-        ];
         assert_eq!(
-            markers_over_residuals(&body),
-            BTreeSet::from([test, arm, value, gap])
+            bounds(64, 32),
+            (
+                (BinaryOp::Gt, -2_147_483_649.0),
+                (BinaryOp::Lt, 2_147_483_648.0)
+            )
         );
+        assert_eq!(
+            bounds(32, 32),
+            (
+                (BinaryOp::Ge, -2_147_483_648.0),
+                (BinaryOp::Lt, 2_147_483_648.0)
+            )
+        );
+        assert_eq!(
+            bounds(64, 64).0,
+            (BinaryOp::Ge, -9_223_372_036_854_775_808.0)
+        );
+        assert_eq!(bounds(32, 16).0, (BinaryOp::Gt, -32_769.0));
+        assert!(guarded_truncation(x(), 80, 32).is_none());
     }
 
     /// Every helper at every width it is made for.

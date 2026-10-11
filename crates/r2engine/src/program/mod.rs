@@ -10,6 +10,7 @@ mod analysis;
 pub mod info;
 pub mod naming;
 mod pointers;
+mod reads;
 mod requests;
 mod resolved;
 mod returns;
@@ -27,7 +28,7 @@ pub use source::*;
 
 use std::collections::BTreeMap;
 
-use r2sleigh_lift::EmbeddedMachine;
+use crate::machine::Machine;
 
 use std::rc::Rc;
 
@@ -51,11 +52,18 @@ struct Assembled {
 
 /// The decoders for a program's instruction sets and what a native request needs of them.
 struct Machines {
-    machine: EmbeddedMachine,
+    machine: Machine,
     /// The same instruction set with TMode set, where the architecture has
     /// one. Which functions it decodes is what `modes` says.
-    thumb: Option<EmbeddedMachine>,
+    thumb: Option<Machine>,
     assembled: Result<Assembled, String>,
+    /// What a Go function needs, where the container states any: Go's convention by its
+    /// toolchain's version (doc/adr-language-profile.md, LP1).
+    go: Option<Result<Assembled, String>>,
+    /// ABI0, where the toolchain's own convention is ABIInternal: its assembly functions keep it.
+    go_abi0: Option<Result<Assembled, String>>,
+    /// ABIInternal refusing, for a function under it whose ABI pclntab does not state.
+    go_unstated: Option<Result<Assembled, String>>,
 }
 
 impl Machines {
@@ -66,42 +74,101 @@ impl Machines {
             Format::Pe => r2sleigh_lift::embedded_windows_machine(&arch),
             _ => r2sleigh_lift::embedded_machine(&arch),
         }
+        .map(Machine::new)
         .map_err(|error| error.to_string())?;
         // Whether any function is Thumb is discovery's answer, so the
         // decoder is loaded wherever the architecture has one.
         let thumb = r2sleigh_lift::embedded_thumb_machine(&arch)
+            .map(|machine| machine.map(Machine::new))
             .transpose()
             .map_err(|error| error.to_string())?;
-        let assembled = assemble(&machine, container);
+        let psabi = kernel(container);
+        let bits = container.arch.bits;
+        let assembled = r2abi::calling_convention(&arch, bits, psabi)
+            .ok_or_else(|| format!("no calling convention for {arch} {bits}"))
+            .and_then(|convention| assemble(&machine, container, convention));
+        let languages = &container.languages;
+        let written_in_go = languages.program == SourceLanguage::Go
+            || languages
+                .ranges
+                .iter()
+                .any(|(_, language)| *language == SourceLanguage::Go);
+        let convention = written_in_go
+            .then(|| r2abi::go_calling_convention(&arch, bits, psabi, languages.go_version));
+        let abi0 = r2abi::go_abi0_convention(&arch, bits);
+        let go = convention.map(|convention| {
+            convention
+                .ok_or_else(|| format!("no Go calling convention for {arch} {bits}"))
+                .and_then(|convention| assemble(&machine, container, convention))
+        });
+        let go_abi0 = convention
+            .flatten()
+            .zip(abi0)
+            .filter(|(convention, abi0)| convention.name != abi0.name)
+            .map(|(_, abi0)| assemble(&machine, container, abi0));
+        let go_unstated = (go_abi0.is_some() && languages.go_assembly.is_none())
+            .then(|| r2abi::go_unstated_convention(&arch, bits))
+            .flatten()
+            .map(|convention| assemble(&machine, container, convention));
         Ok(Self {
             machine,
             thumb,
             assembled,
+            go,
+            go_abi0,
+            go_unstated,
         })
+    }
+
+    /// What a native request needs for the function at `entry`, by its language: a Go function under
+    /// ABIInternal unless pclntab marks it assembly (ABI0), refusing where no table states which.
+    fn assembled_at(&self, container: &Container, entry: u64) -> Result<&Assembled, String> {
+        let languages = &container.languages;
+        let chosen = match (&self.go, &self.go_abi0, languages.at(entry)) {
+            (Some(go), None, SourceLanguage::Go) => go,
+            (Some(go), Some(abi0), SourceLanguage::Go) => match &languages.go_assembly {
+                Some(assembly) if assembly.contains(&entry) => abi0,
+                Some(_) => go,
+                None => self.go_unstated.as_ref().unwrap_or(abi0),
+            },
+            _ => &self.assembled,
+        };
+        chosen.as_ref().map_err(Clone::clone)
     }
 }
 
-/// Assemble what a native request needs of the machine, once per program: constant while it is open.
-fn assemble(machine: &EmbeddedMachine, container: &Container) -> Result<Assembled, String> {
-    let arch = machine.arch.name.clone();
+/// Assemble what a native request needs of the machine under one convention, once per program:
+/// constant while it is open.
+fn assemble(
+    machine: &Machine,
+    container: &Container,
+    convention: &'static r2abi::CallingConvention,
+) -> Result<Assembled, String> {
     let bits = container.arch.bits;
     // The system's ABI says which register it reserves for the thread
     // pointer and which control registers it makes callee-saved. A system
     // fact, so a static ELF that names no C library has it too; which
     // library's declarations apply is `platform`'s question.
     let psabi = kernel(container);
-    let convention = r2abi::calling_convention(&arch, bits, psabi)
-        .ok_or_else(|| format!("no calling convention for {arch} {bits}"))?;
-    // A PE runs under the Windows toolchain's prototypes where the
-    // language names one; anything else under the usual toolchain's.
-    let specification = match container.format {
-        Format::Pe => machine
-            .windows_compiler_spec
+    // A convention that names its compiler's prototype runs under it; a PE under the Windows
+    // toolchain's where the language names one; anything else under the usual toolchain's.
+    let specification = match (convention.prototype, container.format) {
+        (Some((compiler, _)), _) => machine
+            .compiler_spec_of(compiler)
+            .ok_or_else(|| format!("the language names no {compiler} compiler"))?,
+        (None, Format::Pe) => machine
+            .compiler_spec_of("windows")
             .unwrap_or(machine.compiler_spec),
-        _ => machine.compiler_spec,
+        (None, _) => machine.compiler_spec,
     };
     let compiler = r2sleigh_lift::profile::LanguageProfile::parse(specification)
         .map_err(|error| format!("the compiler specification does not parse: {}", error.0))?;
+    let compiler = match convention.prototype {
+        Some((_, prototype)) => compiler
+            .under(prototype)
+            .ok_or_else(|| format!("the compiler specification states no {prototype}"))?,
+        None => compiler,
+    };
     let call_effect = crate::native::call_effect(
         &machine.arch,
         bits,
@@ -385,7 +452,7 @@ impl<S: Source + 'static> OpenProgram<S> {
     /// The decoder the code at this address is written in: whichever is
     /// nearest below it of a mapping symbol and a function discovery placed,
     /// the container's statement winning a tie.
-    fn machine_at(&self, vaddr: u64) -> Option<&EmbeddedMachine> {
+    fn machine_at(&self, vaddr: u64) -> Option<&Machine> {
         self.view().machine_at(vaddr)
     }
 
@@ -401,7 +468,7 @@ impl<S: Source + 'static> OpenProgram<S> {
 }
 
 impl<S: Source + 'static> Decoders for OpenProgram<S> {
-    fn at(&self, vaddr: u64) -> Option<&EmbeddedMachine> {
+    fn at(&self, vaddr: u64) -> Option<&Machine> {
         self.machine_at(vaddr)
     }
 }
@@ -612,6 +679,12 @@ impl<S: Source> ProgramInputs<S> {
     /// What a native request needs of the machine, where it loaded and was assembled.
     fn assembled(&self) -> Option<&Assembled> {
         self.machines().ok()?.assembled.as_ref().ok()
+    }
+
+    /// What a native request needs for the function at `entry`.
+    fn assembled_at(&self, entry: u64) -> Result<&Assembled, String> {
+        self.machines()?
+            .assembled_at(self.source.container(), entry)
     }
 }
 

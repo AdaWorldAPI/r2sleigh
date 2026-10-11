@@ -53,6 +53,9 @@ pub struct PrototypeEntry {
     /// `extension`: how a narrower value fills the storage (`zero`, `sign`,
     /// `inttype`), where the specification says.
     pub extension: Option<String>,
+    /// The argument position the entry fills: entries of one `<group>` share it, so a call
+    /// that fills one alternative consumes the others.
+    pub position: u32,
 }
 
 /// One prototype model.
@@ -70,6 +73,29 @@ pub struct Prototype {
     pub killed_by_call: Vec<SpecStorage>,
     /// Storage a call leaves as it found it.
     pub unaffected: Vec<SpecStorage>,
+    /// Where its first stack argument sits, from the stack pointer entering the call, and the
+    /// step to the next.
+    pub stack_arguments: Option<(i64, u32)>,
+}
+
+impl Prototype {
+    /// Whether every register input position holds one integer and one float alternative, so
+    /// the nth argument of either class takes position n, as Microsoft x64 has it.
+    pub fn shares_positions(&self) -> bool {
+        let registers = || {
+            (self.inputs.iter()).filter(|entry| matches!(entry.storage, SpecStorage::Register(_)))
+        };
+        let count = |position, class| {
+            registers()
+                .filter(|entry| entry.position == position && entry.class == class)
+                .count()
+        };
+        registers().next().is_some()
+            && registers().all(|entry| {
+                count(entry.position, EntryClass::General) == 1
+                    && count(entry.position, EntryClass::Float) == 1
+            })
+    }
 }
 
 /// The machine facts one compiler specification declares.
@@ -85,9 +111,6 @@ pub struct LanguageProfile {
     /// Where a machine that pushes the return address leaves it: the offset
     /// from the stack pointer entering the function, and its size.
     pub return_address_slot: Option<(i64, u32)>,
-    /// Where the default prototype puts its first stack argument, from the
-    /// stack pointer entering the call, and the step to the next.
-    pub stack_arguments: Option<(i64, u32)>,
     /// `data_organization`'s pointer size in bytes, where stated.
     pub pointer_size: Option<u32>,
     /// The default prototype first, then the others in document order.
@@ -157,7 +180,6 @@ impl LanguageProfile {
                         node.attribute("size")?.parse().ok()?,
                     ))
                 }),
-            stack_arguments: default.and_then(stack_arguments),
             pointer_size: first("pointer_size")
                 .and_then(|node| node.attribute("value"))
                 .and_then(|value| value.parse().ok()),
@@ -169,6 +191,21 @@ impl LanguageProfile {
     /// The default prototype, where the specification states one.
     pub fn default_prototype(&self) -> Option<&Prototype> {
         self.prototypes.first()
+    }
+
+    /// Where the default prototype puts its first stack argument, and the step to the next.
+    pub fn stack_arguments(&self) -> Option<(i64, u32)> {
+        self.default_prototype()?.stack_arguments
+    }
+
+    /// The same specification with the named prototype as its default: a program whose
+    /// functions use one of its other models, as Go's ABI0 is beside its ABIInternal.
+    pub fn under(&self, prototype: &str) -> Option<Self> {
+        let at = self.prototypes.iter().position(|p| p.name == prototype)?;
+        let mut profile = self.clone();
+        let chosen = profile.prototypes.remove(at);
+        profile.prototypes.insert(0, chosen);
+        Some(profile)
     }
 }
 
@@ -323,9 +360,16 @@ fn prototype(node: roxmltree::Node<'_, '_>) -> Prototype {
         node.children()
             .find(|child| child.has_tag_name(name))
             .map(|list| {
-                list.children()
-                    .filter(|child| child.has_tag_name("pentry"))
-                    .filter_map(pentry)
+                let slots = list
+                    .children()
+                    .filter(|child| child.has_tag_name("pentry") || child.has_tag_name("group"));
+                // Each direct `pentry` or `group` is one position; a group's pentries share it.
+                (0..)
+                    .zip(slots)
+                    .flat_map(|(position, slot)| {
+                        let alternatives = slot.descendants().filter(|n| n.has_tag_name("pentry"));
+                        alternatives.filter_map(move |entry| pentry(entry, position))
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -346,10 +390,11 @@ fn prototype(node: roxmltree::Node<'_, '_>) -> Prototype {
         outputs: entries("output"),
         killed_by_call: storages("killedbycall"),
         unaffected: storages("unaffected"),
+        stack_arguments: stack_arguments(node),
     }
 }
 
-fn pentry(node: roxmltree::Node<'_, '_>) -> Option<PrototypeEntry> {
+fn pentry(node: roxmltree::Node<'_, '_>, position: u32) -> Option<PrototypeEntry> {
     let number = |name: &str| node.attribute(name).and_then(|value| value.parse().ok());
     Some(PrototypeEntry {
         // Older specifications class an entry with `metatype`, newer ones
@@ -368,6 +413,7 @@ fn pentry(node: roxmltree::Node<'_, '_>) -> Option<PrototypeEntry> {
         max_size: number("maxsize"),
         align: number("align"),
         extension: node.attribute("extension").map(str::to_owned),
+        position,
     })
 }
 
@@ -466,7 +512,7 @@ mod tests {
     </prototype>
   </default_proto>"#,
         );
-        assert_eq!(spec.stack_arguments, Some((0, 4)));
+        assert_eq!(spec.stack_arguments(), Some((0, 4)));
     }
 
     #[test]
@@ -483,7 +529,7 @@ mod tests {
     </prototype>
   </default_proto>"#,
         );
-        assert_eq!(spec.stack_arguments, Some((0, 8)));
+        assert_eq!(spec.stack_arguments(), Some((0, 8)));
     }
 
     /// Every compiler specification the trusted languages use parses, states
@@ -516,6 +562,7 @@ mod tests {
                 SpecStorage::Address { .. } => None,
             })
             .collect::<Vec<_>>();
+        assert!(!default.shares_positions());
         for register in ["RBX", "RSP", "RBP", "R12", "R13", "R14", "R15"] {
             assert!(
                 unaffected.contains(&register),
@@ -544,5 +591,43 @@ mod tests {
             &general[..8],
             ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
         );
+        assert!(!default.shares_positions());
+    }
+
+    /// Microsoft x64 states its four register positions as `<group>`s: the nth integer and
+    /// the nth float argument share one position.
+    #[cfg(feature = "x86")]
+    #[test]
+    fn the_x86_64_windows_specification_states_positional_pairs() {
+        let spec = parse(sleigh_config::processor_x86::CSPEC_X86_64_WIN);
+        let default = spec.default_prototype().expect("a default prototype");
+        let registers = |class| {
+            default
+                .inputs
+                .iter()
+                .filter(|entry| entry.class == class)
+                .filter_map(|entry| match &entry.storage {
+                    SpecStorage::Register(name) => Some((entry.position, name.as_str())),
+                    SpecStorage::Address { .. } => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            registers(EntryClass::General),
+            [(0, "RCX"), (1, "RDX"), (2, "R8"), (3, "R9")]
+        );
+        assert_eq!(
+            registers(EntryClass::Float),
+            [
+                (0, "XMM0_Qa"),
+                (1, "XMM1_Qa"),
+                (2, "XMM2_Qa"),
+                (3, "XMM3_Qa")
+            ]
+        );
+        assert!(default.shares_positions());
+        // The stack entry is the fifth position, past the 32-byte home area.
+        assert_eq!(default.inputs.last().map(|entry| entry.position), Some(4));
+        assert_eq!(spec.stack_arguments(), Some((32, 8)));
     }
 }

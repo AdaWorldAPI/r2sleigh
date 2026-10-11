@@ -130,8 +130,27 @@ pub(crate) enum Rule {
     /// Byte `i` reads byte `i` of each input, except the bytes a constant
     /// operand of an `and` clears in the other (`cleared[j]` for input `j`).
     Lanewise { cleared: [u64; 2] },
+    /// Output byte `i` reads bytes `0..=i` of each input: an add, subtract or multiply modulo
+    /// 2^(8(i+1)), whose carries, borrows and partial products move only upward.
+    LowClosed,
+    /// Inputs `[value, count]`, a left shift by a constant whole number of bytes: byte `i` is the
+    /// value's byte `i - bytes`, zero below; the count is read whole.
+    ShiftUp { bytes: u32 },
+    /// Inputs `[value, count]`, a right shift by a constant whole number of bytes: byte `i` is the
+    /// value's byte `i + bytes`; above it zeros, or for `sign` the top byte of a `width`-byte value.
+    ShiftDown { bytes: u32, sign: bool, width: u32 },
     /// Every output byte reads every input whole.
     Whole,
+}
+
+/// A constant shift count of `size` bytes, read at that width as the machine does, in whole bytes.
+fn whole_bytes((size, bits): (u32, Option<u64>)) -> Option<u32> {
+    let bits = match size {
+        0 => return None,
+        1..8 => bits? & ((1u64 << (8 * size)) - 1),
+        _ => bits?,
+    };
+    (bits % 8 == 0 && bits / 8 < 64).then_some((bits / 8) as u32)
 }
 
 /// The bytes of a constant at most eight bytes wide that are zero; a wider
@@ -176,6 +195,21 @@ pub(crate) fn rule<V>(op: &SSAOp<V>, facts: impl Fn(&V) -> (u32, Option<u64>)) -
             }
         }
         SSAOp::IntOr { .. } | SSAOp::IntXor { .. } => Rule::Lanewise { cleared: [0; 2] },
+        SSAOp::IntAdd { .. } | SSAOp::IntSub { .. } | SSAOp::IntMult { .. } => Rule::LowClosed,
+        SSAOp::IntLeft { b, .. } => match whole_bytes(facts(b)) {
+            Some(bytes) => Rule::ShiftUp { bytes },
+            None => Rule::Whole,
+        },
+        SSAOp::IntRight { a, b, .. } | SSAOp::IntSRight { a, b, .. } => {
+            match whole_bytes(facts(b)) {
+                Some(bytes) => Rule::ShiftDown {
+                    bytes,
+                    sign: matches!(op, SSAOp::IntSRight { .. }),
+                    width: facts(a).0,
+                },
+                None => Rule::Whole,
+            }
+        }
         _ => Rule::Whole,
     }
 }
@@ -206,6 +240,22 @@ impl Rule {
                 .shifted_down(first),
             (Self::Insert { .. }, 2) => ByteMask::All,
             (Self::Lanewise { cleared }, 0 | 1) => out.without(ByteMask::Bytes(cleared[index])),
+            (Self::LowClosed, 0 | 1) => match out {
+                ByteMask::Bytes(0) => ByteMask::NONE,
+                ByteMask::Bytes(_) => ByteMask::whole(out.extent_bytes().unwrap_or(64)),
+                ByteMask::All => ByteMask::All,
+            },
+            (Self::ShiftUp { bytes }, 0) => out.shifted_down(bytes),
+            (Self::ShiftDown { bytes, sign, width }, 0) => {
+                let filled = out.without(ByteMask::whole(width.saturating_sub(bytes)));
+                match sign && !filled.is_empty() && width > 0 {
+                    true => out
+                        .shifted_up(bytes)
+                        .union(ByteMask::Bytes(1).shifted_up(width - 1)),
+                    false => out.shifted_up(bytes),
+                }
+            }
+            (Self::ShiftUp { .. } | Self::ShiftDown { .. }, 1) => ByteMask::All,
             (Self::Whole, _) => ByteMask::All,
             _ => return None,
         })
@@ -251,6 +301,14 @@ fn observed_input_bytes(
 /// value is queued again only when it gains a byte or saturates -- at most 65
 /// times -- and the walk stays linear in the graph's edges.
 pub(crate) fn closure(graph: &SsaGraph, roots: impl IntoIterator<Item = ValueId>) -> Closure {
+    closure_of(graph, roots.into_iter().map(|value| (value, ByteMask::All)))
+}
+
+/// `closure`, from only the given bytes of each root.
+pub(crate) fn closure_of(
+    graph: &SsaGraph,
+    roots: impl IntoIterator<Item = (ValueId, ByteMask)>,
+) -> Closure {
     let width = |value: ValueId| {
         graph
             .value(value)
@@ -259,9 +317,15 @@ pub(crate) fn closure(graph: &SsaGraph, roots: impl IntoIterator<Item = ValueId>
     let mut bytes: crate::dense::IdMap<ValueId, ByteMask> = crate::dense::IdMap::default();
     let mut parents = crate::dense::IdMap::default();
     let mut pending = VecDeque::new();
-    for value in roots {
-        let mask = width(value);
-        if !mask.is_empty() && bytes.insert(value, mask).is_none() {
+    for (value, mask) in roots {
+        let mask = mask.intersection(width(value));
+        if mask.is_empty() {
+            continue;
+        }
+        let entry = bytes.get_or_insert_with(value, || ByteMask::NONE);
+        let before = *entry;
+        *entry = before.union(mask);
+        if *entry != before {
             pending.push_back(value);
         }
     }
@@ -423,6 +487,9 @@ mod tests {
             2,
             &pairs,
         );
+        for operation in [Operation::Add, Operation::Sub, Operation::Mult] {
+            holds(Rule::LowClosed, operation, &[2, 2], 2, &pairs);
+        }
         // `x & 0x00ff`: the constant clears x's high byte.
         let masked = pairs.iter().map(|[v, _]| [*v, 0x00ff]).collect::<Vec<_>>();
         holds(
@@ -431,6 +498,65 @@ mod tests {
             &[2, 2],
             2,
             &masked,
+        );
+    }
+
+    /// A shift by a constant whole number of bytes (one, and none, of a two-byte value) reads only
+    /// the bytes it moves into the demanded ones, against the machine (`r2il::eval`).
+    #[test]
+    fn a_constant_byte_shift_reads_only_the_bytes_it_moves() {
+        let values = (0u128..=0xffff).step_by(0x3d);
+        for (bytes, count) in [(1, 8), (0, 0)] {
+            let shifted = values.clone().map(|v| [v, count]).collect::<Vec<_>>();
+            holds(
+                Rule::ShiftUp { bytes },
+                Operation::Left,
+                &[2, 1],
+                2,
+                &shifted,
+            );
+            for (sign, operation) in [(false, Operation::Right), (true, Operation::SRight)] {
+                let rule = Rule::ShiftDown {
+                    bytes,
+                    sign,
+                    width: 2,
+                };
+                holds(rule, operation, &[2, 1], 2, &shifted);
+            }
+        }
+    }
+
+    /// A count is read at its own width, as the machine reads it: a one-byte `0x108` shifts by one
+    /// byte, and a one-byte `0x10c` by twelve bits, which no byte rule describes.
+    #[test]
+    fn a_shift_count_is_read_at_its_width() {
+        let shift = |count: u64, size: u32| {
+            let op = SSAOp::IntLeft {
+                dst: (8, None),
+                a: (8, None),
+                b: (size, Some(count)),
+            };
+            rule(&op, |&fact| fact)
+        };
+        assert_eq!(shift(0x108, 1), Rule::ShiftUp { bytes: 1 });
+        assert_eq!(shift(0x10c, 1), Rule::Whole);
+        assert_eq!(shift(0x100, 1), Rule::ShiftUp { bytes: 0 });
+    }
+
+    /// An add read in its low byte reads only the inputs' low bytes; read in byte 1, bytes 0 and 1.
+    #[test]
+    fn a_low_closed_operation_reads_no_byte_above_the_highest_read() {
+        assert_eq!(
+            Rule::LowClosed.backward(0, ByteMask::Bytes(0b1)),
+            Some(ByteMask::Bytes(0b1))
+        );
+        assert_eq!(
+            Rule::LowClosed.backward(1, ByteMask::Bytes(0b10)),
+            Some(ByteMask::Bytes(0b11))
+        );
+        assert_eq!(
+            Rule::LowClosed.backward(0, ByteMask::All),
+            Some(ByteMask::All)
         );
     }
 }

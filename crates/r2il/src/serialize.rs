@@ -41,7 +41,7 @@ pub enum SerializeError {
 pub type Result<T> = std::result::Result<T, SerializeError>;
 
 /// Definition of a processor register.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegisterDef {
     /// Register name (e.g., "RAX", "EAX", "AX", "AL")
     pub name: String,
@@ -455,7 +455,7 @@ fn projection_component_disposition(
 /// Complete architecture specification.
 ///
 /// This is the top-level structure serialized to `.r2il` files.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchSpec {
     /// Architecture name (e.g., "x86", "x86-64", "ARM")
     pub name: String,

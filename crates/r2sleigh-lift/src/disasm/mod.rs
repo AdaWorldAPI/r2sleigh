@@ -154,6 +154,42 @@ pub enum TrustedSleighProfile {
 }
 
 impl TrustedSleighProfile {
+    /// Every profile this build embeds.
+    fn embedded() -> Vec<Self> {
+        #[cfg_attr(
+            not(any(feature = "x86", feature = "arm", feature = "mips", feature = "riscv")),
+            expect(unused_mut, reason = "no architecture is enabled")
+        )]
+        let mut all = Vec::new();
+        #[cfg(feature = "x86")]
+        all.extend([Self::X86, Self::X86_64]);
+        #[cfg(feature = "arm")]
+        all.extend([
+            Self::ArmCortexLe,
+            Self::ArmThumbLe,
+            Self::Aarch64Le,
+            Self::Aarch64AppleSilicon,
+        ]);
+        #[cfg(feature = "mips")]
+        all.extend([
+            Self::Mips32Be,
+            Self::Mips32Le,
+            Self::Mips64Be,
+            Self::Mips64Le,
+        ]);
+        #[cfg(feature = "riscv")]
+        all.extend([Self::RiscV32Gc, Self::RiscV64Gc]);
+        all
+    }
+
+    /// The profile whose specification is exactly these bytes under this name.
+    fn of_specification(sla: &[u8], pspec: &str, name: &str) -> Option<Self> {
+        Self::embedded().into_iter().find(|profile| {
+            let (profile_sla, profile_pspec, profile_name) = profile.specification();
+            profile_name == name && profile_pspec == pspec && profile_sla == sla
+        })
+    }
+
     pub fn specification(self) -> (&'static [u8], &'static str, &'static str) {
         match self {
             #[cfg(feature = "x86")]
@@ -508,6 +544,11 @@ impl GenuineLiftAuthority {
         &self.0.arch
     }
 
+    /// The same architecture, as the allocation the loaded specification shares.
+    pub fn shared_arch_spec(&self) -> &Arc<r2il::ArchSpec> {
+        &self.0.arch
+    }
+
     pub fn arch_name(&self) -> &str {
         &self.0.arch_name
     }
@@ -852,6 +893,11 @@ impl GenuineLiftedFunction {
 
     pub fn arch_spec(&self) -> &r2il::ArchSpec {
         self.authority.lift_authority().arch_spec()
+    }
+
+    /// The same architecture, as the allocation the loaded specification shares.
+    pub fn shared_arch_spec(&self) -> &Arc<r2il::ArchSpec> {
+        self.authority.lift_authority().shared_arch_spec()
     }
 
     pub fn blocks(&self) -> &[GenuineLiftedBlock] {
@@ -1515,6 +1561,7 @@ impl LoadedSpecification {
             .collect();
         let mut extracted = crate::sleigh::extract_architecture(&sleigh, arch_name)?;
         extracted.arch.tracked_entry_values = crate::sleigh::processor_spec_tracked_values(pspec);
+        extracted.arch.program_counter = crate::sleigh::processor_spec_program_counter(pspec);
         let arch = Arc::new(extracted.arch);
         let modelled_user_ops = user_operation::resolve_modelled_user_operations(&arch.user_ops);
         let authority = certifying.then(|| {
@@ -1573,10 +1620,9 @@ pub fn embedded_arch_and_disassembler(
     sla_bytes: &'static [u8],
     pspec: &'static str,
     arch_name: &'static str,
-) -> Result<(r2il::ArchSpec, Disassembler)> {
+) -> Result<(Arc<r2il::ArchSpec>, Disassembler)> {
     let spec = load_embedded_specification(sla_bytes, pspec, arch_name)?;
-    let mut arch = (*spec.arch).clone();
-    arch.program_counter = crate::sleigh::processor_spec_program_counter(pspec);
+    let arch = Arc::clone(&spec.arch);
     Ok((arch, Disassembler::wrap(spec, arch_name, None)))
 }
 
@@ -1587,21 +1633,31 @@ pub fn embedded_arch_and_disassembler(
 /// one table here, and it is also the only place that knows which compiler
 /// specification goes with which processor.
 pub struct EmbeddedMachine {
-    pub arch: r2il::ArchSpec,
+    /// The architecture the disassembler and the trusted lift were loaded with, shared.
+    pub arch: Arc<r2il::ArchSpec>,
     pub disasm: Disassembler,
     /// The compiler specification of the platform's usual toolchain: the
     /// stack pointer, the return address and the prototype models.
     pub compiler_spec: &'static str,
-    /// The Windows toolchain's specification, where the language's
-    /// definitions (`.ldefs`, compiler id `windows`) name one: a PE runs
-    /// under its prototypes rather than the usual toolchain's.
-    pub windows_compiler_spec: Option<&'static str>,
+    /// Every compiler the language's definitions (`.ldefs`) name, by id, with its
+    /// specification: `windows` for a PE's toolchain, `golang` for Go's.
+    pub compilers: Vec<(String, &'static str)>,
     /// The language's DWARF register numbering.
     pub dwarf: crate::profile::DwarfRegisters,
     /// The processor context this machine decodes in, as the snapshot's
     /// machine tuple spells it: `arm` and `thumb` share one instruction set
     /// and one architecture name, and only this tells the trusted lift apart.
     pub cpu: &'static str,
+}
+
+impl EmbeddedMachine {
+    /// The specification of the compiler an id names, where the language's definitions name it.
+    pub fn compiler_spec_of(&self, id: &str) -> Option<&'static str> {
+        self.compilers
+            .iter()
+            .find(|(compiler, _)| compiler == id)
+            .map(|(_, spec)| *spec)
+    }
 }
 
 /// Load the embedded machine an architecture name selects.
@@ -1622,12 +1678,17 @@ fn machine_of(arch_name: &str, windows: bool) -> Result<EmbeddedMachine> {
         embedded_specification(&arch_name.to_ascii_lowercase(), windows).ok_or_else(|| {
             LiftError::Unsupported(format!("no embedded Sleigh specification for {arch_name}"))
         })?;
-    let (arch, disasm) = embedded_arch_and_disassembler(spec.sla, spec.pspec, spec.name)?;
+    // One parse per thread: the trusted lift reads the same specification through its profile.
+    let (arch, disasm) =
+        match TrustedSleighProfile::of_specification(spec.sla, spec.pspec, spec.name) {
+            Some(profile) => Disassembler::shared_arch_and_disassembler(profile)?,
+            None => embedded_arch_and_disassembler(spec.sla, spec.pspec, spec.name)?,
+        };
     Ok(EmbeddedMachine {
         arch,
         disasm,
         compiler_spec: spec.cspec,
-        windows_compiler_spec: spec.windows_cspec,
+        compilers: spec.compilers,
         dwarf: crate::profile::DwarfRegisters::parse(spec.dwarf),
         cpu: spec.cpu,
     })
@@ -1647,7 +1708,7 @@ struct EmbeddedSpecification {
     sla: &'static [u8],
     pspec: &'static str,
     cspec: &'static str,
-    windows_cspec: Option<&'static str>,
+    compilers: Vec<(String, &'static str)>,
     /// The language's DWARF register numbering.
     dwarf: &'static str,
     name: &'static str,
@@ -1766,7 +1827,11 @@ fn embedded_specification(arch_name: &str, windows: bool) -> Option<EmbeddedSpec
         sla: slas.iter().find(|(sla, _)| *sla == definition.sla)?.1,
         pspec: file(chosen.pspec.unwrap_or(&definition.pspec))?,
         cspec: file(usual)?,
-        windows_cspec: definition.compiler("windows").and_then(file),
+        compilers: definition
+            .compilers
+            .iter()
+            .filter_map(|(id, spec)| Some((id.clone(), file(spec)?)))
+            .collect(),
         dwarf: definition
             .dwarf
             .as_deref()
@@ -1874,11 +1939,9 @@ impl Disassembler {
     /// and a non-certifying disassembler view beside it.
     pub fn shared_arch_and_disassembler(
         profile: TrustedSleighProfile,
-    ) -> Result<(r2il::ArchSpec, Self)> {
-        let (_, pspec, _) = profile.specification();
+    ) -> Result<(Arc<r2il::ArchSpec>, Self)> {
         let disassembler = Self::shared_profile_for_analysis(profile)?;
-        let mut arch = disassembler.arch_spec().clone();
-        arch.program_counter = crate::sleigh::processor_spec_program_counter(pspec);
+        let arch = Arc::clone(&disassembler.spec.arch);
         Ok((arch, disassembler))
     }
 
@@ -2453,6 +2516,7 @@ impl Disassembler {
         let address_size = u32::try_from(self.default_code_space().address_size)
             .map_err(|_| LiftError::Parse("default code space address size".into()))?;
         let ops = translate::canonicalize_memory_operands(ops, address_size, &mut temp_base);
+        let ops = translate::split_odd_register_zeroes(ops);
 
         // A trap ends the instruction. Sleigh writes `brk` as a user operation
         // that produces `pc` followed by a branch through it, so the branch's

@@ -17,7 +17,7 @@ use crate::query::{
     Answer, Answered, Completion, Coverage, Decoders, Line, Listing, Memory, Proved, References,
     Stop, Unread, WalkedBody, Work,
 };
-use crate::{EngineDecompileResponse, RenderTier, SealedFunctionAnalysis};
+use crate::{EngineDecompileResponse, SealedFunctionAnalysis};
 
 /// One function listed block by block, and why the analysis its lines would
 /// carry was refused, where it was.
@@ -142,7 +142,7 @@ pub struct AnalysisRefused {
     pub unresolved: Vec<u64>,
 }
 
-/// A function rendered at one tier, with what of its analysis the rendering is shown with.
+/// A function rendered, with what of its analysis the rendering is shown with.
 #[derive(Clone)]
 pub struct Rendering {
     pub response: EngineDecompileResponse,
@@ -175,6 +175,22 @@ pub(super) struct Survey {
     supervisor: BTreeMap<u64, std::collections::BTreeSet<u64>>,
     /// Which walked bodies hold each address.
     holders: crate::discovery::Holders,
+    /// Each function's direct callers among the walked bodies, in address order.
+    callers: BTreeMap<u64, Vec<u64>>,
+}
+
+impl Survey {
+    /// The walked bodies that call `callee` directly, in address order.
+    pub(super) fn callers_of(&self, callee: u64) -> &[u64] {
+        self.callers.get(&callee).map_or(&[], Vec::as_slice)
+    }
+
+    /// Whether the body at `entry` was walked as Thumb, or why it was not walked.
+    pub(super) fn walked_in(&self, entry: u64) -> Option<Result<bool, &NativeRefusal>> {
+        self.walked
+            .get(&entry)
+            .map(|walked| walked.as_ref().copied())
+    }
 }
 
 /// One instruction that enters the kernel, with the call it makes where the
@@ -190,10 +206,10 @@ pub struct Syscall {
 }
 
 /// The one decoder a body was walked with, whatever the address.
-struct Walked<'m>(&'m r2sleigh_lift::EmbeddedMachine);
+struct Walked<'m>(&'m crate::machine::Machine);
 
 impl Decoders for Walked<'_> {
-    fn at(&self, _vaddr: u64) -> Option<&r2sleigh_lift::EmbeddedMachine> {
+    fn at(&self, _vaddr: u64) -> Option<&crate::machine::Machine> {
         Some(self.0)
     }
 }
@@ -262,12 +278,12 @@ impl<S: Source + 'static> OpenProgram<S> {
         Ok(isolated(|| read(&sealed)).map_err(refused))
     }
 
-    /// One function rendered at one tier.
-    pub fn rendered(&mut self, entry: u64, tier: RenderTier) -> Result<Rendering, String> {
+    /// One function rendered.
+    pub fn rendered(&mut self, entry: u64) -> Result<Rendering, String> {
         self.start_request();
         self.loaded()?;
         self.assembled()?;
-        let key = (entry, self.view().thumb_at(entry), tier);
+        let key = (entry, self.view().thumb_at(entry));
         let render = self.db.get::<super::analysis::Rendered>(&key);
         let render = render.map_err(|cycle| format!("{cycle:?}"))?;
         let drawn = render.0.as_ref().map_err(Clone::clone)?;
@@ -283,42 +299,9 @@ impl<S: Source + 'static> OpenProgram<S> {
         let read = |sealed: &SealedFunctionAnalysis| {
             super::info::FunctionInfo::read(entry, artifact, sealed.facts(), noreturn)
         };
-        let mut info = self
-            .read_sealed(entry, &prepared, read)?
-            .map_err(|refused| refused.diagnostics.route_reason.unwrap_or_default())?;
-        // The frame's locals are the ones the rendering declares, so afv and pdd name the same objects (ADR frame-model).
-        if let Some(locals) = self.declared_frame_locals(entry) {
-            info.locals = locals;
-        }
-        Ok(info)
-    }
-
-    /// The frame locals the C rendering declares, at their entry-stack offsets; none where it refused.
-    fn declared_frame_locals(&self, entry: u64) -> Option<Vec<super::info::Local>> {
-        let key = (entry, self.view().thumb_at(entry), RenderTier::C);
-        let render = self.db.get::<super::analysis::Rendered>(&key).ok()?;
-        let drawn = render.0.as_ref().ok()?;
-        let crate::EngineRendering::Function(rendered) = &drawn.rendering.response.output else {
-            return None;
-        };
-        let declared = rendered
-            .emission()
-            .variables()
-            .iter()
-            .filter_map(|variable| {
-                let r2dec::report::VariableLocation::Frame { offset } = variable.location else {
-                    return None;
-                };
-                Some(super::info::Local {
-                    name: variable.name.clone(),
-                    base: super::info::StackBase::StackPointer,
-                    offset,
-                    ty: variable.ty.clone(),
-                })
-            });
-        let mut locals: Vec<_> = declared.collect();
-        locals.sort_by_key(|local| local.offset);
-        Some(locals)
+        // The frame's locals are the frame model's, whichever pipeline renders (ADR frame-model).
+        self.read_sealed(entry, &prepared, read)?
+            .map_err(|refused| refused.diagnostics.route_reason.unwrap_or_default())
     }
 
     /// The operations Sleigh produced for one function, before any analysis.
@@ -689,10 +672,7 @@ fn indexed<S: Source + 'static>(view: &View<'_, S>) -> Result<References, String
 /// One body listed as the reference index reads it, or why it is unread.
 fn claimed_by<S: Source + 'static>(
     view: &View<'_, S>,
-    (target, machine): (
-        &crate::native::NativeTarget<'_>,
-        &r2sleigh_lift::EmbeddedMachine,
-    ),
+    (target, machine): (&crate::native::NativeTarget<'_>, &crate::machine::Machine),
     blocks: Vec<crate::body::BodyBlock>,
 ) -> Result<Vec<Line>, Unread> {
     let lifted = blocks
@@ -722,7 +702,7 @@ fn claimed_by<S: Source + 'static>(
 
 /// Every function discovery finds, compared by identity: a new survey is a new answer.
 #[derive(Clone)]
-pub(super) struct Surveyed(Arc<Survey>);
+pub(super) struct Surveyed(pub(super) Arc<Survey>);
 
 impl PartialEq for Surveyed {
     fn eq(&self, other: &Self) -> bool {
@@ -749,6 +729,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for SurveyQuery {
                 extents: BTreeMap::new(),
                 supervisor: BTreeMap::new(),
                 holders: crate::discovery::Holders::default(),
+                callers: BTreeMap::new(),
             })));
         }
         let walker = super::returns::Walking::new(view.clone(), true)?;
@@ -767,6 +748,13 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for SurveyQuery {
                 (!calls.is_empty()).then(|| (*entry, calls.clone()))
             })
             .collect();
+        // O(call edges): each walked body's direct call targets, inverted.
+        let mut callers = BTreeMap::<u64, Vec<u64>>::new();
+        for (entry, walk) in &found.walks {
+            for &callee in walk.as_ref().map(|walk| walk.calls()).into_iter().flatten() {
+                callers.entry(callee).or_default().push(*entry);
+            }
+        }
         let holders =
             crate::discovery::Holders::of(found.walks.iter().flat_map(|(entry, walk)| {
                 let spans = walk.as_ref().map(|walk| walk.spans()).unwrap_or_default();
@@ -783,6 +771,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for SurveyQuery {
             extents,
             supervisor,
             holders,
+            callers,
         })))
     }
 }

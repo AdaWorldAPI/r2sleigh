@@ -37,7 +37,7 @@ fn test_const(value: u64) -> Varnode {
 fn dual_space_artifact(
     mut prefix: Vec<R2ILOp>,
     addr: Varnode,
-    arch: Option<&ArchSpec>,
+    arch: Option<&crate::Arch>,
 ) -> SsaArtifact {
     prefix.push(R2ILOp::Load {
         dst: Varnode::unique(0x100, 8),
@@ -62,7 +62,7 @@ fn dual_space_artifact(
     .expect("dual-space artifact")
 }
 
-fn dual_space_exact_parameter_artifact(arch: &ArchSpec) -> SsaArtifact {
+fn dual_space_exact_parameter_artifact(arch: &crate::Arch) -> SsaArtifact {
     let mut block = R2ILBlock::new(0x1000, 4);
     block.push(R2ILOp::Load {
         dst: Varnode::unique(0x100, 8),
@@ -626,7 +626,7 @@ fn register_assumption(name: impl Into<String>) -> AnalysisAssumption {
     }
 }
 
-fn entry_register_artifact(arch: Option<&ArchSpec>) -> SsaArtifact {
+fn entry_register_artifact(arch: Option<&crate::Arch>) -> SsaArtifact {
     let mut block = R2ILBlock::new(0x8f00, 4);
     block.push(R2ILOp::Copy {
         dst: Varnode::unique(0x80, 8),
@@ -660,7 +660,7 @@ fn register_assumption_certificate_is_bound_to_source_storage_and_value() {
     let mut arch = ArchSpec::new("assumption-storage-test");
     arch.addr_size = 8;
     arch.add_register(RegisterDef::new("argument_carrier", 0, 8));
-    let base = entry_register_artifact(Some(&arch));
+    let base = entry_register_artifact(Some(&crate::Arch::from(arch.clone())));
     let assumption = register_assumption("ARGUMENT_CARRIER");
     let conditioned = base.with_assumptions(&AssumptionSet::new(vec![assumption.clone()]));
 
@@ -725,8 +725,12 @@ fn stack_assumption_certificate_uses_the_typed_stack_base() {
     .and_then(|interface| interface.with_return_address_storage(register_storage(16, 8)))
     .and_then(|interface| interface.with_stack_pointer_storage(register_storage(0, 8)))
     .expect("exact stack roles");
-    let base = SsaArtifact::for_decompile_with_interface(&[block], Some(&arch), interface)
-        .expect("stack-role artifact");
+    let base = SsaArtifact::for_decompile_with_interface(
+        &[block],
+        Some(&crate::Arch::from(arch.clone())),
+        interface,
+    )
+    .expect("stack-role artifact");
     let assumption = AnalysisAssumption {
         id: Some("typed-stack-assumption-test".to_string()),
         subject: AssumptionSubject::StackSlot {
@@ -788,7 +792,11 @@ fn assert_predicate_assumption_preserves_source_semantics(
     assert_eq!(conditioned.obligations(), base.obligations());
 }
 
-fn return_boundary_arch() -> ArchSpec {
+fn return_boundary_arch() -> crate::Arch {
+    crate::Arch::new(return_boundary_arch_spec())
+}
+
+fn return_boundary_arch_spec() -> ArchSpec {
     let mut arch = ArchSpec::new("return-boundary-test");
     arch.addr_size = 8;
     arch.add_register(RegisterDef::new("rax", 0, 8));
@@ -974,8 +982,12 @@ fn exact_signed_low_return_artifact(write_logical_carrier: bool) -> SsaArtifact 
     .and_then(|interface| interface.with_return_address_storage(register_storage(16, 8)))
     .and_then(|interface| interface.with_stack_pointer_storage(register_storage(32, 8)))
     .expect("exact signed low return interface");
-    SsaArtifact::for_decompile_with_interface(&[block], Some(&arch), interface)
-        .expect("exact signed low return artifact")
+    SsaArtifact::for_decompile_with_interface(
+        &[block],
+        Some(&crate::Arch::from(arch.clone())),
+        interface,
+    )
+    .expect("exact signed low return artifact")
 }
 
 /// `return Z_STREAM_ERROR;` from an `int` function: the compiler emits
@@ -1090,11 +1102,19 @@ fn constant_return_artifact(constant: u64, result_typed: bool) -> SsaArtifact {
     .and_then(|interface| interface.with_return_address_storage(register_storage(16, 8)))
     .and_then(|interface| interface.with_stack_pointer_storage(register_storage(32, 8)))
     .expect("constant low return interface");
-    SsaArtifact::for_decompile_with_interface(&[block], Some(&arch), interface)
-        .expect("constant low return artifact")
+    SsaArtifact::for_decompile_with_interface(
+        &[block],
+        Some(&crate::Arch::from(arch.clone())),
+        interface,
+    )
+    .expect("constant low return artifact")
 }
 
-fn composed_return_arch(whole_name: &str, slice_name: &str, pc_name: &str) -> ArchSpec {
+fn composed_return_arch(whole_name: &str, slice_name: &str, pc_name: &str) -> crate::Arch {
+    crate::Arch::new(composed_return_arch_spec(whole_name, slice_name, pc_name))
+}
+
+fn composed_return_arch_spec(whole_name: &str, slice_name: &str, pc_name: &str) -> ArchSpec {
     let mut arch = ArchSpec::new("return-composition-test");
     arch.add_register(RegisterDef::new(whole_name, 0, 4));
     arch.add_register(RegisterDef::sub(slice_name, 0, 1, whole_name));
@@ -2374,6 +2394,140 @@ fn indexed_stack_array_geometry_is_certified_or_refused_at_its_owner() {
     );
 }
 
+/// Two byte stores into one stack object: one at a masked index, one at an index no range bounds;
+/// with `read_inside`, then a byte read at a constant place the masked index covers.
+fn bounded_and_unbounded_stack_artifact(read_inside: bool) -> SsaArtifact {
+    let sp = Varnode::register(32, 8);
+    let bounded = Varnode::unique(0x7300, 8);
+    let bounded_address = Varnode::unique(0x7308, 8);
+    let unbounded_address = Varnode::unique(0x7310, 8);
+    let mut block = R2ILBlock::new(0x7300, 4);
+    block.push(R2ILOp::IntSub {
+        dst: sp.clone(),
+        a: sp.clone(),
+        b: Varnode::constant(16, 8),
+    });
+    block.push(R2ILOp::IntAnd {
+        dst: bounded.clone(),
+        a: Varnode::register(8, 8),
+        b: Varnode::constant(15, 8),
+    });
+    block.push(R2ILOp::IntAdd {
+        dst: bounded_address.clone(),
+        a: sp.clone(),
+        b: bounded,
+    });
+    block.push(R2ILOp::Store {
+        space: SpaceId::Ram,
+        addr: bounded_address,
+        val: Varnode::constant(7, 1),
+    });
+    block.push(R2ILOp::IntAdd {
+        dst: unbounded_address.clone(),
+        a: sp.clone(),
+        b: Varnode::register(24, 8),
+    });
+    block.push(R2ILOp::Store {
+        space: SpaceId::Ram,
+        addr: unbounded_address,
+        val: Varnode::constant(9, 1),
+    });
+    if read_inside {
+        let inside = Varnode::unique(0x7318, 8);
+        block.push(R2ILOp::IntAdd {
+            dst: inside.clone(),
+            a: sp,
+            b: Varnode::constant(3, 8),
+        });
+        block.push(R2ILOp::Load {
+            dst: Varnode::register(0, 1),
+            space: SpaceId::Ram,
+            addr: inside,
+        });
+        // Observed: a private read nothing reads owes no obligation (r2ssa's seeding).
+        block.push(R2ILOp::Store {
+            space: SpaceId::Ram,
+            addr: Varnode::constant(0x9000, 8),
+            val: Varnode::register(0, 1),
+        });
+    }
+    block.push(R2ILOp::Return {
+        target: Varnode::register(16, 8),
+    });
+    let roles =
+        SourceMachineRoles::new(Some(register_storage(16, 8)), Some(register_storage(32, 8)))
+            .and_then(|roles| {
+                roles.with_stack_allocation_contract(SourceStackAllocationContract::new(
+                    SourceStackGrowth::LowerAddresses,
+                ))
+            })
+            .expect("bounded and unbounded machine roles");
+    SsaArtifact::for_decompile_with_interfaces_and_machine_roles(
+        &[block],
+        Some(&return_boundary_arch()),
+        Some(preserved_stack_interface()),
+        roles,
+        Vec::new(),
+    )
+    .expect("bounded and unbounded artifact")
+}
+
+#[test]
+fn one_unbounded_index_refuses_the_layout_a_bounded_index_would_prove() {
+    let artifact = bounded_and_unbounded_stack_artifact(false);
+    let indexed = artifact
+        .facts()
+        .structured
+        .memory_accesses
+        .values()
+        .filter(|access| artifact.objects().address_is_indexed(access.address))
+        .map(|access| access.object)
+        .collect::<Vec<_>>();
+    assert_eq!(indexed.len(), 2, "both stores are indexed");
+    assert_eq!(indexed[0], indexed[1], "both stores reach one object");
+    // The masked store alone bounds the object at 16 bytes; the other store may land anywhere.
+    assert_eq!(
+        indexed_stack_layout(&artifact),
+        &super::StackArrayLayoutDisposition::Refused(
+            super::StackArrayLayoutRefusal::MissingConstantOffset,
+        )
+    );
+    assert_eq!(
+        artifact.extent_assumption(indexed[0]),
+        Some(crate::ExtentAssumption::UnboundedIndex)
+    );
+}
+
+/// The masked index's span holds the read, so the object has a reach; the unbounded store may
+/// pass it, so the extent is still assumed and the observed read's obligation relies on it.
+#[test]
+fn a_reach_beside_an_unbounded_index_leaves_the_extent_assumed() {
+    let artifact = bounded_and_unbounded_stack_artifact(true);
+    // The frame's accesses: the read and the two indexed stores, not the global the read reaches.
+    let objects = artifact
+        .facts()
+        .structured
+        .memory_accesses
+        .values()
+        .filter(|access| !access.is_write || artifact.objects().address_is_indexed(access.address))
+        .map(|access| access.object)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(objects.len(), 1, "the read is a place in the buffer");
+    let object = *objects.first().expect("one object");
+    assert!(artifact.objects().callee_write_reach.contains_key(&object));
+    assert_eq!(
+        artifact.extent_assumption(object),
+        Some(crate::ExtentAssumption::UnboundedIndex)
+    );
+    let assumed = artifact
+        .obligations()
+        .obligations()
+        .keys()
+        .filter(|id| artifact.obligation_extent_assumption(**id).is_some())
+        .count();
+    assert_eq!(assumed, 3, "two stores and the read");
+}
+
 #[test]
 fn control_domains_intersect_shared_default_paths() {
     let blocks = vec![
@@ -2550,8 +2704,14 @@ fn a_convention_result_read_only_by_the_return_is_the_call_result() {
         [0, 4, 8].map(|offset| register_storage(offset, 4)),
         [register_storage(12, 4)],
     );
-    let artifact = crate::testing::prepared_under(&[block], &arch, None, Vec::new(), effect)
-        .expect("artifact");
+    let artifact = crate::testing::prepared_under(
+        &[block],
+        &crate::Arch::from(arch.clone()),
+        None,
+        Vec::new(),
+        effect,
+    )
+    .expect("artifact");
     let eax = CanonicalStorageId {
         space: CanonicalStorageSpace::Register,
         offset: 0,

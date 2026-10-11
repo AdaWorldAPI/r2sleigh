@@ -23,10 +23,12 @@
 pub(crate) mod abi;
 pub(crate) mod address;
 pub(crate) mod aggregate_access;
+mod arch;
 pub mod arena;
 pub(crate) mod assumption;
 pub mod block;
 pub(crate) mod bytes;
+pub mod caller_reads;
 pub mod cfg;
 pub(crate) mod constant;
 pub(crate) mod control;
@@ -48,6 +50,7 @@ pub mod lanes;
 pub mod liveness;
 pub(crate) mod liveout;
 pub(crate) mod machine;
+pub use arch::Arch;
 pub(crate) mod machine_context;
 pub(crate) mod mirror;
 pub mod name;
@@ -98,6 +101,7 @@ pub use control::{
     SsaWorkControl, SsaWorkMeter,
 };
 pub use defuse::{DefUseInfo, def_use};
+pub use demand::DemandedBytes;
 pub use function::{
     CFGRiskSummary, CalleeEvidence, CalleePreservedCarriers, DecompileInputs, DecompilePrepFacts,
     DefRef, DefSite, GenuineNativeInstructionSpan, Lifted, NamedBlockMut, PhiNode, Prepared,
@@ -168,15 +172,16 @@ pub use semantic::{
     BlockAssumption, CallArgumentCertificate, CallArgumentLocation, CallBoundarySlot,
     CallBoundaryValueFact, CallFrameReach, CallMemoryEffect, CallResultCertificate,
     CallResultValueRelation, CallSiteFact, CallSiteFacts, CallSiteId, CallSiteTransfer,
-    CalleeStackAllocationCertificate, CallsiteCertificate, CompareKind, CompareProvenance,
-    ControlDomain, ControlDomainFacts, ControlDomainId, ControlGuard, EntryAffineForm,
-    ExtentAssumption, ForLoopCertificate, FrameReach, GlobalObjectKey, IfRegionCertificate,
-    InductionFact, InductionStep, LoopCarrierEdgeValue, LoopCarrierFact, LoopCarrierMemberFact,
-    LoopCarrierMemberRole, LoopCarrierUpdateFact, LoopCertificate, LoopId, LoopTrips,
-    MachineReturnControlCertificate, MemberRunPlace, MemberRunSource, MemberRunStoreCertificate,
-    MemberRunStoreMember, MemoryAccessCertificate, MemoryDefFact, MemoryLocation, MemoryObjectKey,
-    MemoryPhiFact, MemorySSAFacts, MemoryUseFact, MemoryVersion, ObjectFact, ObjectId, ObjectKind,
-    ObjectModel, ObjectSpaceId, ParameterObjectKey, PredicateFact, PredicateFacts, PredicateId,
+    CalleeStackAllocationCertificate, CallerSlotSupply, CallerStackSlotCertificate,
+    CallsiteCertificate, CompareKind, CompareProvenance, ControlDomain, ControlDomainFacts,
+    ControlDomainId, ControlGuard, EntryAffineForm, ExtentAssumption, ForLoopCertificate,
+    FrameReach, GlobalObjectKey, IfRegionCertificate, InductionFact, InductionStep,
+    LoopCarrierEdgeValue, LoopCarrierFact, LoopCarrierMemberFact, LoopCarrierMemberRole,
+    LoopCarrierUpdateFact, LoopCertificate, LoopId, LoopTrips, MachineReturnControlCertificate,
+    MemberRunPlace, MemberRunSource, MemberRunStoreCertificate, MemberRunStoreMember,
+    MemoryAccessCertificate, MemoryDefFact, MemoryLocation, MemoryObjectKey, MemoryPhiFact,
+    MemorySSAFacts, MemoryUseFact, MemoryVersion, ObjectFact, ObjectId, ObjectKind, ObjectModel,
+    ObjectSpaceId, ParameterObjectKey, PredicateFact, PredicateFacts, PredicateId,
     PreparedAssumptionBinding, PreparedAssumptionBindingKind, PreparedFunctionCertificates,
     PreparedFunctionFacts, PreparedProofFailure, ProofNodeId, RelativeMemoryAddress, ReturnCarrier,
     ReturnValueCertificate, SemanticId, SourceBoundaryFacts, SourceCallArgumentFact,
@@ -189,7 +194,7 @@ pub use semantic::{
     StructuredRecursiveCallFact, SupervisorCall, SwitchCertificate, SwitchGuardCertificate,
     SwitchPredicateFact, TripCount, TripGuard, TripRefusal, TripTest, TwoWaySelectionCertificate,
     ValueOwner, VariadicCallsiteArgumentCountEvidence, VariadicCallsiteArgumentCountRefusal,
-    value_reaching,
+    returned_bytes, value_reaching,
 };
 pub use slice::{Slice, SliceError, SliceSeed, backward_slice, resolve_slice_seed};
 pub use slot_promotion::promoted_slot_offset;

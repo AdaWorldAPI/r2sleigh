@@ -68,6 +68,7 @@ impl MachineProfile {
 pub struct FunctionIdentity {
     address: u64,
     loader_role: Option<SourceLoaderRole>,
+    result_reads: Option<SourceResultReads>,
 }
 
 impl FunctionIdentity {
@@ -78,6 +79,65 @@ impl FunctionIdentity {
     /// The hook the program's loader invokes this function as, if any.
     pub const fn loader_role(&self) -> Option<SourceLoaderRole> {
         self.loader_role
+    }
+
+    /// What the program's calls to this function read of its result registers, where r2engine read them.
+    pub const fn result_reads(&self) -> Option<SourceResultReads> {
+        self.result_reads
+    }
+}
+
+/// What the program's own calls to a function read of its result registers as each call leaves
+/// them, read off the callers' code (doc/adr-resolved-bodies.md, "Caller reads").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct SourceResultReads {
+    /// Calls whose first touch of the integer result register after the call is a read.
+    pub integer: u32,
+    /// Calls whose first touch of the float result register after the call is a read.
+    pub float: u32,
+    /// The width those float reads take.
+    pub float_width: SourceFloatReadWidth,
+    /// Calls whose every result register is written before any read, in the call's own block.
+    pub overwritten: u32,
+    /// Calls read.
+    pub calls: u32,
+}
+
+impl SourceResultReads {
+    /// These calls' reads and `other`'s together.
+    #[must_use]
+    pub fn and(self, other: Self) -> Self {
+        Self {
+            integer: self.integer.saturating_add(other.integer),
+            float: self.float.saturating_add(other.float),
+            float_width: self.float_width.and(other.float_width),
+            overwritten: self.overwritten.saturating_add(other.overwritten),
+            calls: self.calls.saturating_add(other.calls),
+        }
+    }
+}
+
+/// The width a set of float result reads takes: two reads at different widths state none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum SourceFloatReadWidth {
+    /// No read states a width: there is none, or each reads the whole register.
+    #[default]
+    Unstated,
+    /// Every read that states a width states this one, in bytes.
+    Bytes(u32),
+    /// Two reads state different widths.
+    Disagree,
+}
+
+impl SourceFloatReadWidth {
+    /// The width these reads and `other`'s take together.
+    #[must_use]
+    pub const fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Unstated, width) | (width, Self::Unstated) => width,
+            (Self::Bytes(a), Self::Bytes(b)) if a == b => Self::Bytes(a),
+            _ => Self::Disagree,
+        }
     }
 }
 
@@ -1145,6 +1205,16 @@ impl Eq for OwnedFunctionSnapshot {}
 mod tests {
     use super::*;
 
+    /// Float reads at 4 and 8 bytes state no width, whatever else joins them.
+    #[test]
+    fn float_reads_at_two_widths_state_none() {
+        use SourceFloatReadWidth::{Bytes, Disagree, Unstated};
+        assert_eq!(Bytes(4).and(Unstated), Bytes(4));
+        assert_eq!(Bytes(8).and(Bytes(8)), Bytes(8));
+        assert_eq!(Bytes(4).and(Bytes(8)), Disagree);
+        assert_eq!(Disagree.and(Bytes(4)).and(Unstated), Disagree);
+    }
+
     fn snapshot() -> OwnedFunctionSnapshot {
         OwnedFunctionSnapshot::from_captured_parts(
             MachineProfile {
@@ -1156,6 +1226,7 @@ mod tests {
             FunctionIdentity {
                 address: 0x1000,
                 loader_role: None,
+                result_reads: None,
             },
             FunctionPresentation {
                 display_name: "fixture".into(),
@@ -1279,6 +1350,7 @@ mod tests {
                 FunctionIdentity {
                     address: 0x2000,
                     loader_role: None,
+                    result_reads: None,
                 },
                 valid.presentation().clone(),
                 valid.image().clone(),

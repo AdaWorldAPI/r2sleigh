@@ -748,7 +748,7 @@ pub fn render_signature_type(ty: &CTypeLike, ptr_bits: u32) -> String {
         CTypeLike::Union(name) => format!("union {name}"),
         CTypeLike::Enum(name) => format!("enum {name}"),
         CTypeLike::Typedef { name, .. } => name,
-        CTypeLike::Function { .. } => "void (*)()".to_string(),
+        CTypeLike::Function { .. } | CTypeLike::UnprototypedFunction(_) => "void (*)()".to_string(),
         CTypeLike::Unknown => "int64_t".to_string(),
     }
 }
@@ -1106,7 +1106,11 @@ mod tests {
         );
     }
 
-    fn x86_return_arch() -> r2il::ArchSpec {
+    fn x86_return_arch() -> r2ssa::Arch {
+        r2ssa::Arch::new(x86_return_arch_spec())
+    }
+
+    fn x86_return_arch_spec() -> r2il::ArchSpec {
         let mut arch = r2il::ArchSpec::new("x86-64");
         arch.add_register(r2il::RegisterDef::new("RAX", 0, 8));
         arch.add_register(r2il::RegisterDef::new("RIP", 8, 8));
@@ -1147,11 +1151,19 @@ mod tests {
         block.push(r2il::R2ILOp::Return {
             target: r2il::Varnode::register(8, 8),
         });
-        SsaArtifact::for_decompile_with_interface(&[block], Some(&arch), interface)
-            .expect("prepared renamed return source")
+        SsaArtifact::for_decompile_with_interface(
+            &[block],
+            Some(&r2ssa::Arch::from(arch.clone())),
+            interface,
+        )
+        .expect("prepared renamed return source")
     }
 
-    fn aarch64_parameter_arch() -> r2il::ArchSpec {
+    fn aarch64_parameter_arch() -> r2ssa::Arch {
+        r2ssa::Arch::new(aarch64_parameter_arch_spec())
+    }
+
+    fn aarch64_parameter_arch_spec() -> r2il::ArchSpec {
         let mut arch = r2il::ArchSpec::new("aarch64");
         arch.addr_size = 8;
         arch.add_register(r2il::RegisterDef::new("x0", 0, 8));

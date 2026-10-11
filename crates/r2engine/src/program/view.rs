@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use super::LoaderWrite;
-use r2sleigh_lift::EmbeddedMachine;
+use crate::machine::Machine;
 
 use super::{Imports, NameDb, Names, ProgramInputs, Source, naming};
 use crate::native::NativeTarget;
@@ -82,7 +82,7 @@ impl<'a, S: Source + 'static> View<'a, S> {
     }
 
     /// The decoder for one instruction set.
-    pub(super) fn machine_in(&self, thumb: bool) -> Option<&'a EmbeddedMachine> {
+    pub(super) fn machine_in(&self, thumb: bool) -> Option<&'a Machine> {
         match thumb {
             true => self.db.inputs().machines().ok()?.thumb.as_ref(),
             false => Some(&self.db.inputs().machines().ok()?.machine),
@@ -101,21 +101,34 @@ impl<'a, S: Source + 'static> View<'a, S> {
         }
     }
 
-    pub(super) fn machine_at(&self, vaddr: u64) -> Option<&'a EmbeddedMachine> {
+    pub(super) fn machine_at(&self, vaddr: u64) -> Option<&'a Machine> {
         self.machine_in(self.thumb_at(vaddr))
     }
 
-    /// Everything about the machine that does not change between functions.
+    /// Everything about the machine the function at `entry` is written for: its decoder, and
+    /// the convention its language uses.
     pub(super) fn target_of(
         &self,
-        machine: &'a EmbeddedMachine,
+        machine: &'a Machine,
+        entry: u64,
+    ) -> Result<NativeTarget<'a>, String> {
+        self.target_under(machine, self.db.inputs().assembled_at(entry)?)
+    }
+
+    /// A decoder under the program's default convention, for a walk that reads no boundary.
+    pub(super) fn decoder_of(&self, machine: &'a Machine) -> Result<NativeTarget<'a>, String> {
+        let assembled = self.db.inputs().assembled();
+        self.target_under(machine, assembled.ok_or("the program was not assembled")?)
+    }
+
+    fn target_under(
+        &self,
+        machine: &'a Machine,
+        assembled: &'a super::Assembled,
     ) -> Result<NativeTarget<'a>, String> {
         let inputs = self.db.inputs();
-        let assembled = inputs
-            .assembled()
-            .ok_or("the program was not assembled for this address")?;
         Ok(NativeTarget {
-            arch: &machine.arch,
+            arch: machine.tables(),
             disasm: &machine.disasm,
             cpu: machine.cpu,
             convention: assembled.convention,
@@ -131,6 +144,7 @@ impl<'a, S: Source + 'static> View<'a, S> {
         self.target_of(
             self.machine_at(addr)
                 .ok_or("no Sleigh specification for this architecture")?,
+            addr,
         )
     }
 
@@ -143,7 +157,7 @@ impl<'a, S: Source + 'static> View<'a, S> {
 }
 
 impl<S: Source + 'static> crate::query::Decoders for View<'_, S> {
-    fn at(&self, vaddr: u64) -> Option<&EmbeddedMachine> {
+    fn at(&self, vaddr: u64) -> Option<&Machine> {
         self.machine_at(vaddr)
     }
 }
@@ -245,6 +259,12 @@ impl<S: Source + 'static> crate::native::Program for View<'_, S> {
             Some(code) => code.holds(vaddr),
             None => crate::body::Program::region(self, vaddr).is_some_and(|region| region.execute),
         }
+    }
+
+    fn result_reads(&self, entry: u64) -> Option<r2source::SourceResultReads> {
+        // A survey that is itself preparing this body is a cycle, which reads as no evidence.
+        let reads = self.db.get::<super::reads::ResultReads>(&entry).ok()?;
+        *reads
     }
 
     fn frame_saves(&self, entry: u64) -> Vec<r2source::SourceFrameSave> {

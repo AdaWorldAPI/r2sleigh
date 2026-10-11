@@ -417,6 +417,98 @@ pub struct SemanticObligation {
     pub edge_use: Option<UseSite>,
 }
 
+/// Every obligation of one function, sorted by identity: one vector searched by halving, where
+/// a tree held each eighty-byte identity twice (key and value) beside its node overhead.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ObligationTable(Vec<SemanticObligation>);
+
+impl ObligationTable {
+    /// The table of these obligations; of two with one identity the later stands, as a map's insert.
+    fn of(mut obligations: Vec<SemanticObligation>) -> Self {
+        obligations.reverse();
+        obligations.sort_by_key(|obligation| obligation.id);
+        obligations.dedup_by_key(|obligation| obligation.id);
+        Self(obligations)
+    }
+
+    fn position(&self, id: &SemanticObligationId) -> Result<usize, usize> {
+        self.0.binary_search_by(|obligation| obligation.id.cmp(id))
+    }
+
+    pub fn get(&self, id: &SemanticObligationId) -> Option<&SemanticObligation> {
+        self.position(id).ok().map(|at| &self.0[at])
+    }
+
+    pub fn contains_key(&self, id: &SemanticObligationId) -> bool {
+        self.position(id).is_ok()
+    }
+
+    /// Add obligations none of which the table holds, in one sort and one merge: `false`, and the
+    /// table untouched, where any identity repeats.
+    fn extend_new(&mut self, mut added: Vec<SemanticObligation>) -> bool {
+        added.sort_by_key(|obligation| obligation.id);
+        let repeated = added.windows(2).any(|pair| pair[0].id == pair[1].id)
+            || added
+                .iter()
+                .any(|obligation| self.contains_key(&obligation.id));
+        if repeated {
+            return false;
+        }
+        let held = std::mem::take(&mut self.0);
+        let mut merged = Vec::with_capacity(held.len() + added.len());
+        let (mut held, mut added) = (held.into_iter().peekable(), added.into_iter().peekable());
+        while let (Some(old), Some(new)) = (held.peek(), added.peek()) {
+            let next = match old.id < new.id {
+                true => held.next(),
+                false => added.next(),
+            };
+            merged.extend(next);
+        }
+        merged.extend(held.chain(added));
+        self.0 = merged;
+        true
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &SemanticObligationId> {
+        self.0.iter().map(|obligation| &obligation.id)
+    }
+
+    pub fn values(&self) -> std::slice::Iter<'_, SemanticObligation> {
+        self.0.iter()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&SemanticObligationId, &SemanticObligation)> {
+        self.0.iter().map(|obligation| (&obligation.id, obligation))
+    }
+}
+
+impl<'a> IntoIterator for &'a ObligationTable {
+    type Item = (&'a SemanticObligationId, &'a SemanticObligation);
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, SemanticObligation>,
+        fn(&'a SemanticObligation) -> (&'a SemanticObligationId, &'a SemanticObligation),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|obligation| (&obligation.id, obligation))
+    }
+}
+
+/// Serialized as the identity-keyed map it replaced.
+impl Serialize for ObligationTable {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.iter())
+    }
+}
+
 /// Complete source inventory for one prepared function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ObligationInventoryFailureKind {
@@ -449,7 +541,7 @@ pub struct SemanticObligationInventory {
     /// canonical operation for. They have no graph instruction to be indexed
     /// by, and there are none in an ordinary function.
     span_instructions: BTreeMap<CanonicalInstructionId, SemanticInstructionDisposition>,
-    obligations: BTreeMap<SemanticObligationId, SemanticObligation>,
+    obligations: ObligationTable,
     by_inst: Vec<Option<CanonicalInstructionId>>,
     native_spans: BTreeMap<CanonicalInstructionId, crate::GenuineNativeInstructionSpan>,
     construction_failures: Vec<ObligationInventoryFailure>,
@@ -471,7 +563,7 @@ impl SemanticObligationInventory {
             source_instruction_count,
             instructions: vec![None; source_instruction_count],
             span_instructions: BTreeMap::new(),
-            obligations: BTreeMap::new(),
+            obligations: ObligationTable::default(),
             by_inst: vec![None; source_instruction_count],
             native_spans: BTreeMap::new(),
             construction_failures: Vec::new(),
@@ -481,17 +573,78 @@ impl SemanticObligationInventory {
     }
 }
 
+/// What obligation seeding reads beside the graph and boundaries: the private stack objects, the
+/// certified round trips, and the blocks whose conditional branch sends both arms to one block.
+pub(crate) struct SeedingFacts<'a> {
+    pub(crate) private_stack_objects: &'a BTreeSet<crate::ObjectId>,
+    pub(crate) memory_round_trips: &'a BTreeMap<
+        crate::semantic::StructuredAccessId,
+        crate::semantic::MemoryRoundTripCertificate,
+    >,
+    pub(crate) meeting_arms: &'a BTreeSet<u64>,
+}
+
+impl<'a> SeedingFacts<'a> {
+    pub(crate) const fn new(
+        private_stack_objects: &'a BTreeSet<crate::ObjectId>,
+        memory_round_trips: &'a BTreeMap<
+            crate::semantic::StructuredAccessId,
+            crate::semantic::MemoryRoundTripCertificate,
+        >,
+        meeting_arms: &'a BTreeSet<u64>,
+    ) -> Self {
+        Self {
+            private_stack_objects,
+            memory_round_trips,
+            meeting_arms,
+        }
+    }
+
+    /// Seed each conditional branch ending a block whose arms meet as the direct transfer it is,
+    /// with no inputs: its condition is unread. The branches seeded.
+    fn seed_direct_branches(
+        &self,
+        graph: &SsaGraph,
+        required: &mut ObligationSeeds,
+        explicit_inputs: &mut BTreeMap<
+            (InstId, SemanticObligationKind, SemanticObligationComponent),
+            Vec<ValueId>,
+        >,
+    ) -> crate::dense::IdSet<InstId> {
+        let direct = self.direct_branches(graph);
+        for inst in direct.iter() {
+            let identity = (
+                inst,
+                SemanticObligationKind::ControlTransfer,
+                SemanticObligationComponent::Whole,
+            );
+            seed_instruction(identity.0, identity.1, identity.2, required);
+            explicit_inputs.insert(identity, Vec::new());
+        }
+        direct
+    }
+
+    fn direct_branches(&self, graph: &SsaGraph) -> crate::dense::IdSet<InstId> {
+        (self.meeting_arms.iter())
+            .filter_map(|addr| graph.block(*graph.block_by_addr.get(addr)?)?.insts.last())
+            .filter(|inst| {
+                matches!(
+                    graph.inst(**inst).map(|inst| &inst.payload),
+                    Some(InstPayload::Op(SSAOp::CBranch { .. }))
+                )
+            })
+            .copied()
+            .collect()
+    }
+}
+
 impl SemanticObligationInventory {
     pub(crate) fn collect(
         graph: &SsaGraph,
         structured: &StructuredDataflowFacts,
         boundaries: &SourceBoundaryFacts,
         machine_context: Option<&crate::SourceMachineContext>,
-        private_stack_objects: &BTreeSet<crate::ObjectId>,
-        memory_round_trips: &BTreeMap<
-            crate::semantic::StructuredAccessId,
-            crate::semantic::MemoryRoundTripCertificate,
-        >,
+        seeding: &SeedingFacts<'_>,
     ) -> Self {
         let (canonical_ids, mut construction_failures) = collect_canonical_instruction_ids(graph);
         let mut required = ObligationSeeds::default();
@@ -506,8 +659,11 @@ impl SemanticObligationInventory {
         let mut unsupported = crate::dense::IdSet::<InstId>::default();
         let mut duplicate_seeds =
             BTreeSet::<(InstId, SemanticObligationKind, SemanticObligationComponent)>::new();
+        // Private frame reads, owed only once the liveness walk reaches them: (inst, ordinal, address).
+        let mut private_reads = Vec::new();
 
-        for inst in &graph.insts {
+        let direct = seeding.seed_direct_branches(graph, &mut required, &mut explicit_inputs);
+        for inst in graph.insts.iter().filter(|inst| !direct.contains(inst.id)) {
             match &inst.payload {
                 InstPayload::Op(op) => {
                     seed_direct_obligations(
@@ -563,14 +719,11 @@ impl SemanticObligationInventory {
                     inst.payload
                 );
             }
-            // A slot no pointer outside its own accesses can name is a C
-            // object, so reading it is not an observable effect: the load
-            // produces the variable's own value and lives only while something
-            // reads it. The write stays observable -- it is the assignment,
-            // and dropping it would lose what the variable holds.
+            // Reading a slot no outside pointer can name is no observable effect: the load owes
+            // its value only while something reads it (seeded after the liveness walk below).
             let private_read = !access.is_write
                 && access.provenance_complete
-                && private_stack_objects.contains(&access.object);
+                && seeding.private_stack_objects.contains(&access.object);
             // A round trip leaves the object holding what it held, so neither
             // the write nor the reads it answers for owes anything of its own.
             // Seeding a dependency annotation instead would be wrong twice: it
@@ -578,7 +731,7 @@ impl SemanticObligationInventory {
             // its instruction live whether or not anything reads the value. If
             // something does read the value, that walk reaches the load and
             // annotates it then, which is the whole of what it owes.
-            let round_trip = memory_round_trips.values().any(|certificate| {
+            let round_trip = seeding.memory_round_trips.values().any(|certificate| {
                 certificate.write == access.id
                     || certificate.read == access.id
                     || certificate.redundant_reads.contains(&access.id)
@@ -586,9 +739,11 @@ impl SemanticObligationInventory {
             if round_trip {
                 continue;
             }
-            let kind = if private_read {
-                SemanticObligationKind::LiveValueProducer
-            } else if access.is_write {
+            if private_read {
+                private_reads.push((access.id.inst, access.id.ordinal, access.address));
+                continue;
+            }
+            let kind = if access.is_write {
                 SemanticObligationKind::ObservableMemoryWrite
             } else {
                 SemanticObligationKind::ObservableMemoryRead
@@ -780,7 +935,7 @@ impl SemanticObligationInventory {
             if boundary.complete {
                 continue;
             }
-            for read in call_boundary_reads(graph, boundary.at) {
+            for read in graph.call_boundary_reads(boundary.at) {
                 let Some(inst) = graph.inst(read) else {
                     continue;
                 };
@@ -798,7 +953,7 @@ impl SemanticObligationInventory {
         // First close dependencies from observable effects and exact ABI boundaries. A loop
         // carrier is semantically live only when that independent root closure reaches its phi;
         // recognizer-retained facts must never decide source obligation liveness.
-        propagate_live_dependencies(graph, &mut required);
+        propagate_live_dependencies(graph, &direct, &mut required);
         let live_before_loop_annotation = required.keys().collect::<crate::dense::IdSet<_>>();
         for fact in structured.loops.values() {
             for carrier in &fact.carriers {
@@ -852,7 +1007,21 @@ impl SemanticObligationInventory {
                 }
             }
         }
-        propagate_live_dependencies(graph, &mut required);
+        propagate_live_dependencies(graph, &direct, &mut required);
+        // A private read the walk reached owes its access; its inputs are already walked.
+        for (inst, ordinal, address) in private_reads {
+            if required.contains(inst) {
+                seed_instruction_with_inputs(
+                    inst,
+                    SemanticObligationKind::LiveValueProducer,
+                    SemanticObligationComponent::MemoryAccess(ordinal),
+                    vec![address],
+                    &mut required,
+                    &mut explicit_inputs,
+                    &mut duplicate_seeds,
+                );
+            }
+        }
         for (inst, _, _) in duplicate_seeds {
             let block_addr = graph
                 .inst(inst)
@@ -868,6 +1037,7 @@ impl SemanticObligationInventory {
         let mut inventory = Self::empty(graph.insts.len());
         inventory.construction_failures = construction_failures;
         inventory.unstructured_cycle_blocks = structured.unstructured_cycle_blocks.clone();
+        let mut obligations = Vec::new();
         for inst in &graph.insts {
             let Some(id) = canonical_ids.get(inst.id).copied() else {
                 continue;
@@ -903,17 +1073,14 @@ impl SemanticObligationInventory {
                     component,
                 };
                 obligation_ids.insert(obligation_id);
-                inventory.obligations.insert(
-                    obligation_id,
-                    SemanticObligation {
-                        id: obligation_id,
-                        source: SemanticSourceSite::GraphInstruction(inst.id),
-                        inputs: explicit_inputs
-                            .remove(&(inst.id, kind, component))
-                            .unwrap_or_else(|| inst.inputs.clone()),
-                        edge_use: explicit_edge_uses.remove(&(inst.id, kind, component)),
-                    },
-                );
+                obligations.push(SemanticObligation {
+                    id: obligation_id,
+                    source: SemanticSourceSite::GraphInstruction(inst.id),
+                    inputs: explicit_inputs
+                        .remove(&(inst.id, kind, component))
+                        .unwrap_or_else(|| inst.inputs.clone()),
+                    edge_use: explicit_edge_uses.remove(&(inst.id, kind, component)),
+                });
             }
             inventory.by_inst[inst.id.0 as usize] = Some(id);
             inventory.instructions[inst.id.0 as usize] = Some(SemanticInstructionDisposition {
@@ -923,6 +1090,7 @@ impl SemanticObligationInventory {
                 obligations: obligation_ids,
             });
         }
+        inventory.obligations = ObligationTable::of(obligations);
         inventory.complete = inventory.derive_is_complete();
         inventory
     }
@@ -935,6 +1103,8 @@ impl SemanticObligationInventory {
         spans: impl IntoIterator<Item = crate::GenuineNativeInstructionSpan>,
         compiler_inserted_blocks: &BTreeSet<u64>,
     ) -> bool {
+        // Merged into the sorted table once at the end: one insert per span shifts its tail each time.
+        let mut late = Vec::new();
         for span in spans {
             let id = CanonicalInstructionId {
                 block_addr: span.block_addr(),
@@ -981,21 +1151,18 @@ impl SemanticObligationInventory {
                     },
                 )
                 .is_some()
-                || self
-                    .obligations
-                    .insert(
-                        obligation_id,
-                        SemanticObligation {
-                            id: obligation_id,
-                            source: SemanticSourceSite::GenuineNativeSpan(span),
-                            inputs: Vec::new(),
-                            edge_use: None,
-                        },
-                    )
-                    .is_some()
             {
                 return false;
             }
+            late.push(SemanticObligation {
+                id: obligation_id,
+                source: SemanticSourceSite::GenuineNativeSpan(span),
+                inputs: Vec::new(),
+                edge_use: None,
+            });
+        }
+        if !self.obligations.extend_new(late) {
+            return false;
         }
         self.complete = self.derive_is_complete();
         true
@@ -1116,7 +1283,7 @@ impl SemanticObligationInventory {
         &self.native_spans
     }
 
-    pub fn obligations(&self) -> &BTreeMap<SemanticObligationId, SemanticObligation> {
+    pub fn obligations(&self) -> &ObligationTable {
         &self.obligations
     }
 
@@ -1251,13 +1418,11 @@ impl SemanticObligationInventory {
             }
         }
         for (id, obligation) in &self.obligations {
-            if obligation.id != *id
-                || self
-                    .disposition_of(id.instruction, obligation.source)
-                    .is_none_or(|instruction| {
-                        instruction.source != obligation.source
-                            || !instruction.obligations.contains(id)
-                    })
+            if self
+                .disposition_of(id.instruction, obligation.source)
+                .is_none_or(|instruction| {
+                    instruction.source != obligation.source || !instruction.obligations.contains(id)
+                })
                 || match (id.kind, id.component, obligation.source) {
                     (
                         SemanticObligationKind::LiveStateTransition,
@@ -1426,29 +1591,6 @@ fn taint_incomplete_boundary_inputs(
 /// The mirror of the `CallDefine` run that follows a call: construction emits
 /// them as one uninterrupted run, so the run ends at the first operation that
 /// is not one.
-fn call_boundary_reads(graph: &SsaGraph, call: InstId) -> Vec<InstId> {
-    let Some(call_inst) = graph.inst(call) else {
-        return Vec::new();
-    };
-    let Some(block) = graph.block(call_inst.block) else {
-        return Vec::new();
-    };
-    block
-        .insts
-        .iter()
-        .copied()
-        .take_while(|inst| *inst != call)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .take_while(|inst| {
-            graph
-                .inst(*inst)
-                .is_some_and(|inst| matches!(inst.payload, InstPayload::Op(SSAOp::CallUse { .. })))
-        })
-        .collect()
-}
-
 fn block_can_reenter(graph: &SsaGraph, start: crate::graph::BlockId) -> bool {
     let Some(block) = graph.block(start) else {
         return false;
@@ -1728,14 +1870,18 @@ fn seed_value_definition(
     }
 }
 
-fn propagate_live_dependencies(graph: &SsaGraph, required: &mut ObligationSeeds) {
+fn propagate_live_dependencies(
+    graph: &SsaGraph,
+    direct: &crate::dense::IdSet<InstId>,
+    required: &mut ObligationSeeds,
+) {
     let mut ready = required.keys().collect::<VecDeque<_>>();
     let mut visited = crate::dense::IdSet::default();
     while let Some(inst_id) = ready.pop_front() {
         if !visited.insert(inst_id) {
             continue;
         }
-        let Some(inst) = graph.inst(inst_id) else {
+        let Some(inst) = graph.inst(inst_id).filter(|_| !direct.contains(inst_id)) else {
             continue;
         };
         for input in &inst.inputs {
@@ -1770,6 +1916,37 @@ fn instruction_is_structural(payload: &InstPayload) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn late_obligations_merge_into_the_table_in_order_or_not_at_all() {
+        let obligation = |block_addr: u64| super::SemanticObligation {
+            id: super::SemanticObligationId {
+                instruction: super::CanonicalInstructionId {
+                    block_addr,
+                    site: super::CanonicalInstructionSite::NativeSpan {
+                        instruction_addr: block_addr,
+                        size: 1,
+                    },
+                },
+                kind: super::SemanticObligationKind::NoNativeSemantics,
+                component: super::SemanticObligationComponent::Whole,
+            },
+            source: super::SemanticSourceSite::GraphInstruction(crate::InstId(0)),
+            inputs: Vec::new(),
+            edge_use: None,
+        };
+        let mut table = super::ObligationTable::of(vec![obligation(0x10), obligation(0x30)]);
+        assert!(table.extend_new(vec![obligation(0x40), obligation(0x20), obligation(0x00)]));
+        let order = table
+            .keys()
+            .map(|id| id.instruction.block_addr)
+            .collect::<Vec<_>>();
+        assert_eq!(order, [0x00, 0x10, 0x20, 0x30, 0x40]);
+        // A repeated identity leaves the table as it was.
+        assert!(!table.extend_new(vec![obligation(0x50), obligation(0x20)]));
+        assert!(!table.extend_new(vec![obligation(0x60), obligation(0x60)]));
+        assert_eq!(table.len(), 5);
+    }
+
     /// The canonical identity of operation `index` of the block at
     /// `block_addr`, as a fixture names it.
     fn operation_at(
@@ -1796,6 +1973,51 @@ mod tests {
     };
     use proptest::prelude::*;
     use r2il::{ArchSpec, MemoryOrdering, R2ILBlock, R2ILOp, RegisterDef, SpaceId, Varnode};
+
+    /// `jle next` where `next` is the fallthrough: a direct transfer owing no predicate, so the
+    /// comparison feeding it is not live.
+    #[test]
+    fn a_branch_whose_arms_meet_owes_its_transfer_and_not_its_predicate() {
+        let mut entry = R2ILBlock::new(0x1000, 4);
+        let test = Varnode::unique(0x10, 1);
+        entry.push(R2ILOp::IntSLessEqual {
+            dst: test.clone(),
+            a: Varnode::register(0, 4),
+            b: Varnode::constant(5, 4),
+        });
+        entry.push(R2ILOp::CBranch {
+            target: Varnode::ram(0x1004, 8),
+            cond: test,
+        });
+        let mut next = R2ILBlock::new(0x1004, 4);
+        next.push(R2ILOp::Return {
+            target: Varnode::register(8, 8),
+        });
+        let artifact = SsaArtifact::raw(&[entry, next], None).expect("SSA artifact");
+        let graph = artifact.graph();
+        let inventory = &artifact.facts().obligations;
+        let kinds = |ordinal| {
+            let inst = graph
+                .inst_spelled_at(0x1000, ordinal)
+                .expect("an operation");
+            (inventory.obligations_for_inst(inst))
+                .map(|o| o.id.kind)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(kinds(1), [SemanticObligationKind::ControlTransfer]);
+        let producer = kinds(0);
+        assert!(
+            !producer.contains(&SemanticObligationKind::LiveValueProducer),
+            "{producer:?}"
+        );
+        // The transfer reads nothing: no root reaches the condition (native.rs checks DeadPhis).
+        let branch = graph.inst_spelled_at(0x1000, 1).expect("the branch");
+        let transfer = inventory
+            .obligations_for_inst(branch)
+            .next()
+            .expect("its transfer");
+        assert!(transfer.inputs.is_empty(), "{transfer:?}");
+    }
 
     #[test]
     fn only_independent_semantic_obligations_are_positive_observation_roots() {
@@ -1934,7 +2156,11 @@ mod tests {
         vec![entry, left, right, split, back]
     }
 
-    fn x86_64_call_arch() -> ArchSpec {
+    fn x86_64_call_arch() -> crate::Arch {
+        crate::Arch::new(x86_64_call_arch_spec())
+    }
+
+    fn x86_64_call_arch_spec() -> ArchSpec {
         let mut arch = ArchSpec::new("x86-64");
         arch.add_register(RegisterDef::new("rax", 0, 8));
         arch.add_register(RegisterDef::new("rdi", 8, 8));
@@ -2055,8 +2281,10 @@ mod tests {
         let mut second_arch = ArchSpec::new("test-b");
         second_arch.add_register(RegisterDef::new("counter_b", 0, 8));
 
-        let first = SsaArtifact::raw(&blocks, Some(&first_arch)).expect("first artifact");
-        let second = SsaArtifact::raw(&blocks, Some(&second_arch)).expect("second artifact");
+        let first = SsaArtifact::raw(&blocks, Some(&crate::Arch::from(first_arch.clone())))
+            .expect("first artifact");
+        let second = SsaArtifact::raw(&blocks, Some(&crate::Arch::from(second_arch.clone())))
+            .expect("second artifact");
         assert_eq!(
             first.obligations().obligations.keys().collect::<Vec<_>>(),
             second.obligations().obligations.keys().collect::<Vec<_>>()
@@ -2800,8 +3028,7 @@ mod tests {
             artifact.structured(),
             &boundaries,
             None,
-            &BTreeSet::new(),
-            &BTreeMap::new(),
+            &SeedingFacts::new(&BTreeSet::new(), &BTreeMap::new(), &BTreeSet::new()),
         );
 
         assert!(!inventory.is_complete());
@@ -2909,8 +3136,7 @@ mod tests {
             artifact.structured(),
             &artifact.facts().boundaries,
             None,
-            &BTreeSet::new(),
-            &BTreeMap::new(),
+            &SeedingFacts::new(&BTreeSet::new(), &BTreeMap::new(), &BTreeSet::new()),
         );
         assert!(!inventory.is_complete());
         assert!(inventory.construction_failures.iter().any(|failure| {
@@ -2948,8 +3174,7 @@ mod tests {
             artifact.structured(),
             &artifact.facts().boundaries,
             None,
-            &BTreeSet::new(),
-            &BTreeMap::new(),
+            &SeedingFacts::new(&BTreeSet::new(), &BTreeMap::new(), &BTreeSet::new()),
         );
         assert_eq!(inventory.source_instruction_count(), 0);
         assert!(!inventory.unstructured_cycle_blocks().is_empty());
@@ -2962,8 +3187,8 @@ mod tests {
         let mut inventory = artifact.obligations().clone();
         let obligation = inventory
             .obligations
-            .values_mut()
-            .next()
+            .0
+            .first_mut()
             .expect("source obligation");
         obligation.source = SemanticSourceSite::GraphInstruction(InstId(u32::MAX));
         // The inventory decides this once, where it is built, so a mapping
@@ -3033,8 +3258,7 @@ mod tests {
             &structured,
             &artifact.facts().boundaries,
             None,
-            &BTreeSet::new(),
-            &BTreeMap::new(),
+            &SeedingFacts::new(&BTreeSet::new(), &BTreeMap::new(), &BTreeSet::new()),
         );
         assert!(
             inventory

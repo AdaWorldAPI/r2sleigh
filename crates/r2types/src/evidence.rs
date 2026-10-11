@@ -641,7 +641,8 @@ impl<'a> EvidenceBuilder<'a> {
             CTypeLike::Void
             | CTypeLike::Unknown
             | CTypeLike::BitVector(_)
-            | CTypeLike::Function { .. } => None,
+            | CTypeLike::Function { .. }
+            | CTypeLike::UnprototypedFunction(_) => None,
             CTypeLike::Bool => Some(self.arena.bool_ty()),
             CTypeLike::Int { bits, signedness } => Some(self.arena.int(*bits, *signedness)),
             CTypeLike::Float(bits) => Some(self.arena.float(*bits)),
@@ -1056,9 +1057,12 @@ mod tests {
             space: r2il::SpaceId::Ram,
             addr: r2il::Varnode::unique(0x100, 8),
         });
-        let source =
-            r2ssa::SsaArtifact::for_decompile_with_interface(&[block], Some(&arch), interface)
-                .expect("prepared source");
+        let source = r2ssa::SsaArtifact::for_decompile_with_interface(
+            &[block],
+            Some(&r2ssa::Arch::from(arch.clone())),
+            interface,
+        )
+        .expect("prepared source");
         let parameter = source
             .facts()
             .boundaries
@@ -1128,9 +1132,12 @@ mod tests {
             space: r2il::SpaceId::Ram,
             addr: r2il::Varnode::unique(0x108, 8),
         });
-        let source =
-            r2ssa::SsaArtifact::for_decompile_with_interface(&[block], Some(&arch), interface)
-                .expect("prepared source");
+        let source = r2ssa::SsaArtifact::for_decompile_with_interface(
+            &[block],
+            Some(&r2ssa::Arch::from(arch.clone())),
+            interface,
+        )
+        .expect("prepared source");
         let parameter = source.facts().boundaries.parameters[&0].value;
         let index = source.facts().boundaries.parameters[&1].value;
         let access = source
@@ -1186,8 +1193,12 @@ mod tests {
         .and_then(|interface| interface.with_stack_pointer_storage(register(16)))
         .and_then(|interface| interface.with_return_address_storage(register(24)))
         .expect("exact source interface");
-        r2ssa::SsaArtifact::for_decompile_with_interface(blocks, Some(&arch), interface)
-            .expect("prepared source")
+        r2ssa::SsaArtifact::for_decompile_with_interface(
+            blocks,
+            Some(&r2ssa::Arch::from(arch.clone())),
+            interface,
+        )
+        .expect("prepared source")
     }
 
     /// `rdx` holds the index on one path and the pointer on the other, and
@@ -1310,7 +1321,7 @@ mod tests {
         let taken = r2il::R2ILBlock::new(0x1008, 4);
         let source = r2ssa::SsaArtifact::for_decompile_with_interface(
             &[entry, fallthrough, taken],
-            Some(&arch),
+            Some(&r2ssa::Arch::from(arch.clone())),
             interface,
         )
         .expect("prepared source");
@@ -1420,7 +1431,7 @@ mod tests {
         let taken = r2il::R2ILBlock::new(0x1008, 4);
         let source = r2ssa::SsaArtifact::for_decompile_with_interface(
             &[entry, fallthrough, taken],
-            Some(&arch),
+            Some(&r2ssa::Arch::from(arch.clone())),
             interface,
         )
         .expect("prepared source");

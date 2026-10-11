@@ -106,6 +106,12 @@ pub trait Program: crate::body::Program {
         Vec::new()
     }
 
+    /// What the program's calls to the function at `entry` read of its result registers, where
+    /// the program read its callers (doc/adr-resolved-bodies.md, "Caller reads").
+    fn result_reads(&self, _entry: u64) -> Option<r2source::SourceResultReads> {
+        None
+    }
+
     /// What one callee's body proves, as `read` derives it.
     ///
     /// A callee is prepared against the program and its imports alone, never
@@ -130,7 +136,7 @@ pub struct CalleeRead {
 
 /// Everything about the machine that does not change between functions.
 pub struct NativeTarget<'a> {
-    pub arch: &'a ArchSpec,
+    pub arch: &'a r2ssa::Arch,
     pub disasm: &'a Disassembler,
     /// The processor context the decoder runs in, as the snapshot's machine
     /// tuple spells it. `arm` and `thumb` share an architecture, and this is
@@ -170,6 +176,11 @@ pub enum NativeRefusal {
     /// The carriers or the convention slots are not a machine this engine can
     /// describe.
     Machine(&'static str),
+    /// The function's convention passes what no call boundary states (doc/adr-language-profile.md).
+    Convention {
+        name: &'static str,
+        reason: &'static str,
+    },
     Capture(r2source::SnapshotValidationError),
     Lift(String),
     Prepare(String),
@@ -216,6 +227,7 @@ impl std::fmt::Display for NativeRefusal {
             Self::NoStackPointer => write!(f, "the compiler specification names no stack pointer"),
             Self::UnknownRegister(name) => write!(f, "this architecture has no register {name}"),
             Self::Machine(what) => write!(f, "the machine cannot be described: {what}"),
+            Self::Convention { name, reason } => write!(f, "under the {name} convention: {reason}"),
             Self::Capture(error) => write!(f, "{error}"),
             Self::Lift(error) | Self::Prepare(error) => write!(f, "{error}"),
             Self::Stopped(stop) => write!(f, "{stop}"),
@@ -392,7 +404,7 @@ pub fn walk(
     let declared = native.declaration(entry);
     let first = match declared.interface.is_some() {
         false => native.prepare(&root, &imports)?,
-        true => native.prepare_restated(&root, &imports, Vec::new(), declared, &[])?,
+        true => native.prepare_restated(&root, &imports, Vec::new(), declared, &[], None)?,
     };
     let tables = native.pointer_tables(&first);
     if tables.is_empty() {
@@ -541,24 +553,13 @@ impl std::fmt::Display for Unread {
     }
 }
 
-/// The structured tier for one function: the tree the C is generated from.
-///
-/// The same analysis and the same request as `decompile`, rendered one step
-/// earlier, so the two can be read against each other.
-pub fn structured(
-    target: &NativeTarget<'_>,
-    program: &dyn Program,
-    entry: u64,
-) -> Result<EngineDecompileResponse, NativeRefusal> {
-    render(target, program, entry, crate::RenderTier::Structured)
-}
-
+/// The C of one function, rendered from its sealed facts.
 pub fn decompile(
     target: &NativeTarget<'_>,
     program: &dyn Program,
     entry: u64,
 ) -> Result<EngineDecompileResponse, NativeRefusal> {
-    render(target, program, entry, crate::RenderTier::C)
+    render(target, program, entry)
 }
 
 /// Whether a body that transfers to these callees and reads these import slots calls anything declared to take a function.
@@ -626,25 +627,15 @@ pub(crate) fn declared_return(
     Some(!prototype.is_some_and(|prototype| prototype.noreturn))
 }
 
-/// What the binding plan decided about each value.
-pub fn values(
-    target: &NativeTarget<'_>,
-    program: &dyn Program,
-    entry: u64,
-) -> Result<EngineDecompileResponse, NativeRefusal> {
-    render(target, program, entry, crate::RenderTier::Values)
-}
-
 fn render(
     target: &NativeTarget<'_>,
     program: &dyn Program,
     entry: u64,
-    tier: crate::RenderTier,
 ) -> Result<EngineDecompileResponse, NativeRefusal> {
     let control = program.control();
     let prepared = analysed(target, program, entry)?;
     Ok(match sealed(target, entry, &prepared, &control) {
-        Ok(sealed) => EngineSession::new().render_sealed(&sealed, tier, &control),
+        Ok(sealed) => EngineSession::new().render_sealed(&sealed, &control),
         Err(refused) => *refused,
     })
 }
@@ -809,7 +800,7 @@ fn resolved_alone(
             imports.record(*owner, facts);
         }
     }
-    let resolved = native.resolve(address, &walked.root, &walked.tables, &imports);
+    let resolved = native.resolve(address, walked, &imports, false);
     resolved.map_err(|refusal| match refusal.stopped() {
         true => Unreadable::Stopped,
         false => Unreadable::NotPrepared,
@@ -972,6 +963,11 @@ fn analyse(
     entry: u64,
     walk: &Walk,
 ) -> Result<Prepared, NativeRefusal> {
+    // A convention whose boundaries carry what none states refuses before anything is read.
+    if let Some(reason) = target.convention.refused {
+        let name = target.convention.name;
+        return Err(NativeRefusal::Convention { name, reason });
+    }
     let native = Native {
         target,
         program,
@@ -988,7 +984,7 @@ fn analyse(
         unread,
     } = read_callees(&native, target, &root, entry, ptr_bits);
 
-    let (artifact, _) = native.resolve(entry, &root, &tables, &callees)?;
+    let (artifact, _) = native.resolve(entry, walk, &callees, true)?;
     let tables = tables.iter().map(DispatchTable::of).collect();
     Ok(Prepared {
         artifact,
@@ -1234,14 +1230,16 @@ struct Native<'a> {
 }
 
 impl Native<'_> {
-    /// One body prepared, restated and prepared again against `callees`: one function's whole preparation, whoever asks.
+    /// One body prepared, restated and prepared again against `callees`. With `caller_reads`, every
+    /// call decides an ambiguous result; only its own rendering asks (doc/adr-resolved-bodies.md).
     fn resolve(
         &self,
         entry: u64,
-        root: &Walked,
-        tables: &[NativePointerTable],
+        walk: &Walk,
         callees: &Callees,
+        caller_reads: bool,
     ) -> Result<Resolution, NativeRefusal> {
+        let (root, tables) = (&walk.root, &walk.tables[..]);
         // What the binary's own debug information says this function takes is a
         // declaration, exactly as an import's is, so it is placed in the
         // convention's slots the same way and the body is prepared against it.
@@ -1250,10 +1248,33 @@ impl Native<'_> {
         let declared_prototype =
             Declared::body(self.target, entry).map(|declared| declared.prototype);
         let declared_root = self.declaration(entry);
-        let first = match (declared_root.interface.is_some(), tables.is_empty()) {
-            (false, true) => self.prepare(root, callees)?,
-            _ => self.prepare_restated(root, callees, Vec::new(), declared_root.clone(), tables)?,
+        let prepare_first = |reads| match (declared_root.interface.is_some(), tables.is_empty()) {
+            (false, true) => self.prepare_restated(
+                root,
+                callees,
+                Vec::new(),
+                Restatement::default(),
+                &[],
+                reads,
+            ),
+            _ => self.prepare_restated(
+                root,
+                callees,
+                Vec::new(),
+                declared_root.clone(),
+                tables,
+                reads,
+            ),
         };
+        let mut first = prepare_first(None)?;
+        // A body writing both result registers is prepared once more with what the program's calls
+        // read of them (doc/adr-resolved-bodies.md, "Caller reads").
+        let reads = (caller_reads && first.shared_artifact().machine_context().result_ambiguous())
+            .then(|| self.program.result_reads(entry))
+            .flatten();
+        if reads.is_some() {
+            first = prepare_first(reads)?;
+        }
         // A second capture states what the first proved. Preparation recovers the
         // interface off the instructions and proves which frame slots home which
         // parameter; declaring those turns the spill into the parameter again,
@@ -1291,7 +1312,7 @@ impl Native<'_> {
                     signature: declared_root.signature,
                     slot_names: declared_root.slot_names,
                 };
-                self.prepare_restated(root, callees, folded, restatement, tables)?
+                self.prepare_restated(root, callees, folded, restatement, tables, reads)?
             }
         };
         Ok((artifact, owners))
@@ -1592,7 +1613,14 @@ impl Native<'_> {
         callees: &Callees,
         extra_literals: Vec<(u64, String)>,
     ) -> Result<Arc<TrustedSsaArtifact>, NativeRefusal> {
-        self.prepare_restated(walked, callees, extra_literals, Restatement::default(), &[])
+        self.prepare_restated(
+            walked,
+            callees,
+            extra_literals,
+            Restatement::default(),
+            &[],
+            None,
+        )
     }
 
     fn prepare_restated(
@@ -1602,6 +1630,7 @@ impl Native<'_> {
         extra_literals: Vec<(u64, String)>,
         restatement: Restatement,
         tables: &[NativePointerTable],
+        result_reads: Option<r2source::SourceResultReads>,
     ) -> Result<Arc<TrustedSsaArtifact>, NativeRefusal> {
         let Restatement {
             interface,
@@ -1679,6 +1708,7 @@ impl Native<'_> {
             signature,
             interface,
             loader_role: None,
+            result_reads,
             frame_saves: self.program.frame_saves(walked.body.entry),
         };
 
@@ -1689,6 +1719,7 @@ impl Native<'_> {
         let evidence = callees.evidence(library);
         let artifact = TrustedSsaArtifact::prepare_with_callee_interfaces(
             lifted,
+            Some(self.target.arch),
             &self.control,
             &evidence,
             &accepted_premises(),
@@ -1698,15 +1729,8 @@ impl Native<'_> {
     }
 }
 
-/// Every function this body reaches, each once, in address order.
-///
-/// A tail jump reaches another function exactly as a call does; the only
-/// difference is that its result is this function's own. So does a jump
-/// through a slot the loader fills, which is how an import stub reaches its
-/// import: the slot is what the call site names, so it is what the import's
-/// declaration is placed at. One callee reached two ways is still one
-/// callee: declaring it twice makes the type analysis reject the whole
-/// capture as holding a duplicate address.
+/// Every function this body reaches by a call, tail jump, loaded slot or folded target, each once
+/// in address order: one callee declared twice is a duplicate address the type analysis rejects.
 fn reached(body: &crate::body::Body, program: &dyn Program) -> Vec<u64> {
     body.calls
         .iter()
@@ -1715,7 +1739,6 @@ fn reached(body: &crate::body::Body, program: &dyn Program) -> Vec<u64> {
         .chain(
             call_sites(body, program)
                 .into_iter()
-                .filter(|site| site.transfer == r2source::AdvisoryCallTransfer::TailSlot)
                 .map(|site| site.target),
         )
         .collect::<std::collections::BTreeSet<_>>()
@@ -1731,8 +1754,18 @@ fn reached(body: &crate::body::Body, program: &dyn Program) -> Vec<u64> {
 fn call_sites(body: &crate::body::Body, program: &dyn Program) -> Vec<NativeCall> {
     let mut sites = Vec::new();
     for block in &body.blocks {
-        for index in 0..block.lifted.ops.len() {
-            let Some((target, transfer)) = transfer(&block.lifted, index, body) else {
+        let ops = &block.lifted.ops;
+        // One forward read per block that calls through a value, so each such call folds in `O(1)`.
+        let mut origins = (ops
+            .iter()
+            .any(|op| matches!(op, r2il::R2ILOp::CallInd { .. })))
+        .then(r2ssa::origin::BlockOrigins::default);
+        for (index, op) in ops.iter().enumerate() {
+            let site = transfer(&block.lifted, index, body, origins.as_ref());
+            if let Some(origins) = &mut origins {
+                origins.step(op);
+            }
+            let Some((target, transfer)) = site else {
                 continue;
             };
             let Some(instruction) = block
@@ -1776,23 +1809,23 @@ fn library_evidence(
         .collect()
 }
 
-/// How one operation reaches another function, where it reaches one at all.
-///
-/// A call comes back and a tail jump does not, and which this is a fact about
-/// the body rather than about the callee: the walk decided it when it stopped
-/// at the target's entry. A jump through a loaded value names no code address
-/// at all, so its target is the slot the jump reads, which is what the
-/// relocation on that slot licenses. The slot is read by the same pass that
-/// reads it again when the site is correlated, so the two cannot disagree.
+/// How one operation reaches another function, where it does: a call target the walk folded and a
+/// jump's loaded slot are read by the passes r2ssa correlates the site with, so the two agree.
 fn transfer(
     block: &r2il::R2ILBlock,
     index: usize,
     body: &crate::body::Body,
+    origins: Option<&r2ssa::origin::BlockOrigins>,
 ) -> Option<(u64, r2source::AdvisoryCallTransfer)> {
     match block.ops.get(index)? {
         r2il::R2ILOp::Call { target } => {
             Some((target.offset, r2source::AdvisoryCallTransfer::Call))
         }
+        r2il::R2ILOp::CallInd { target } => origins?
+            .of(target)?
+            .constant()
+            .filter(|target| body.calls.contains(target))
+            .map(|target| (target, r2source::AdvisoryCallTransfer::Call)),
         r2il::R2ILOp::Branch { target } if body.tail_calls.contains(&target.offset) => {
             Some((target.offset, r2source::AdvisoryCallTransfer::TailJump))
         }
@@ -1921,16 +1954,18 @@ impl Native<'_> {
                 else {
                     continue;
                 };
-                let Some(prototype) = self.target.prototypes.get(&callee) else {
+                let Some(declared) = Declared::import(self.target, &callee) else {
                     continue;
                 };
-                for (index, parameter) in prototype.parameters.iter().enumerate() {
+                let prototype = declared.prototype;
+                // The convention places each parameter: by class, or by position where shared.
+                let placed = Placement::new(self.target, &self.machine).placed_prefix(declared);
+                for (index, (parameter, storage)) in
+                    prototype.parameters.iter().zip(&placed).enumerate()
+                {
                     if !parameter.is_function() {
                         continue;
                     }
-                    let Some(storage) = self.machine.slots.argument_slots().get(index) else {
-                        continue;
-                    };
                     let Some(address) = r2ssa::value_reaching(prepared.as_ref(), id, *storage)
                         .and_then(|value| prepared.folded_value(value))
                     else {
@@ -2101,7 +2136,9 @@ fn machine(target: &NativeTarget<'_>) -> Result<NativeMachine, NativeRefusal> {
 
 /// Where the convention leaves each argument and result: the compiler
 /// specification's registers and stack placement, and what the ABI adds.
-fn convention_slots(target: &NativeTarget<'_>) -> Result<SourceConventionSlots, NativeRefusal> {
+pub(crate) fn convention_slots(
+    target: &NativeTarget<'_>,
+) -> Result<SourceConventionSlots, NativeRefusal> {
     // The default prototype's general-purpose register entries, in order:
     // its argument registers, and its first result register. A float or a
     // hidden-return entry is no integer argument slot.
@@ -2130,14 +2167,21 @@ fn convention_slots(target: &NativeTarget<'_>) -> Result<SourceConventionSlots, 
     // step between entries.
     let stack_arguments = target
         .compiler
-        .stack_arguments
+        .stack_arguments()
         .and_then(|(offset, align)| r2source::SourceStackArgumentPlacement::new(offset, align));
     Ok(
         SourceConventionSlots::new(target.convention.name, argument_slots, result_slot)
             .and_then(|slots| slots.with_float_slots(float_slots, float_result))
             .map_err(|_| NativeRefusal::Machine("the convention names one register twice"))?
+            .with_shared_positions(prototype.shares_positions())
             .with_stack_arguments(stack_arguments)
-            .with_variadic_tail_on_stack(target.convention.variadic_tail_on_stack),
+            .with_variadic_tail_on_stack(target.convention.variadic_tail_on_stack)
+            .with_entry_stack(target.convention.entry_stack.map(|stack| {
+                r2source::SourceEntryStack {
+                    alignment: stack.alignment,
+                    residue: stack.residue,
+                }
+            })),
     )
 }
 
@@ -2336,4 +2380,105 @@ pub(crate) fn storage(arch: &ArchSpec, name: &str) -> Result<CanonicalStorageId,
 /// passes (doc/adr-frame-model.md, P4.4). A consumer that refuses it is item A's.
 pub(crate) fn accepted_premises() -> std::collections::BTreeSet<r2source::Premise> {
     std::collections::BTreeSet::from([r2source::Premise::UbFreeSource])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE: u64 = 0x1000;
+    /// `lea rdi, [0x1020]; xorps xmm0, xmm0; call on_double; ret`, the stub at 0x1018.
+    const HANDS_AFTER_A_DOUBLE: &[u8] = &[
+        0x48, 0x8d, 0x3d, 0x19, 0x00, 0x00, 0x00, // 0x1000 lea rdi, [rip + 0x19]
+        0x0f, 0x57, 0xc0, // 0x1007 xorps xmm0, xmm0
+        0xe8, 0x09, 0x00, 0x00, 0x00, // 0x100a call 0x1018
+        0xc3, // 0x100f ret
+        0, 0, 0, 0, 0, 0, 0, 0,    // to 0x1018
+        0xc3, // 0x1018 the stub
+        0, 0, 0, 0, 0, 0, 0,    // to 0x1020
+        0xc3, // 0x1020 the handed function
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+
+    struct HandsAfterADouble;
+
+    impl crate::body::Program for HandsAfterADouble {
+        fn read(&self, vaddr: u64, max: usize) -> Option<Vec<u8>> {
+            let offset = usize::try_from(vaddr.checked_sub(BASE)?).ok()?;
+            let slice = HANDS_AFTER_A_DOUBLE.get(offset..)?;
+            (!slice.is_empty()).then(|| slice[..slice.len().min(max)].to_vec())
+        }
+
+        fn region(&self, vaddr: u64) -> Option<crate::body::Region> {
+            let end = BASE + HANDS_AFTER_A_DOUBLE.len() as u64;
+            (BASE..end).contains(&vaddr).then_some(crate::body::Region {
+                start: BASE,
+                end,
+                file_end: end,
+                execute: true,
+                write: false,
+            })
+        }
+
+        fn is_entry(&self, vaddr: u64) -> bool {
+            matches!(vaddr, BASE | 0x1018 | 0x1020)
+        }
+    }
+
+    impl Program for HandsAfterADouble {
+        fn holds_static_data(&self, _vaddr: u64) -> bool {
+            false
+        }
+
+        fn extents(&self) -> &r2types::ProgramExtents {
+            const NONE: &r2types::ProgramExtents = &r2types::ProgramExtents::none();
+            NONE
+        }
+
+        fn name_at(&self, vaddr: u64) -> Option<String> {
+            self.import_at(vaddr)
+        }
+
+        fn import_at(&self, vaddr: u64) -> Option<String> {
+            (vaddr == 0x1018).then(|| "on_double".to_owned())
+        }
+    }
+
+    /// System V passes `on_double(double, void (*)())`'s callback in RDI, the first integer
+    /// register, however many floats come before it.
+    #[test]
+    fn a_function_handed_after_a_double_is_read_from_the_first_integer_slot() {
+        let embedded = crate::machine::Machine::new(
+            r2sleigh_lift::embedded_machine("x86-64").expect("embedded machine"),
+        );
+        let compiler = LanguageProfile::parse(embedded.compiler_spec).expect("parses");
+        let convention =
+            r2abi::calling_convention("x86-64", 64, r2abi::Platform::Unknown).expect("System V");
+        let effect = call_effect(
+            &embedded.arch,
+            64,
+            r2abi::Platform::Unknown,
+            &compiler,
+            convention.variadic_count_register,
+        );
+        let prototypes = r2abi::Prototypes::parse(
+            "on_double=func\nfunc.on_double.args=2\nfunc.on_double.arg.0=double,x\n\
+             func.on_double.arg.1=func,callback\nfunc.on_double.ret=void\n",
+        );
+        let declarations = r2abi::Declarations::default();
+        let target = NativeTarget {
+            arch: embedded.tables(),
+            disasm: &embedded.disasm,
+            cpu: embedded.cpu,
+            convention,
+            call_effect: effect.as_ref(),
+            compiler: &compiler,
+            dwarf: &embedded.dwarf,
+            prototypes: &prototypes,
+            declarations: &declarations,
+        };
+        let walked = walk(&target, &HandsAfterADouble, BASE).expect("walks");
+        let handed = handed(&target, &HandsAfterADouble, walked.root.body);
+        assert_eq!(handed, [0x1020]);
+    }
 }
