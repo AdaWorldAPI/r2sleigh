@@ -44,7 +44,9 @@ use crate::facts::{
     OutParamCertificateSource, ScalarArrayRenderCandidate, SignatureCertificate,
     SignatureCertificateSource, VisibleBinding, VisibleBindingKind,
 };
-use crate::function_facts::{FunctionFacts, InterprocSummaryView, SourceOwnedFunctionFacts};
+use crate::function_facts::{
+    FunctionFacts, InterprocSummaryView, ProjectedFacts, SourceOwnedFunctionFacts,
+};
 use crate::inferred_signature_from_signature_spec;
 use crate::model::Signedness;
 use crate::prepare::ssa_var_block_key;
@@ -70,12 +72,9 @@ pub(crate) struct TypePlan {
 #[derive(Debug)]
 pub struct TypeAnalysis {
     source: Arc<SsaArtifact>,
-    function_facts: FunctionFacts,
+    function_facts: ProjectedFacts,
     plan: TypePlan,
     callee_signatures: BTreeMap<u64, crate::SourceOwnedCalleeSignature>,
-    /// The evidence solve enrichment ran, which the seal keeps: its call prototypes are the
-    /// source's and the callees', which no type pass writes.
-    evidence_types: crate::EvidenceTypes,
 }
 
 #[derive(Debug, Clone)]
@@ -95,13 +94,13 @@ impl TypeAnalysis {
     }
 
     pub fn function_facts(&self) -> &FunctionFacts {
-        &self.function_facts
+        self.function_facts.report()
     }
 
     /// The render-authorized signature, or where the result is one of two carriers and the exact
     /// interface takes nothing, `(void)`: its result is typed at each call by its caller's read.
     fn signature_for_callers(&self) -> Option<std::borrow::Cow<'_, crate::FunctionSignatureSpec>> {
-        let type_facts = self.function_facts.type_facts();
+        let type_facts = self.function_facts.report().type_facts();
         if let Some(signature) = type_facts.render_authorized_signature() {
             return Some(std::borrow::Cow::Borrowed(signature));
         }
@@ -128,6 +127,7 @@ impl TypeAnalysis {
                 "callee-signature",
                 "{entry:#x}: no render-authorized signature; certificate={:?}",
                 self.function_facts
+                    .report()
                     .type_facts()
                     .signature_certificate
                     .as_ref()
@@ -147,7 +147,7 @@ impl TypeAnalysis {
             );
             return None;
         };
-        let Some(render) = self.function_facts.render() else {
+        let Some(render) = self.function_facts.report().render() else {
             r2il::refusal_evidence!("callee-signature", "{entry:#x}: no render facts");
             return None;
         };
@@ -206,63 +206,48 @@ impl TypeAnalysis {
         )
     }
 
-    fn enrich_from_source_for_decompile(&mut self) -> bool {
-        if crate::prepare::prepared_arch_display_name(self.source.as_ref()).is_none() {
-            return false;
-        }
+    /// The plan after enrichment changed the signature it was derived from.
+    fn refresh_plan_after_enrichment(
+        &mut self,
+        changed_parameters: &BTreeSet<usize>,
+        return_type_changed: bool,
+    ) {
         let prior_plan = self.plan.clone();
-        let (changed_parameters, return_type_changed, evidence_types) =
-            SourceOwnedFunctionFacts::enrich_report_from_source_with_callee_signatures(
-                self.source.as_ref(),
-                &mut self.function_facts,
-                &self.callee_signatures,
-            );
-        self.evidence_types = evidence_types;
         if (!changed_parameters.is_empty() || return_type_changed)
-            && !self.refresh_plan_after_source_constraints(&changed_parameters)
+            && !self.refresh_plan_after_source_constraints(changed_parameters)
         {
-            // The plan is the analysis's projection of the facts, and it is
-            // refreshed atomically: a plan that binds one argument twice, or
-            // to a register that is no slot, would write conflicting types
-            // back, so such a plan is left as it was. That is a fact about the
-            // the analysis, not about the decompilation. The enriched facts are
-            // what the rendering reads, and they stand; only the plan keeps
-            // its prior signature, which the certificate check sees.
-            // Failing the whole function here had cost every function whose
-            // plan carried one such binding its decompilation.
+            // A plan refreshed in part would write conflicting types back; the facts, which
+            // rendering reads, stand, and the plan keeps its prior signature.
             r2il::refusal_evidence!(
                 "signature-refresh",
                 "plan not refreshed: changed slots {changed_parameters:?} return_changed={return_type_changed}; facts enriched, plan kept"
             );
             self.plan = prior_plan;
         }
-        true
     }
 
     pub fn type_facts(&self) -> &FunctionTypeFacts {
-        self.function_facts.type_facts()
+        self.function_facts.report().type_facts()
     }
 
     pub fn finalize_for_decompile(
         mut self,
         finalization: DecompileFinalization,
     ) -> Result<SourceOwnedFunctionFacts, FinalizationRefused> {
-        if !SourceOwnedFunctionFacts::stamp_report_decompile_route(
-            &mut self.function_facts,
+        if !self.function_facts.stamp_route(
             finalization.kind,
             finalization.reason,
             finalization.fallback_comment,
         ) {
             return Err(FinalizationRefused {
                 error: TypeAnalysisError::IncompatibleDecompileRoute,
-                facts: Box::new(self.function_facts),
+                facts: Box::new(self.function_facts.into_report()),
             });
         }
         SourceOwnedFunctionFacts::seal_with_callee_signatures(
             self.source,
             self.function_facts,
             self.callee_signatures,
-            self.evidence_types,
         )
         .map_err(|facts| FinalizationRefused {
             error: TypeAnalysisError::FunctionFactsSourceMismatch,
@@ -282,6 +267,7 @@ impl TypeAnalysis {
     fn refresh_plan_after_source_constraints(&mut self, changed_slots: &BTreeSet<usize>) -> bool {
         let Some(signature) = self
             .function_facts
+            .report()
             .type_facts()
             .render_authorized_signature()
             .cloned()
@@ -317,7 +303,11 @@ impl TypeAnalysis {
             &function_name,
             arch_name,
             ptr_bits,
-            self.function_facts.type_facts().callconv.as_deref(),
+            self.function_facts
+                .report()
+                .type_facts()
+                .callconv
+                .as_deref(),
             &signature,
         );
         let mut refreshed_slots = BTreeSet::new();
@@ -1404,16 +1394,22 @@ pub fn build_source_owned_type_analysis(
         }
         function_facts.replace_type_facts(type_facts);
     }
+    if crate::prepare::prepared_arch_display_name(source.as_ref()).is_none() {
+        return Err(TypeAnalysisError::SourceEnrichmentFailed);
+    }
+    let (function_facts, changed_parameters, return_type_changed) =
+        SourceOwnedFunctionFacts::enrich_report_from_source_with_callee_signatures(
+            source.as_ref(),
+            function_facts,
+            &callee_signatures,
+        );
     let mut analysis = TypeAnalysis {
         source,
         function_facts,
         plan: derived.plan,
         callee_signatures,
-        evidence_types: crate::EvidenceTypes::default(),
     };
-    if !analysis.enrich_from_source_for_decompile() {
-        return Err(TypeAnalysisError::SourceEnrichmentFailed);
-    }
+    analysis.refresh_plan_after_enrichment(&changed_parameters, return_type_changed);
     Ok(analysis)
 }
 

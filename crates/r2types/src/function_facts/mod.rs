@@ -756,6 +756,39 @@ pub struct SourceOwnedFunctionFacts {
     _callee_signatures: BTreeMap<u64, SourceOwnedCalleeSignature>,
 }
 
+/// A report whose call, control and render facts are the source's projection under its final
+/// types. Only enrichment makes one, the route stamp is its one write, and only the seal takes it.
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectedFacts {
+    report: FunctionFacts,
+    /// Enrichment's evidence solve: its call prototypes are no type pass's to write.
+    evidence_types: crate::EvidenceTypes,
+}
+
+impl ProjectedFacts {
+    pub(crate) fn report(&self) -> &FunctionFacts {
+        &self.report
+    }
+
+    pub(crate) fn into_report(self) -> FunctionFacts {
+        self.report
+    }
+
+    pub(crate) fn stamp_route(
+        &mut self,
+        kind: DecompileRouteKind,
+        reason: impl Into<String>,
+        fallback_comment: Option<String>,
+    ) -> bool {
+        SourceOwnedFunctionFacts::stamp_report_decompile_route(
+            &mut self.report,
+            kind,
+            reason,
+            fallback_comment,
+        )
+    }
+}
+
 /// One C signature derived from the exact retained body that owns it.
 ///
 /// Construction is crate-private: callers may transport this certificate, but
@@ -872,18 +905,23 @@ impl SourceOwnedFunctionFacts {
             .default_address_bits();
         let evidence_types =
             crate::solve_evidence_types(source.as_ref(), &report.callsite_signatures(), ptr_bits);
-        Self::seal_with_callee_signatures(source, report, BTreeMap::new(), evidence_types).ok()
+        let projected = ProjectedFacts {
+            report,
+            evidence_types,
+        };
+        Self::seal_with_callee_signatures(source, projected, BTreeMap::new()).ok()
     }
 
     /// The sealed facts, or the report handed back where it is not this source's projection.
     pub(crate) fn seal_with_callee_signatures(
         source: Arc<r2ssa::SsaArtifact>,
-        report: FunctionFacts,
+        projected: ProjectedFacts,
         callee_signatures: BTreeMap<u64, SourceOwnedCalleeSignature>,
-        evidence_types: crate::EvidenceTypes,
     ) -> Result<Self, Box<FunctionFacts>> {
-        // The projection is the source's by construction: enrichment builds it last, from the
-        // final canonical types, and nothing writes the report after (`enrich_report_from_source_*`).
+        let ProjectedFacts {
+            report,
+            evidence_types,
+        } = projected;
         if report.assumptions() != &source.facts().assumptions
             || report
                 .prepared_interproc_summary()
@@ -1122,11 +1160,13 @@ impl SourceOwnedFunctionFacts {
         source: &r2ssa::SsaArtifact,
         report: &mut FunctionFacts,
     ) -> (BTreeSet<usize>, bool) {
-        let (changed, return_changed, _) = Self::enrich_report_from_source_with_callee_signatures(
-            source,
-            report,
-            &BTreeMap::new(),
-        );
+        let (projected, changed, return_changed) =
+            Self::enrich_report_from_source_with_callee_signatures(
+                source,
+                std::mem::take(report),
+                &BTreeMap::new(),
+            );
+        *report = projected.into_report();
         (changed, return_changed)
     }
 
@@ -1137,15 +1177,10 @@ impl SourceOwnedFunctionFacts {
     /// function. One fact has one owner.
     pub(crate) fn enrich_report_from_source_with_callee_signatures(
         source: &r2ssa::SsaArtifact,
-        report: &mut FunctionFacts,
+        mut enriched: FunctionFacts,
         callee_signatures: &BTreeMap<u64, SourceOwnedCalleeSignature>,
-    ) -> (BTreeSet<usize>, bool, crate::EvidenceTypes) {
-        let prior_signature = report.types.merged_signature.clone();
-        // The report is taken rather than copied: it is written back whole at
-        // the end of this function and nothing reads the original in between,
-        // so the copy was the whole fact set duplicated once for the root and
-        // once for every callee whose contribution is derived.
-        let mut enriched = std::mem::take(report);
+    ) -> (ProjectedFacts, BTreeSet<usize>, bool) {
+        let prior_signature = enriched.types.merged_signature.clone();
         let mut usage = source.facts().assumption_usage.clone();
         usage.extend(enriched.assumption_usage());
         enriched.assumption_usage = usage;
@@ -1187,8 +1222,11 @@ impl SourceOwnedFunctionFacts {
             .as_ref()
             .and_then(|signature| signature.ret_type.as_ref())
             != final_signature.and_then(|signature| signature.ret_type.as_ref());
-        *report = enriched;
-        (changed_parameters, return_type_changed, evidence)
+        let projected = ProjectedFacts {
+            report: enriched,
+            evidence_types: evidence,
+        };
+        (projected, changed_parameters, return_type_changed)
     }
 
     /// The source's projection under the report's types: call, control and render facts.
