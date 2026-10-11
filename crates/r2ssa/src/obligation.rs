@@ -379,15 +379,15 @@ impl ObligationTable {
         self.position(id).ok().map(|at| &self.0[at])
     }
 
-    /// The obligations of one instruction: a run, since identities sort by instruction first.
+    /// The obligations of one instruction: a run, since identities sort by instruction first; one
+    /// search finds it, and a run is a few obligations long.
     fn run(&self, instruction: &CanonicalInstructionId) -> &[SemanticObligation] {
-        let start = self
-            .0
-            .partition_point(|held| held.id.instruction < *instruction);
-        let end = self
-            .0
-            .partition_point(|held| held.id.instruction <= *instruction);
-        &self.0[start..end]
+        let start = (self.0).partition_point(|held| held.id.instruction < *instruction);
+        let rest = &self.0[start..];
+        let len = (rest.iter())
+            .take_while(|held| held.id.instruction == *instruction)
+            .count();
+        &rest[..len]
     }
 
     pub fn contains_key(&self, id: &SemanticObligationId) -> bool {
