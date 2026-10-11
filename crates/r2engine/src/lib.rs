@@ -1863,7 +1863,10 @@ impl EngineSession {
         let mut metrics = analyze_response.metrics;
         let analyze_diagnostics = analyze_response.diagnostics;
         let artifact = analyze_response.artifact;
-        let analyzed_function_facts = std::sync::Arc::new(artifact.function_facts().clone());
+        // A refusal carries the analysed facts; copied only when one is made.
+        let analyzed = |artifact: &EngineAnalysisArtifact| {
+            Some(std::sync::Arc::new(artifact.function_facts().clone()))
+        };
         let Some(render_target) = EngineRenderTarget::for_prepared(artifact.ssa_func()) else {
             metrics.refuse_from(EnginePhase::Normalization);
             return Err(Box::new(
@@ -1873,7 +1876,7 @@ impl EngineSession {
                     input_quality_facts,
                     metrics,
                     analyze_diagnostics,
-                    Some(analyzed_function_facts),
+                    analyzed(&artifact),
                     None,
                 ),
             ));
@@ -1887,7 +1890,7 @@ impl EngineSession {
                     input_quality_facts,
                     metrics,
                     analyze_diagnostics,
-                    Some(analyzed_function_facts),
+                    analyzed(&artifact),
                     None,
                 ),
             ));
@@ -1903,7 +1906,7 @@ impl EngineSession {
                     input_quality_facts,
                     *refusal.metrics,
                     *refusal.diagnostics,
-                    Some(analyzed_function_facts),
+                    analyzed(&artifact),
                     None,
                 ),
             ));
@@ -1932,7 +1935,7 @@ impl EngineSession {
         } = artifact;
         let source_owned_facts = match type_analysis.finalize_for_decompile(finalization) {
             Ok(facts) => facts,
-            Err(_) => {
+            Err(refused) => {
                 metrics.refuse_from(EnginePhase::Normalization);
                 return Err(Box::new(
                     refused_decompile_response_with_metrics_and_audits(
@@ -1941,7 +1944,7 @@ impl EngineSession {
                         input_quality_facts,
                         metrics,
                         analyze_diagnostics,
-                        Some(analyzed_function_facts),
+                        Some(std::sync::Arc::new(*refused.facts)),
                         None,
                     ),
                 ));

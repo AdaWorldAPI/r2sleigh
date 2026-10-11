@@ -866,14 +866,15 @@ impl SourceOwnedCalleeSignature {
 impl SourceOwnedFunctionFacts {
     #[cfg(test)]
     pub(crate) fn seal(source: Arc<r2ssa::SsaArtifact>, report: FunctionFacts) -> Option<Self> {
-        Self::seal_with_callee_signatures(source, report, BTreeMap::new())
+        Self::seal_with_callee_signatures(source, report, BTreeMap::new()).ok()
     }
 
+    /// The sealed facts, or the report handed back where it is not this source's projection.
     pub(crate) fn seal_with_callee_signatures(
         source: Arc<r2ssa::SsaArtifact>,
         mut report: FunctionFacts,
         callee_signatures: BTreeMap<u64, SourceOwnedCalleeSignature>,
-    ) -> Option<Self> {
+    ) -> Result<Self, Box<FunctionFacts>> {
         // Canonicalization is part of sealing. Runtime consumers must observe
         // this exact report and may not clone then normalize it independently.
         report.canonicalize_type_facts();
@@ -882,7 +883,7 @@ impl SourceOwnedFunctionFacts {
                 .prepared_interproc_summary()
                 .is_some_and(|summary| !summary.matches_root(&source))
         {
-            return None;
+            return Err(Box::new(report));
         }
         // Source-owned facts are authoritative only when every source-dependent
         // projection is exactly what this retained SSA artifact produces. Both
@@ -901,7 +902,7 @@ impl SourceOwnedFunctionFacts {
             || report.control != expected.control
             || report.render != expected.render
         {
-            return None;
+            return Err(Box::new(report));
         }
         let ptr_bits = source
             .machine_context()
@@ -909,7 +910,7 @@ impl SourceOwnedFunctionFacts {
             .default_address_bits();
         let evidence_types =
             crate::solve_evidence_types(source.as_ref(), &report.callsite_signatures(), ptr_bits);
-        Some(Self {
+        Ok(Self {
             source,
             report: Arc::new(report),
             evidence_types,
