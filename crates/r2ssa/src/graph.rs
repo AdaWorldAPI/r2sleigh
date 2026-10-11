@@ -74,6 +74,26 @@ mod tests {
         .expect("two phi merge SSA")
     }
 
+    /// The arena's live count is every phi and operation the blocks hold, a removed phi gone.
+    #[test]
+    fn the_arena_counts_what_the_blocks_hold() {
+        let held = |func: &SSAFunction| {
+            func.blocks()
+                .iter()
+                .map(|block| block.phis().len() + block.ops().len())
+                .sum::<usize>()
+        };
+        let mut func = two_phi_merge();
+        assert_eq!(func.arena().live(), held(&func));
+        let removed = func.named_block(0x100c).expect("merge").phis()[0]
+            .dst
+            .clone();
+        let mut merge = func.edit_block(0x100c).expect("merge block");
+        merge.retain_phis(crate::Pass::Fixture, |phi| phi.dst != removed);
+        assert_eq!(func.arena().live(), held(&func));
+        assert_eq!(SsaGraph::from_function(&func).insts.len(), held(&func));
+    }
+
     /// A merge's storage belongs to the merge, not to its position in the block.
     ///
     /// This arrived with copy propagation, which asserted it by collapsing one
@@ -430,12 +450,9 @@ impl SsaGraph {
         }
 
         let mut numbering = ValueNumbering::new(function);
-        // Sized once: an array grown by doubling holds up to twice its instructions at the peak.
-        let count = function
-            .blocks()
-            .iter()
-            .map(|block| block.phis().len() + block.ops().len())
-            .sum::<usize>();
+        // Sized from the arena's live count: an array grown by doubling holds up to twice its
+        // instructions at the peak.
+        let count = function.arena().live();
         let mut insts = Vec::with_capacity(count);
         let mut inst_by_op = vec![None; function.id_limit()];
         let mut op_by_inst = Vec::with_capacity(count);
