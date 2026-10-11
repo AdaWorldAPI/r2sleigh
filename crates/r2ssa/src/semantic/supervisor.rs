@@ -44,13 +44,13 @@ impl crate::SsaArtifact {
         if sites.is_empty() {
             return Vec::new();
         }
-        let reaching = shared::reaching_storage_states_before(function, graph, number);
+        let mut reaching = super::ReachingStorage::new(function, graph, number);
         let mut calls = sites
             .into_iter()
             .filter_map(|site| {
                 let address = graph.instruction_for_inst(site)?;
-                let number = match reaching.get(site) {
-                    Some(ReachingStorageState::Value(value)) => self.proven_constant(*value),
+                let number = match reaching.before(site) {
+                    Some(ReachingStorageState::Value(value)) => self.proven_constant(value),
                     _ => None,
                 };
                 Some(SupervisorCall { address, number })

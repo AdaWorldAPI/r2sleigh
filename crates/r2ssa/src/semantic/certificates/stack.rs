@@ -197,7 +197,7 @@ pub(crate) fn collect_callee_stack_allocation_certificates(
         })
     });
     let explicit_contract = SourceStackAllocationContract::new(contract.growth());
-    let active_stack_pointer_states = reaching_storage_boundaries(function, graph, stack_pointer);
+    let mut active_stack_pointer_states = ReachingStorage::new(function, graph, stack_pointer);
     let mut candidates = BTreeMap::new();
 
     for (object, fact) in &objects.objects {
@@ -273,17 +273,13 @@ pub(crate) fn collect_callee_stack_allocation_certificates(
         for access in &accesses {
             // The stack pointer at the access, or at either edge of its instruction: one
             // instruction may move it and access at once (a pre-index `stp`), and nothing runs between.
+            let boundary = active_stack_pointer_states.at(access.id.inst);
             let offsets = [
-                &active_stack_pointer_states.before,
-                &active_stack_pointer_states.instruction_start,
-                &active_stack_pointer_states.instruction_end,
+                boundary.map(|boundary| boundary.before),
+                boundary.map(|boundary| boundary.instruction_start),
+                boundary.map(|boundary| boundary.instruction_end),
             ]
-            .map(|states| {
-                states
-                    .get(access.id.inst)
-                    .copied()
-                    .and_then(|state| exact_stack_pointer_offset(prep, graph, state))
-            });
+            .map(|state| state.and_then(|state| exact_stack_pointer_offset(prep, graph, state)));
             let owned_by = |contract: &SourceStackAllocationContract| {
                 offsets.into_iter().flatten().find(|offset| {
                     contract.owns_entry_relative_range(*offset, entry_root.offset, size_bytes)

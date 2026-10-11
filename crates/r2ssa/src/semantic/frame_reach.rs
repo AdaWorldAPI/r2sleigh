@@ -605,7 +605,7 @@ fn call_reaches(
         .convention_slots()
         .and_then(r2source::SourceConventionSlots::stack_arguments)
         .map_or(0, |placement| placement.first_offset().max(0));
-    let states = reaching_storage_states_before(function, graph, stack_pointer);
+    let mut states = ReachingStorage::new(function, graph, stack_pointer);
     for block in function.named_blocks() {
         for (op_id, op) in block.sited() {
             let instruction = match op {
@@ -617,9 +617,9 @@ fn call_reaches(
             let Some(call) = graph.inst_for_op(op_id) else {
                 continue;
             };
-            let sp = match states.get(call) {
+            let sp = match states.before(call) {
                 Some(ReachingStorageState::Value(value)) => graph
-                    .value(*value)
+                    .value(value)
                     .and_then(|value| entry_offset(facts, value.id)),
                 _ => None,
             };
