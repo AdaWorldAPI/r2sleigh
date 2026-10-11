@@ -144,6 +144,11 @@ impl OpArena {
         self.slots.len()
     }
 
+    /// Give back the room growth left, once nothing more is minted.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.slots.shrink_to_fit();
+    }
+
     /// How many operations and phis live: what a graph of the function holds.
     pub fn live(&self) -> usize {
         self.live

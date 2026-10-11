@@ -205,6 +205,8 @@ impl Prepared {
             ir.apply_edits(released);
             graph = SsaGraph::from_function_with_storage(&ir);
         }
+        // The last edit is behind: the sealed function lives as long as the analysis.
+        ir.shrink_to_fit();
         let mut prep = ir
             .collect_decompile_prep_facts_with_control(
                 &graph,

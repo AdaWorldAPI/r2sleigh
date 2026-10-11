@@ -96,6 +96,10 @@ impl<V> Blocks<V> {
             .collect();
     }
 
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.arena.shrink_to_fit();
+    }
+
     /// The arena every id of these blocks was minted from.
     pub(crate) const fn arena(&self) -> &OpArena {
         &self.arena

@@ -545,12 +545,15 @@ impl SsaGraph {
             }
         }
         let ValueNumbering {
-            values,
+            mut values,
             by_var: value_by_var,
-            def_of,
+            mut def_of,
             uses_of,
             ..
         } = numbering;
+        // Grown one value at a time; the graph keeps them as long as the analysis does.
+        values.shrink_to_fit();
+        def_of.shrink_to_fit();
 
         let entry = block_by_addr
             .get(&function.root())
