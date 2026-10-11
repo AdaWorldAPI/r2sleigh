@@ -461,7 +461,7 @@ mod tests {
     /// unstated length, fewer fields, or `Top`.
     fn widen(shape: &Shape, seed: &mut impl Iterator<Item = u8>) -> Shape {
         let pick = seed.next().unwrap_or(0);
-        if pick % 7 == 0 {
+        if pick.is_multiple_of(7) {
             return Shape::Top;
         }
         match shape {
@@ -488,7 +488,7 @@ mod tests {
             Shape::Struct(fields) => {
                 let mut kept = BTreeMap::new();
                 for (offset, ty) in fields {
-                    if seed.next().unwrap_or(0) % 3 != 0 {
+                    if !seed.next().unwrap_or(0).is_multiple_of(3) {
                         kept.insert(*offset, widen(ty, seed));
                     }
                 }
