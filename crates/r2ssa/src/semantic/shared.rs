@@ -863,7 +863,7 @@ pub(crate) fn preserved_call_carriers(
         .insts
         .iter()
         .filter(|inst| inst.output.is_some())
-        .filter_map(|inst| inst.canonical_storage)
+        .filter_map(|inst| graph.written_storage(inst))
         .collect::<BTreeSet<_>>();
     preserved.retain(|storage| {
         !written
@@ -1152,7 +1152,10 @@ pub(crate) fn reaching_abi_value_before(
         let Some(producer) = block.op_id(op_index).and_then(|id| graph.inst_for_op(id)) else {
             continue;
         };
-        let Some(dst_storage) = graph.inst(producer).and_then(|inst| inst.canonical_storage) else {
+        let Some(dst_storage) = graph
+            .inst(producer)
+            .and_then(|inst| graph.written_storage(inst))
+        else {
             // A definition with no canonical storage is invisible to this
             // walk, and the walk then answers with an older definition or the
             // entry carrier as if nothing had been written here. Say so.
@@ -1440,7 +1443,7 @@ pub(crate) fn observed_convention_call_result_after_call(
                 block.op_id(call_op_index.checked_add(1)?.checked_add(relative_index)?)?,
             )?;
             let graph_inst = graph.inst(inst)?;
-            let storage = graph_inst.canonical_storage?;
+            let storage = graph.written_storage(graph_inst)?;
             if storage != convention_storage
                 && contained_register_storage_offset(convention_storage, storage).is_none()
             {

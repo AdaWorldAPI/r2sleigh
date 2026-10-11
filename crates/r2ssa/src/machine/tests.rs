@@ -502,7 +502,6 @@ fn malformed_shift_graph_reports_instruction_width_mismatch() {
         ordinal: 0,
         inputs: vec![value.id, count.id],
         output: None,
-        canonical_storage: None,
         payload: InstPayload::Op(SSAOp::IntRight {
             dst: result.id,
             a: value.id,

@@ -131,7 +131,7 @@ mod tests {
             .find(|inst| matches!(inst.payload, InstPayload::Phi { .. }))
             .expect("retained graph phi");
         assert_eq!(
-            graph_phi.canonical_storage,
+            graph.written_storage(graph_phi),
             Some(retained_storage),
             "the graph must carry the surviving merge's own storage"
         );
@@ -204,9 +204,6 @@ pub struct GraphInst {
     pub ordinal: usize,
     pub inputs: Vec<ValueId>,
     pub output: Option<ValueId>,
-    /// Name-independent lifted storage identity for phi nodes and for ordinary
-    /// definitions when the graph is built with a source machine context.
-    pub canonical_storage: Option<CanonicalStorageId>,
     pub payload: InstPayload,
 }
 
@@ -486,7 +483,6 @@ impl SsaGraph {
                     ordinal: phi_idx,
                     inputs,
                     output: Some(output),
-                    canonical_storage: phi.canonical_storage,
                     payload: InstPayload::Phi { predecessors },
                 });
                 blocks[block_id.0 as usize].insts.push(inst_id);
@@ -510,9 +506,6 @@ impl SsaGraph {
                     ordinal: block.phis().len() + op_idx,
                     inputs,
                     output,
-                    canonical_storage: output
-                        .and_then(|value| numbering.values.get(value.0 as usize))
-                        .and_then(|value| value.canonical_storage),
                     payload,
                 });
                 blocks[block_id.0 as usize].insts.push(inst_id);
@@ -729,7 +722,7 @@ impl SsaGraph {
             .insts_for_instruction(from)
             .rev()
             .filter_map(|inst| self.inst(inst))
-            .filter_map(|inst| Some((inst.canonical_storage?, inst.output?)))
+            .filter_map(|inst| Some((self.written_storage(inst)?, inst.output?)))
             .filter(|(storage, _)| seen.insert(*storage))
             .collect::<Vec<_>>();
         left.reverse();
@@ -749,6 +742,11 @@ impl SsaGraph {
 
     pub fn inst(&self, id: InstId) -> Option<&GraphInst> {
         self.insts.get(id.0 as usize)
+    }
+
+    /// The storage an instruction writes: its output value's, which a phi shares with its merge.
+    pub fn written_storage(&self, inst: &GraphInst) -> Option<CanonicalStorageId> {
+        self.value(inst.output?)?.canonical_storage
     }
 
     pub fn value(&self, id: ValueId) -> Option<&GraphValue> {

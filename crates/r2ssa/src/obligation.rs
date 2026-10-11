@@ -636,7 +636,7 @@ impl SemanticObligationInventory {
                         &mut unsupported,
                     );
                 }
-                InstPayload::Phi { .. } if inst.canonical_storage.is_none() => {
+                InstPayload::Phi { .. } if graph.written_storage(inst).is_none() => {
                     unsupported.insert(inst.id);
                     seed_instruction(
                         inst.id,
@@ -930,7 +930,7 @@ impl SemanticObligationInventory {
                 );
                 let carrier_storage = carrier_inst
                     .and_then(|inst| graph.inst(inst))
-                    .and_then(|inst| inst.canonical_storage);
+                    .and_then(|inst| graph.written_storage(inst));
                 for update in &carrier.updates {
                     if let (Some(carrier_inst), Some(carrier)) = (carrier_inst, carrier_storage)
                         && update.site.inst == carrier_inst
@@ -1464,7 +1464,7 @@ fn collect_canonical_instruction_ids(
         };
         let site = match inst.payload {
             InstPayload::Phi { .. } => {
-                let Some(storage) = inst.canonical_storage else {
+                let Some(storage) = graph.written_storage(inst) else {
                     failures.push(ObligationInventoryFailure {
                         inst: inst.id,
                         block_addr: Some(block_addr),
@@ -2568,7 +2568,7 @@ mod tests {
             .insts
             .iter()
             .find(|inst| {
-                inst.canonical_storage
+                used.graph().written_storage(inst)
                     == Some(CanonicalStorageId {
                         space: CanonicalStorageSpace::Unique,
                         offset: 0x80,
@@ -3168,12 +3168,13 @@ mod tests {
     fn storage_less_phi_refuses_complete_inventory() {
         let artifact = SsaArtifact::raw(&loop_carrier_fixture(), None).expect("loop artifact");
         let mut graph = artifact.graph().clone();
-        let phi = graph
+        let merged = graph
             .insts
-            .iter_mut()
+            .iter()
             .find(|inst| matches!(inst.payload, InstPayload::Phi { .. }))
+            .and_then(|phi| phi.output)
             .expect("loop phi");
-        phi.canonical_storage = None;
+        graph.values[merged.0 as usize].canonical_storage = None;
         let inventory = SemanticObligationInventory::collect(
             &graph,
             artifact.structured(),

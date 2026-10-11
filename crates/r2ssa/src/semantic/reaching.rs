@@ -233,7 +233,7 @@ fn written(
     let Some(inst) = graph.inst_for_op(op).and_then(|inst| graph.inst(inst)) else {
         return Some(ReachingStorageState::Conflict);
     };
-    let written = inst.canonical_storage?;
+    let written = graph.written_storage(inst)?;
     if !register_storages_overlap(written, storage) {
         return None;
     }
@@ -334,7 +334,7 @@ mod tests {
     fn written_storage(graph: &SsaGraph, inst: InstId) -> (CanonicalStorageId, ValueId) {
         let inst = graph.inst(inst).expect("inst");
         (
-            inst.canonical_storage.expect("storage"),
+            graph.written_storage(inst).expect("storage"),
             inst.output.expect("output"),
         )
     }

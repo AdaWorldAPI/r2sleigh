@@ -1937,8 +1937,8 @@ pub(crate) fn storage_is_untouched_on_all_predecessor_paths(
             else {
                 return false;
             };
-            if inst
-                .canonical_storage
+            if graph
+                .written_storage(inst)
                 .is_some_and(|written| register_storages_overlap(written, storage))
             {
                 return false;
@@ -1994,7 +1994,7 @@ pub(crate) fn call_result_values_after_call(
             .saturating_add(*relative_index);
         (block.op_id(at))
             .and_then(|op| graph.inst_for_op(op))
-            .and_then(|inst| graph.inst(inst)?.canonical_storage)
+            .and_then(|inst| graph.written_storage(graph.inst(inst)?))
             .is_some_and(|defined| register_storages_overlap(defined, storage))
     });
     if !defines_storage {
@@ -2016,7 +2016,7 @@ pub(crate) fn call_result_values_after_call(
             // The definition of the slot itself, or of the program root whose
             // low lane the slot is (doc/adr-byte-relation.md, B3).
             let graph_inst = graph.inst(inst)?;
-            let defined = graph_inst.canonical_storage?;
+            let defined = graph.written_storage(graph_inst)?;
             let exact = defined == storage && function.var(*dst).size == storage.size;
             let rooted = defined.space == storage.space
                 && function.var(*dst).size == defined.size
