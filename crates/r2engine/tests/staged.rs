@@ -124,6 +124,20 @@ fn merges_that_swap_copy_through_a_temporary() {
     assert!(!text.contains("r2dec gap"), "{text}");
 }
 
+/// A cache-line flush before the jump is an effect no declaration states, so the body is rendered, not
+/// declared away as the import's stub.
+#[test]
+fn an_effect_before_the_jump_keeps_a_stub_a_body() {
+    let mut program = OpenProgram::of(Literal::plt_fenced());
+    let text = program
+        .rendered(PLT_STUB)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(!text.contains("import stub at"), "{text}");
+}
+
 /// A stub is one jump through the slot the loader fills with `_Exit`. r2engine's route decides it
 /// once, and the rendering is the import's declaration, never a body forwarding through it.
 #[test]
