@@ -402,11 +402,12 @@ pub fn walk(
         &mut imports,
     );
     let declared = native.declaration(entry);
-    let first = match declared.interface.is_some() {
-        false => native.prepare(&root, &imports)?,
-        true => native.prepare_restated(&root, &imports, Vec::new(), declared, &[], None)?,
+    let restatement = match declared.interface.is_some() {
+        false => Restatement::default(),
+        true => declared,
     };
-    let tables = native.pointer_tables(&first);
+    let reads = native.dispatch_reads(&root, &imports, restatement)?;
+    let tables = native.pointer_tables(&reads);
     if tables.is_empty() {
         return Ok(Walk { root, tables });
     }
@@ -1379,8 +1380,10 @@ impl Native<'_> {
     /// object: an address in the middle of it that is not an instruction says
     /// the read was not a table walk, and half a table would be a guess about
     /// control flow, which is the one thing worse than an unresolved branch.
-    fn pointer_tables(&self, artifact: &TrustedSsaArtifact) -> Vec<NativePointerTable> {
-        let reads = r2ssa::indirect::dispatch_table_reads(artifact.shared_artifact().as_ref());
+    fn pointer_tables(
+        &self,
+        reads: &[r2ssa::indirect::DispatchTableRead],
+    ) -> Vec<NativePointerTable> {
         let tables = reads
             .iter()
             .filter_map(|read| self.pointer_table(read))
@@ -1632,6 +1635,61 @@ impl Native<'_> {
         tables: &[NativePointerTable],
         result_reads: Option<r2source::SourceResultReads>,
     ) -> Result<Arc<TrustedSsaArtifact>, NativeRefusal> {
+        let capture = Capture {
+            extra_literals,
+            restatement,
+            tables,
+            result_reads,
+        };
+        let (lifted, evidence) = self.lifted(walked, callees, capture)?;
+        let artifact = TrustedSsaArtifact::prepare_with_callee_interfaces(
+            lifted,
+            Some(self.target.arch),
+            &self.control,
+            &evidence,
+            &accepted_premises(),
+        )
+        .map_err(NativeRefusal::of_preparation)?;
+        Ok(Arc::new(artifact))
+    }
+
+    /// Where each dispatch of a body walked without its tables reads them, off its seal alone.
+    fn dispatch_reads(
+        &self,
+        walked: &Walked,
+        callees: &Callees,
+        restatement: Restatement,
+    ) -> Result<Vec<r2ssa::indirect::DispatchTableRead>, NativeRefusal> {
+        let capture = Capture {
+            extra_literals: Vec::new(),
+            restatement,
+            tables: &[],
+            result_reads: None,
+        };
+        let (lifted, evidence) = self.lifted(walked, callees, capture)?;
+        TrustedSsaArtifact::dispatch_table_reads_with_callee_interfaces(
+            lifted,
+            Some(self.target.arch),
+            &self.control,
+            &evidence,
+            &accepted_premises(),
+        )
+        .map_err(NativeRefusal::of_preparation)
+    }
+
+    /// One walked body captured and lifted against what is stated about it, and its callees' evidence.
+    fn lifted(
+        &self,
+        walked: &Walked,
+        callees: &Callees,
+        capture: Capture<'_>,
+    ) -> Result<(r2sleigh_lift::TrustedLiftedFunction, r2ssa::CalleeEvidence), NativeRefusal> {
+        let Capture {
+            extra_literals,
+            restatement,
+            tables,
+            result_reads,
+        } = capture;
         let Restatement {
             interface,
             signature,
@@ -1716,17 +1774,17 @@ impl Native<'_> {
             r2source::native::capture(&self.machine, function).map_err(NativeRefusal::Capture)?;
         let lifted = Disassembler::lift_owned_function(snapshot)
             .map_err(|error| NativeRefusal::Lift(error.to_string()))?;
-        let evidence = callees.evidence(library);
-        let artifact = TrustedSsaArtifact::prepare_with_callee_interfaces(
-            lifted,
-            Some(self.target.arch),
-            &self.control,
-            &evidence,
-            &accepted_premises(),
-        )
-        .map_err(NativeRefusal::of_preparation)?;
-        Ok(Arc::new(artifact))
+        Ok((lifted, callees.evidence(library)))
     }
+}
+
+/// What a capture states beyond the walked body: literals folded since, a restatement, the tables
+/// its dispatches read, and what callers read of its result.
+struct Capture<'t> {
+    extra_literals: Vec<(u64, String)>,
+    restatement: Restatement,
+    tables: &'t [NativePointerTable],
+    result_reads: Option<r2source::SourceResultReads>,
 }
 
 /// Every function this body reaches by a call, tail jump, loaded slot or folded target, each once
