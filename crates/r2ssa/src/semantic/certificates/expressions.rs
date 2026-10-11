@@ -308,7 +308,13 @@ pub(crate) fn collect_renderable_expression_values(
             })
         })
         .collect::<Vec<_>>();
-    let mut reads_memory = None;
+    let reads_memory = values_reading_memory(graph, !loop_phis.is_empty());
+    let env = ExpressionRenderEnv {
+        prep,
+        graph,
+        certified_memory_read_insts: &certified_memory_read_insts,
+        reads_memory: &reads_memory,
+    };
     loop {
         while let Some(value) = ready.pop_front() {
             for use_site in graph.use_sites(value) {
@@ -333,17 +339,6 @@ pub(crate) fn collect_renderable_expression_values(
             inst.output
                 .is_some_and(|output| !renderable.contains(output))
         });
-        let reads_memory = match &reads_memory {
-            Some(reads) => reads,
-            None if loop_phis.is_empty() => break,
-            None => reads_memory.insert(values_reading_memory(graph)),
-        };
-        let env = ExpressionRenderEnv {
-            prep,
-            graph,
-            certified_memory_read_insts: &certified_memory_read_insts,
-            reads_memory,
-        };
         for inst in &loop_phis {
             let Some(output) = inst.output else {
                 continue;
@@ -444,10 +439,13 @@ fn expression_phi_has_single_canonical_root(
     roots.all(|(root, _)| root == first_root)
 }
 
-/// Every value computed, through any chain of definitions, from a memory read: one pass from the
-/// reads along their uses, `O(V + E)`, where asking per value was a walk each.
-fn values_reading_memory(graph: &SsaGraph) -> crate::dense::IdSet<ValueId> {
-    let mut reads = crate::dense::IdSet::new(graph.values.len());
+/// Every value computed, through any chain of definitions, from a memory read, where `asked`: one
+/// pass from the reads along their uses, `O(V + E)`, where asking per value was a walk each.
+fn values_reading_memory(graph: &SsaGraph, asked: bool) -> crate::dense::IdSet<ValueId> {
+    let mut reads = crate::dense::IdSet::default();
+    if !asked {
+        return reads;
+    }
     let mut work = (graph.insts.iter())
         .filter(|inst| matches!(&inst.payload, InstPayload::Op(op) if op.is_memory_read()))
         .filter_map(|inst| inst.output)
