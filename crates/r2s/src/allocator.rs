@@ -43,17 +43,19 @@ unsafe impl std::alloc::GlobalAlloc for Counting {
     }
 }
 
-/// The heap profile of one run, where the build takes one; written when it drops.
+/// The heap profile of one run, where the build takes one and `R2S_HEAP_PROFILE` asks; written to
+/// `dhat-heap.json` when it drops.
 pub struct Profile {
     #[cfg(feature = "dhat-heap")]
-    _heap: dhat::Profiler,
+    _heap: Option<dhat::Profiler>,
 }
 
-/// Start profiling the heap, where the build profiles it.
+/// Start profiling the heap where the build can and the run asks, so an `--all-features` test run
+/// prints nothing extra.
 pub fn profile() -> Profile {
     Profile {
         #[cfg(feature = "dhat-heap")]
-        _heap: dhat::Profiler::new_heap(),
+        _heap: std::env::var_os("R2S_HEAP_PROFILE").map(|_| dhat::Profiler::new_heap()),
     }
 }
 

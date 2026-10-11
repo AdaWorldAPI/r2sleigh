@@ -18,7 +18,8 @@
   census.py heap [--top N] [INSTRUCTIONS=]PROFILE...
                                                    bytes live at each dhat profile's heap peak by
                                                    allocation site (a `--features dhat-heap` build
-                                                   writes dhat-heap.json); given each profile's
+                                                   run with R2S_HEAP_PROFILE=1 writes dhat-heap.json);
+                                                   given each profile's
                                                    instruction count, how fast each site grows
 
 With no binaries, `run` reads the repository's own: tests/coverage/pinned,
@@ -339,7 +340,7 @@ def heap_sites(profile):
             continue
         own = [frames[i].split(": ", 1)[-1] for i in point["fs"]
                if frames[i] != "[root]" and not LIBRARY_FRAME.search(frames[i])]
-        sites[" <- ".join(frame[:70] for frame in own[:2]) or "?"] += point["gb"]
+        sites[" <- ".join(own[:2]) or "?"] += point["gb"]
     return sites
 
 
@@ -356,7 +357,7 @@ def heap(args):
         points = [(size, sites[site]) for size, sites in runs if size and sites.get(site)]
         growth = f"{fit(points)[0]:5.2f}" if len({size for size, _ in points}) >= 2 else "    -"
         cells = " ".join(f"{sites.get(site, 0) / 1e6:7.2f}" for _, sites in runs)
-        print(f"{growth} {cells}  {site[:150]}")
+        print(f"{growth} {cells}  {' <- '.join(frame[:70] for frame in site.split(' <- '))}")
 
 
 def main():
