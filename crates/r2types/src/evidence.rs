@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::constraint::{Constraint, ConstraintSource, SolverNode};
+use crate::constraint::SolverNode;
 use crate::context::{ExternalStackBase, StackSlotKey};
 use crate::convert::{CTypeLike, to_c_type_like};
 use crate::facts::FunctionType;
@@ -164,12 +164,7 @@ impl<'a> EvidenceBuilder<'a> {
     }
 
     /// Record an upper bound, and report whether it was not already recorded.
-    fn bound(
-        &mut self,
-        node: EvidenceNode,
-        spelled: SpelledType,
-        source: ConstraintSource,
-    ) -> bool {
+    fn bound(&mut self, node: EvidenceNode, spelled: SpelledType) -> bool {
         if !self.asserted.insert((node, spelled.ty)) {
             return false;
         }
@@ -177,7 +172,6 @@ impl<'a> EvidenceBuilder<'a> {
         // An upper bound, not an assignment: two prototypes that both describe
         // one value must intersect, so the more specific one survives whatever
         // order the evidence reaches them in.
-        let _ = source;
         self.solver.bound(&node, spelled.ty);
         true
     }
@@ -245,11 +239,7 @@ impl<'a> EvidenceBuilder<'a> {
                 let Some(spelled) = self.intern_spelled(&ty) else {
                     continue;
                 };
-                self.bound(
-                    EvidenceNode::Value(value),
-                    spelled,
-                    ConstraintSource::Inferred,
-                );
+                self.bound(EvidenceNode::Value(value), spelled);
             }
         }
     }
@@ -293,7 +283,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&declared) else {
                 continue;
             };
-            self.bound(node, spelled, ConstraintSource::SignatureRegistry);
+            self.bound(node, spelled);
         }
     }
 
@@ -335,7 +325,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&elem) else {
                 continue;
             };
-            self.bound(node, spelled, ConstraintSource::Inferred);
+            self.bound(node, spelled);
         }
         for (value, object) in cell_pairs {
             self.equate_nodes(value, object);
@@ -416,7 +406,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&elem) else {
                 continue;
             };
-            self.bound(node, spelled, ConstraintSource::Inferred);
+            self.bound(node, spelled);
         }
     }
 
@@ -462,7 +452,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&elem) else {
                 continue;
             };
-            added |= self.bound(node, spelled, ConstraintSource::Inferred);
+            added |= self.bound(node, spelled);
         }
         added
     }
@@ -924,10 +914,10 @@ mod tests {
 
         let constraints = [byte_ptr, word]
             .into_iter()
-            .map(|ty| Constraint::Subtype {
+            .map(|ty| crate::Constraint::Subtype {
                 var: node,
                 ty,
-                source: ConstraintSource::SignatureRegistry,
+                source: crate::ConstraintSource::SignatureRegistry,
             })
             .collect::<Vec<_>>();
         let solved = crate::solve_constraints(arena, &constraints);
@@ -947,10 +937,10 @@ mod tests {
         for order in [[void_ptr, byte_ptr], [byte_ptr, void_ptr]] {
             let constraints = order
                 .into_iter()
-                .map(|ty| Constraint::Subtype {
+                .map(|ty| crate::Constraint::Subtype {
                     var: node,
                     ty,
-                    source: ConstraintSource::SignatureRegistry,
+                    source: crate::ConstraintSource::SignatureRegistry,
                 })
                 .collect::<Vec<_>>();
             let solved = crate::solve_constraints(arena.clone(), &constraints);
