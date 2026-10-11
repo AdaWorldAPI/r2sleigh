@@ -2317,8 +2317,8 @@ impl TrustedSsaArtifact {
         evidence: &CalleeEvidence,
         premises: &BTreeSet<r2source::Premise>,
     ) -> Result<Vec<crate::indirect::DispatchTableRead>, SsaPrepareError> {
-        // A table's bounds are the guards on its index, which no interface states: the
-        // convention's build and its own prep facts answer, with no recovery and no seal.
+        // A table's bounds are its guards and the constants the seal states, which no interface
+        // decides: the convention's build is sealed, and nothing is recovered.
         let constructed = Self::construct(
             lifted,
             arch,
@@ -2328,11 +2328,14 @@ impl TrustedSsaArtifact {
             Recovery::Convention,
         )?;
         control.poll()?;
-        let provisional = constructed.function.provisional_prep_facts(control)?;
+        let sealed = (constructed.function)
+            .seal(&constructed.machine_context)
+            .map_err(integrity_refusal)?;
+        control.poll()?;
         let reads = crate::indirect::prepared_dispatch_table_reads(
-            &constructed.function,
-            &provisional.graph,
-            &provisional.facts,
+            sealed.function(),
+            sealed.graph(),
+            sealed.decompile_prep_facts(),
         );
         control.poll()?;
         Ok(reads)
