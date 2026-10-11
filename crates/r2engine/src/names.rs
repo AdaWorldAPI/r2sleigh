@@ -197,6 +197,8 @@ impl NameDb {
             let lowest = self.by_spelling.entry(spelling.into()).or_insert(vaddr);
             *lowest = (*lowest).min(vaddr);
         }
+        // An address nearly always has one name; a first push would reserve four.
+        held.reserve_exact(1);
         held.push(name);
         held.sort_by_key(|name| name.namespace);
     }
