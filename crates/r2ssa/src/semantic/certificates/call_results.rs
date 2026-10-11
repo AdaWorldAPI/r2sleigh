@@ -121,12 +121,11 @@ impl crate::fixpoint::Join for CallResultFlowState {
     /// The driver never joins an unreached predecessor, so a loop's back edge
     /// does not empty the header before it has been walked.
     fn join(&mut self, other: &Self) -> bool {
-        let before = (self.tracked.len(), self.stack_owners.len());
-        self.tracked
-            .retain(|value, cert| other.tracked.get(value) == Some(cert));
+        let before = self.stack_owners.len();
+        let tracked = self.tracked.retain_agreeing(&other.tracked);
         self.stack_owners
             .retain(|slot, cert| other.stack_owners.get(slot) == Some(cert));
-        before != (self.tracked.len(), self.stack_owners.len())
+        tracked || before != self.stack_owners.len()
     }
 }
 

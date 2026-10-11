@@ -554,11 +554,8 @@ impl<I: DenseId, T> Csr<I, T> {
     }
 }
 
-/// A value for a few ids, kept sorted by id and sized by its entries alone.
-///
-/// A dataflow state copied at every block is this, not an [`IdMap`], whose slots grow with the
-/// largest id: `O(entries)` per copy where a dense state costs `O(bound)` (doc/adr-next-pass.md,
-/// model 8). Lookup and insertion are `O(log entries)` and `O(entries)`.
+/// A value for a few ids, sorted by id and sized by its entries: a dataflow state copied per block
+/// costs `O(entries)` (doc/adr-next-pass.md, model 8), where an [`IdMap`]'s grows with the bound.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SparseMap<I, T> {
     entries: Vec<(I, T)>,
@@ -606,6 +603,22 @@ impl<I: DenseId, T> SparseMap<I, T> {
         }
     }
 
+    /// Keep only the entries `other` holds with an equal value, in one pass over both.
+    pub fn retain_agreeing(&mut self, other: &Self) -> bool
+    where
+        T: PartialEq,
+    {
+        let before = self.entries.len();
+        let mut theirs = other.entries.iter().peekable();
+        self.entries.retain(|(id, value)| {
+            while theirs.next_if(|(at, _)| at < id).is_some() {}
+            theirs
+                .peek()
+                .is_some_and(|(at, other)| at == id && other == value)
+        });
+        before != self.entries.len()
+    }
+
     /// Keep only the values `keep` accepts, in id order.
     pub fn retain(&mut self, mut keep: impl FnMut(I, &mut T) -> bool) {
         self.entries.retain_mut(|(id, value)| keep(*id, value));
@@ -632,6 +645,12 @@ mod tests {
         assert_eq!(map.get(ValueId(3)), None);
         map.retain(|id, _| id != ValueId(7));
         assert_eq!(map.iter().map(|(id, _)| id.0).collect::<Vec<_>>(), [2, 9]);
+        let mut other = SparseMap::default();
+        for (id, value) in [(1u32, 0u32), (2, 20), (9, 0)] {
+            other.insert(ValueId(id), value);
+        }
+        assert!(map.retain_agreeing(&other));
+        assert_eq!(map.iter().map(|(id, _)| id.0).collect::<Vec<_>>(), [2]);
     }
 
     use super::*;
