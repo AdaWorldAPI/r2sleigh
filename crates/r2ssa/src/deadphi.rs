@@ -286,10 +286,9 @@ impl DeadPhis {
             let definition_state = definition.map(|instruction| format!("{:?}", instruction.state));
             let own_obligations = definition
                 .map(|instruction| {
-                    instruction
-                        .obligations
-                        .iter()
-                        .map(|id| {
+                    (obligations.owned(instruction))
+                        .map(|obligation| {
+                            let id = obligation.id;
                             format!(
                                 "{:?}/{:?}/{}",
                                 id.kind,

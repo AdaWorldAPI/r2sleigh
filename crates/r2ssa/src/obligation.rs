@@ -340,66 +340,6 @@ pub struct SemanticInstructionDisposition {
     pub id: CanonicalInstructionId,
     pub source: SemanticSourceSite,
     pub state: SemanticInstructionState,
-    pub obligations: InstructionObligations,
-}
-
-/// The obligations one instruction owns, in identity order.
-///
-/// Held as a sorted run rather than as a tree. Every use is iteration,
-/// membership, emptiness or equality, and an ordered-set node costs 896 bytes
-/// whether it holds one identity or eleven -- one per instruction is 24 MB of
-/// `BZ2_decompress`'s inventory for about two identities each.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct InstructionObligations(Vec<SemanticObligationId>);
-
-impl InstructionObligations {
-    /// Add one identity, keeping the run sorted and free of repeats, which is
-    /// what makes membership a search and equality a comparison of content.
-    pub fn insert(&mut self, id: SemanticObligationId) -> bool {
-        match self.0.binary_search(&id) {
-            Ok(_) => false,
-            Err(at) => {
-                self.0.insert(at, id);
-                true
-            }
-        }
-    }
-
-    pub fn contains(&self, id: &SemanticObligationId) -> bool {
-        self.0.binary_search(id).is_ok()
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, SemanticObligationId> {
-        self.0.iter()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl FromIterator<SemanticObligationId> for InstructionObligations {
-    fn from_iter<I: IntoIterator<Item = SemanticObligationId>>(ids: I) -> Self {
-        let mut run = Self::default();
-        for id in ids {
-            run.insert(id);
-        }
-        run
-    }
-}
-
-impl<'a> IntoIterator for &'a InstructionObligations {
-    type Item = &'a SemanticObligationId;
-    type IntoIter = std::slice::Iter<'a, SemanticObligationId>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -437,6 +377,17 @@ impl ObligationTable {
 
     pub fn get(&self, id: &SemanticObligationId) -> Option<&SemanticObligation> {
         self.position(id).ok().map(|at| &self.0[at])
+    }
+
+    /// The obligations of one instruction: a run, since identities sort by instruction first.
+    fn run(&self, instruction: &CanonicalInstructionId) -> &[SemanticObligation] {
+        let start = self
+            .0
+            .partition_point(|held| held.id.instruction < *instruction);
+        let end = self
+            .0
+            .partition_point(|held| held.id.instruction <= *instruction);
+        &self.0[start..end]
     }
 
     pub fn contains_key(&self, id: &SemanticObligationId) -> bool {
@@ -1059,14 +1010,12 @@ impl SemanticObligationInventory {
             } else {
                 SemanticInstructionState::ProvenDead
             };
-            let mut obligation_ids = InstructionObligations::default();
             for (kind, component) in kinds {
                 let obligation_id = SemanticObligationId {
                     instruction: id,
                     kind,
                     component,
                 };
-                obligation_ids.insert(obligation_id);
                 obligations.push(SemanticObligation {
                     id: obligation_id,
                     source: SemanticSourceSite::GraphInstruction(inst.id),
@@ -1080,7 +1029,6 @@ impl SemanticObligationInventory {
                 id,
                 source: SemanticSourceSite::GraphInstruction(inst.id),
                 state,
-                obligations: obligation_ids,
             });
         }
         inventory.obligations = ObligationTable::of(obligations);
@@ -1130,8 +1078,6 @@ impl SemanticObligationInventory {
                 kind,
                 component: SemanticObligationComponent::Whole,
             };
-            let mut obligations = InstructionObligations::default();
-            obligations.insert(obligation_id);
             if self
                 .span_instructions
                 .insert(
@@ -1140,7 +1086,6 @@ impl SemanticObligationInventory {
                         id,
                         source: SemanticSourceSite::GenuineNativeSpan(span),
                         state,
-                        obligations,
                     },
                 )
                 .is_some()
@@ -1202,7 +1147,7 @@ impl SemanticObligationInventory {
         let mut values = crate::dense::IdSet::default();
         for instruction in self.dispositions() {
             if instruction.state != SemanticInstructionState::StructuralControlOnly
-                || !instruction.obligations.is_empty()
+                || self.owned(instruction).next().is_some()
             {
                 continue;
             }
@@ -1288,7 +1233,7 @@ impl SemanticObligationInventory {
     /// What the inventory holds, for the byte fit.
     pub fn probe_shape(&self) -> String {
         let obligation_inputs: usize = self.obligations.values().map(|o| o.inputs.len()).sum();
-        let owned: usize = self.dispositions().map(|d| d.obligations.len()).sum();
+        let owned: usize = self.dispositions().map(|d| self.owned(d).count()).sum();
         format!(
             "instructions {} obligations {} by_inst {} native_spans {} inputs {} owned {} sizeof(id) {} sizeof(obligation) {} sizeof(disposition) {} sizeof(instid) {} sizeof(span) {}",
             self.disposition_count(),
@@ -1375,16 +1320,7 @@ impl SemanticObligationInventory {
                             )
                     })
                 }
-            } || !instruction.obligations.iter().all(|obligation_id| {
-                obligation_id.instruction == *id
-                    && self
-                        .obligations
-                        .get(obligation_id)
-                        .is_some_and(|obligation| {
-                            obligation.id == *obligation_id
-                                && obligation.source == instruction.source
-                        })
-            }) {
+            } {
                 return false;
             }
             let should_have_obligations = matches!(
@@ -1393,7 +1329,7 @@ impl SemanticObligationInventory {
                     | SemanticInstructionState::UnsupportedUnknown
                     | SemanticInstructionState::CompilerInserted
             );
-            if should_have_obligations == instruction.obligations.is_empty() {
+            if should_have_obligations == self.owned(instruction).next().is_none() {
                 return false;
             }
         }
@@ -1413,9 +1349,7 @@ impl SemanticObligationInventory {
         for (id, obligation) in &self.obligations {
             if self
                 .disposition_of(id.instruction, obligation.source)
-                .is_none_or(|instruction| {
-                    instruction.source != obligation.source || !instruction.obligations.contains(id)
-                })
+                .is_none_or(|instruction| instruction.source != obligation.source)
                 || match (id.kind, id.component, obligation.source) {
                     (
                         SemanticObligationKind::LiveStateTransition,
@@ -1451,8 +1385,16 @@ impl SemanticObligationInventory {
     pub fn obligations_for_inst(&self, inst: InstId) -> impl Iterator<Item = &SemanticObligation> {
         self.instruction_for_inst(inst)
             .into_iter()
-            .flat_map(|instruction| instruction.obligations.iter())
-            .filter_map(|id| self.obligations.get(id))
+            .flat_map(|instruction| self.owned(instruction))
+    }
+
+    /// What one disposition owes: its instruction's run of the table, from its own source.
+    pub fn owned<'a>(
+        &'a self,
+        disposition: &'a SemanticInstructionDisposition,
+    ) -> impl Iterator<Item = &'a SemanticObligation> + 'a {
+        let run = self.obligations.run(&disposition.id).iter();
+        run.filter(move |obligation| obligation.source == disposition.source)
     }
 }
 
@@ -2227,7 +2169,7 @@ mod tests {
         );
         assert!(inventory.dispositions().all(|instruction| {
             instruction.state != SemanticInstructionState::LiveObligation
-                || !instruction.obligations.is_empty()
+                || inventory.owned(instruction).next().is_some()
         }));
         assert!(inventory.is_complete());
     }
@@ -2324,24 +2266,42 @@ mod tests {
             .disposition_with_id(operation_at(&artifact, 0x3000, 2))
             .expect("call instruction");
         assert_eq!(call.state, SemanticInstructionState::UnsupportedUnknown);
-        assert!(call.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::Call
-                && id.component == SemanticObligationComponent::Whole
-        }));
-        assert!(call.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::VolatileOrUnknownEffect
-                && id.component == SemanticObligationComponent::Whole
-        }));
+        assert!(
+            artifact
+                .obligations()
+                .owned(call)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::Call
+                        && id.component == SemanticObligationComponent::Whole
+                })
+        );
+        assert!(
+            artifact
+                .obligations()
+                .owned(call)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::VolatileOrUnknownEffect
+                        && id.component == SemanticObligationComponent::Whole
+                })
+        );
         for ordinal in 0..2 {
             let setup = artifact
                 .obligations()
                 .disposition_with_id(operation_at(&artifact, 0x3000, ordinal))
                 .expect("implicit argument setup");
             assert_eq!(setup.state, SemanticInstructionState::UnsupportedUnknown);
-            assert!(setup.obligations.iter().any(|id| {
-                id.kind == SemanticObligationKind::VolatileOrUnknownEffect
-                    && id.component == SemanticObligationComponent::Whole
-            }));
+            assert!(
+                artifact
+                    .obligations()
+                    .owned(setup)
+                    .map(|obligation| &obligation.id)
+                    .any(|id| {
+                        id.kind == SemanticObligationKind::VolatileOrUnknownEffect
+                            && id.component == SemanticObligationComponent::Whole
+                    })
+            );
         }
         assert!(artifact.obligations().is_complete());
     }
@@ -2780,10 +2740,16 @@ mod tests {
             .disposition_with_id(operation_at(&artifact, 0x3100, 0))
             .expect("potential return-value producer");
         assert_eq!(producer.state, SemanticInstructionState::UnsupportedUnknown);
-        assert!(producer.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::VolatileOrUnknownEffect
-                && id.component == SemanticObligationComponent::Whole
-        }));
+        assert!(
+            artifact
+                .obligations()
+                .owned(producer)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::VolatileOrUnknownEffect
+                        && id.component == SemanticObligationComponent::Whole
+                })
+        );
         let returned = artifact
             .facts()
             .boundaries
@@ -2875,9 +2841,15 @@ mod tests {
         // The boundary is complete, so nothing taints the value that reaches
         // it. An unattributed frame used to make this an unknown effect.
         assert_ne!(producer.state, SemanticInstructionState::UnsupportedUnknown);
-        assert!(!producer.obligations.iter().any(|obligation| {
-            obligation.kind == SemanticObligationKind::VolatileOrUnknownEffect
-        }));
+        assert!(
+            !artifact
+                .obligations()
+                .owned(producer)
+                .map(|obligation| &obligation.id)
+                .any(|obligation| {
+                    obligation.kind == SemanticObligationKind::VolatileOrUnknownEffect
+                })
+        );
     }
 
     #[test]
@@ -2936,14 +2908,21 @@ mod tests {
             next_iteration_argument.state,
             SemanticInstructionState::LiveObligation
         );
-        assert!(next_iteration_argument.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::LiveValueProducer
-                && id.component == SemanticObligationComponent::Whole
-        }));
         assert!(
-            !next_iteration_argument
-                .obligations
-                .iter()
+            artifact
+                .obligations()
+                .owned(next_iteration_argument)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::LiveValueProducer
+                        && id.component == SemanticObligationComponent::Whole
+                })
+        );
+        assert!(
+            !artifact
+                .obligations()
+                .owned(next_iteration_argument)
+                .map(|obligation| &obligation.id)
                 .any(|id| { id.kind == SemanticObligationKind::VolatileOrUnknownEffect })
         );
         assert!(artifact.obligations().is_complete());
@@ -3058,38 +3037,66 @@ mod tests {
             .disposition_with_id(operation_at(&artifact, 0x5000, 0))
             .expect("atomic instruction");
         assert_eq!(
-            atomic
-                .obligations
-                .iter()
+            artifact
+                .obligations()
+                .owned(atomic)
+                .map(|obligation| &obligation.id)
                 .filter(|id| id.kind == SemanticObligationKind::ObservableMemoryRead)
                 .count(),
             1
         );
         assert_eq!(
-            atomic
-                .obligations
-                .iter()
+            artifact
+                .obligations()
+                .owned(atomic)
+                .map(|obligation| &obligation.id)
                 .filter(|id| id.kind == SemanticObligationKind::ObservableMemoryWrite)
                 .count(),
             1
         );
-        assert!(atomic.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::ObservableMemoryRead
-                && id.component == SemanticObligationComponent::MemoryAccess(0)
-        }));
-        assert!(atomic.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::ObservableMemoryWrite
-                && id.component == SemanticObligationComponent::MemoryAccess(1)
-        }));
-        assert!(atomic.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::Atomicity
-                && id.component == SemanticObligationComponent::Whole
-        }));
-        assert!(atomic.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::MemoryOrdering
-                && id.component
-                    == SemanticObligationComponent::MemoryOrdering(SemanticMemoryOrdering::SeqCst)
-        }));
+        assert!(
+            artifact
+                .obligations()
+                .owned(atomic)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::ObservableMemoryRead
+                        && id.component == SemanticObligationComponent::MemoryAccess(0)
+                })
+        );
+        assert!(
+            artifact
+                .obligations()
+                .owned(atomic)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::ObservableMemoryWrite
+                        && id.component == SemanticObligationComponent::MemoryAccess(1)
+                })
+        );
+        assert!(
+            artifact
+                .obligations()
+                .owned(atomic)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::Atomicity
+                        && id.component == SemanticObligationComponent::Whole
+                })
+        );
+        assert!(
+            artifact
+                .obligations()
+                .owned(atomic)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::MemoryOrdering
+                        && id.component
+                            == SemanticObligationComponent::MemoryOrdering(
+                                SemanticMemoryOrdering::SeqCst,
+                            )
+                })
+        );
     }
 
     #[test]
@@ -3107,11 +3114,19 @@ mod tests {
             .disposition_with_id(operation_at(&artifact, 0x6000, 0))
             .expect("fence instruction");
         assert_eq!(fence.state, SemanticInstructionState::UnsupportedUnknown);
-        assert!(fence.obligations.iter().any(|id| {
-            id.kind == SemanticObligationKind::MemoryOrdering
-                && id.component
-                    == SemanticObligationComponent::MemoryOrdering(SemanticMemoryOrdering::Unknown)
-        }));
+        assert!(
+            artifact
+                .obligations()
+                .owned(fence)
+                .map(|obligation| &obligation.id)
+                .any(|id| {
+                    id.kind == SemanticObligationKind::MemoryOrdering
+                        && id.component
+                            == SemanticObligationComponent::MemoryOrdering(
+                                SemanticMemoryOrdering::Unknown,
+                            )
+                })
+        );
     }
 
     #[test]
