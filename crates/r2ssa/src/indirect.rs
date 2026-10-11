@@ -472,11 +472,14 @@ fn dispatch_table_reads_in_graph(
         .collect()
 }
 
-/// Where every dispatch reads its target, off a sealed function: `PreparedFunctionFacts` solves
-/// the same predicates and values from the same function, prep facts and graph.
-pub(crate) fn sealed_dispatch_table_reads(sealed: &crate::Sealed) -> Vec<DispatchTableRead> {
-    let (function, graph) = (sealed.function(), sealed.graph());
-    let prep = Some(sealed.decompile_prep_facts());
+/// Where every dispatch reads its target, off a function, its graph and its prep facts: the
+/// predicates and value ranges `PreparedFunctionFacts` solves from the same three.
+pub(crate) fn prepared_dispatch_table_reads(
+    function: &SSAFunction,
+    graph: &SsaGraph,
+    prep: &crate::DecompilePrepFacts,
+) -> Vec<DispatchTableRead> {
+    let prep = Some(prep);
     let predicates = crate::semantic::collect_predicate_facts(function, prep, graph);
     let values = crate::values::solve_value_ranges(graph, function, prep, &predicates);
     dispatch_table_reads_in_graph(function, graph, &values)

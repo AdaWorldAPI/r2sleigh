@@ -504,6 +504,14 @@ pub struct TrustedSsaArtifact {
     arch: crate::Arch,
 }
 
+/// Whether construction recovers an interface the source does not state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Recovery {
+    Recover,
+    /// Built against the convention alone, for a reader that asks no question of the interface.
+    Convention,
+}
+
 /// A trusted lift built and prepared, before the seal.
 struct Constructed {
     function: Prepared,
@@ -2291,7 +2299,7 @@ impl TrustedSsaArtifact {
             finish,
             source_block_count,
             arch,
-        } = Self::construct(lifted, arch, control, evidence, premises)?;
+        } = Self::construct(lifted, arch, control, evidence, premises, Recovery::Recover)?;
         let artifact = SsaArtifact::seal_finished(function, machine_context, finish, control)?;
         Ok(Self {
             artifact: Arc::new(artifact),
@@ -2309,24 +2317,39 @@ impl TrustedSsaArtifact {
         evidence: &CalleeEvidence,
         premises: &BTreeSet<r2source::Premise>,
     ) -> Result<Vec<crate::indirect::DispatchTableRead>, SsaPrepareError> {
-        let constructed = Self::construct(lifted, arch, control, evidence, premises)?;
+        // A table's bounds are the guards on its index, which no interface states: the
+        // convention's build and its own prep facts answer, with no recovery and no seal.
+        let constructed = Self::construct(
+            lifted,
+            arch,
+            control,
+            evidence,
+            premises,
+            Recovery::Convention,
+        )?;
         control.poll()?;
-        let sealed = (constructed.function)
-            .seal(&constructed.machine_context)
-            .map_err(integrity_refusal)?;
-        control.poll()?;
-        let reads = crate::indirect::sealed_dispatch_table_reads(&sealed);
+        let provisional = constructed.function.provisional_prep_facts(control)?;
+        let reads = crate::indirect::prepared_dispatch_table_reads(
+            &constructed.function,
+            &provisional.graph,
+            &provisional.facts,
+        );
         control.poll()?;
         Ok(reads)
     }
 
     /// The function built against its interface, stated or recovered, and the context it is sealed in.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the trusted lift, its tables, the work budget, the callees' evidence, the accepted premises and the recovery are construction's independent inputs"
+    )]
     fn construct<C: SsaWorkControl + ?Sized>(
         lifted: TrustedLiftedFunction,
         arch: Option<&crate::Arch>,
         control: &C,
         evidence: &CalleeEvidence,
         premises: &BTreeSet<r2source::Premise>,
+        recovery: Recovery,
     ) -> Result<Constructed, SsaPrepareError> {
         let CalleeEvidence {
             interfaces: callee_interfaces,
@@ -2428,6 +2451,7 @@ impl TrustedSsaArtifact {
         let mut result_ambiguous = false;
         let function_interface = match source.function_interface().cloned() {
             Some(interface) => Some(interface),
+            None if recovery == Recovery::Convention => None,
             None => 'recovered: {
                 // Which of the two interfaces a function ends up with decides
                 // how its return boundary is checked, and the difference is
