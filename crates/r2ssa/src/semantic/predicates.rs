@@ -357,75 +357,72 @@ pub(crate) fn combine_compare_provenance_by(
     })
 }
 
+/// Whether two values are one value under the same unary conversions. Each step strips one
+/// definition from both sides, and definitions outside merges are acyclic, so the walk stops
+/// within the shorter chain: `O(min(chain))`, no budget.
 pub(crate) fn compare_values_equivalent(graph: &SsaGraph, lhs: ValueId, rhs: ValueId) -> bool {
-    compare_values_equivalent_inner(graph, lhs, rhs, 0, &mut BTreeSet::new())
+    let (mut lhs, mut rhs) = (lhs, rhs);
+    loop {
+        if lhs == rhs {
+            return true;
+        }
+        match converted_sources(graph, lhs, rhs) {
+            Some(Conversion::Literals) => return true,
+            Some(Conversion::Of(next_lhs, next_rhs)) => (lhs, rhs) = (next_lhs, next_rhs),
+            None => return false,
+        }
+    }
 }
 
-pub(crate) fn compare_values_equivalent_inner(
-    graph: &SsaGraph,
-    lhs: ValueId,
-    rhs: ValueId,
-    depth: usize,
-    visiting: &mut BTreeSet<(ValueId, ValueId)>,
-) -> bool {
-    if lhs == rhs {
-        return true;
+/// What two values agree on at one step of [`compare_values_equivalent`].
+enum Conversion {
+    /// Both are the same literal.
+    Literals,
+    /// Both apply the same conversion, to these sources.
+    Of(ValueId, ValueId),
+}
+
+/// One step of [`compare_values_equivalent`], or `None` where the two differ.
+fn converted_sources(graph: &SsaGraph, lhs: ValueId, rhs: ValueId) -> Option<Conversion> {
+    let lhs_value = graph.value(lhs)?;
+    let rhs_value = graph.value(rhs)?;
+    if lhs_value.var.size != rhs_value.var.size {
+        return None;
     }
-    if depth >= 16 {
-        return false;
+    if lhs_value.var.constant_bits().is_some() || rhs_value.var.constant_bits().is_some() {
+        let equal = lhs_value.var.constant_bits().is_some()
+            && rhs_value.var.constant_bits().is_some()
+            && const_value(&lhs_value.var) == const_value(&rhs_value.var);
+        return equal.then_some(Conversion::Literals);
     }
-    let pair = if lhs < rhs { (lhs, rhs) } else { (rhs, lhs) };
-    if !visiting.insert(pair) {
-        return false;
-    }
-    let equivalent = (|| {
-        let lhs_value = graph.value(lhs)?;
-        let rhs_value = graph.value(rhs)?;
-        if lhs_value.var.size != rhs_value.var.size {
-            return Some(false);
+    let lhs_inst = graph.inst(graph.def_inst(lhs)?)?;
+    let rhs_inst = graph.inst(graph.def_inst(rhs)?)?;
+    let (InstPayload::Op(lhs_op), InstPayload::Op(rhs_op)) = (&lhs_inst.payload, &rhs_inst.payload)
+    else {
+        return None;
+    };
+    let sources = match (lhs_op, rhs_op) {
+        (
+            SSAOp::Subpiece {
+                src: lhs,
+                offset: lhs_offset,
+                ..
+            },
+            SSAOp::Subpiece {
+                src: rhs,
+                offset: rhs_offset,
+                ..
+            },
+        ) if lhs_offset == rhs_offset => Conversion::Of(*lhs, *rhs),
+        (SSAOp::IntZExt { src: lhs, .. }, SSAOp::IntZExt { src: rhs, .. })
+        | (SSAOp::IntSExt { src: lhs, .. }, SSAOp::IntSExt { src: rhs, .. })
+        | (SSAOp::Trunc { src: lhs, .. }, SSAOp::Trunc { src: rhs, .. })
+        | (SSAOp::Cast { src: lhs, .. }, SSAOp::Cast { src: rhs, .. }) => {
+            Conversion::Of(*lhs, *rhs)
         }
-        if lhs_value.var.constant_bits().is_some() || rhs_value.var.constant_bits().is_some() {
-            return Some(
-                lhs_value.var.constant_bits().is_some()
-                    && rhs_value.var.constant_bits().is_some()
-                    && const_value(&lhs_value.var) == const_value(&rhs_value.var),
-            );
-        }
-        let lhs_inst = graph.inst(graph.def_inst(lhs)?)?;
-        let rhs_inst = graph.inst(graph.def_inst(rhs)?)?;
-        let (InstPayload::Op(lhs_op), InstPayload::Op(rhs_op)) =
-            (&lhs_inst.payload, &rhs_inst.payload)
-        else {
-            return Some(false);
-        };
-        let mut equivalent_sources = |lhs: &ValueId, rhs: &ValueId| {
-            compare_values_equivalent_inner(graph, *lhs, *rhs, depth + 1, visiting)
-        };
-        Some(match (lhs_op, rhs_op) {
-            (
-                SSAOp::Subpiece {
-                    src: lhs,
-                    offset: lhs_offset,
-                    ..
-                },
-                SSAOp::Subpiece {
-                    src: rhs,
-                    offset: rhs_offset,
-                    ..
-                },
-            ) => lhs_offset == rhs_offset && equivalent_sources(lhs, rhs),
-            (SSAOp::IntZExt { src: lhs, .. }, SSAOp::IntZExt { src: rhs, .. })
-            | (SSAOp::IntSExt { src: lhs, .. }, SSAOp::IntSExt { src: rhs, .. })
-            | (SSAOp::Trunc { src: lhs, .. }, SSAOp::Trunc { src: rhs, .. })
-            | (SSAOp::Cast { src: lhs, .. }, SSAOp::Cast { src: rhs, .. }) => {
-                equivalent_sources(lhs, rhs)
-            }
-            _ => false,
-        })
-    })()
-    .unwrap_or(false);
-    visiting.remove(&pair);
-    equivalent
+        _ => return None,
+    };
+    Some(sources)
 }
 
 fn normalize_zero_sub_compare_operands(

@@ -172,3 +172,46 @@ fn contradictory_predicate_preflight_is_input_order_independent() {
         );
     }
 }
+
+#[test]
+fn equal_conversions_are_equal_however_long_their_chains() {
+    // Two separate chains of twenty narrowings and widenings from one register: deeper than the
+    // sixteen steps the walk once stopped at and answered "not equal".
+    let start = |chain: u64| 0x1000 * (chain + 1);
+    let mut ops = Vec::new();
+    for chain in 0..2 {
+        let mut from = test_reg(0x38);
+        for step in 0..20 {
+            let narrow = Varnode::unique(start(chain) + step * 0x10, 4);
+            let wide = Varnode::unique(start(chain) + step * 0x10 + 8, 8);
+            ops.push(R2ILOp::Subpiece {
+                dst: narrow.clone(),
+                src: from,
+                offset: 0,
+            });
+            ops.push(R2ILOp::IntZExt {
+                dst: wide.clone(),
+                src: narrow,
+            });
+            from = wide;
+        }
+    }
+    let block = R2ILBlock {
+        addr: 0x1000,
+        size: 4,
+        ops,
+        switch_info: None,
+        op_metadata: Default::default(),
+    };
+    let artifact = SsaArtifact::for_symbolic(&[block], None).expect("artifact");
+    let last = |chain: u64| {
+        let name = format!("tmp:{:x}", start(chain) + 19 * 0x10 + 8);
+        (artifact.graph().values.iter())
+            .find(|value| value.var.name() == name)
+            .map(|value| value.id)
+            .unwrap_or_else(|| panic!("no value {name}"))
+    };
+    let (first, second) = (last(0), last(1));
+    assert_ne!(first, second, "the two chains are separate values");
+    assert!(compare_values_equivalent(artifact.graph(), first, second));
+}

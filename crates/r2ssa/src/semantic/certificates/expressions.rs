@@ -513,8 +513,7 @@ pub(crate) fn expression_loop_phi_is_renderable(
         };
         if latches.contains(&pred_addr) {
             saw_backedge = true;
-            let mut visited = crate::dense::IdSet::default();
-            if !value_renderable_modulo_loop_phi(&env, input, output, renderable, &mut visited, 0) {
+            if !value_renderable_modulo_loop_phi(&env, input, output, renderable) {
                 return false;
             }
         } else {
@@ -534,49 +533,59 @@ pub(crate) struct ExpressionRenderEnv<'a> {
     pub(crate) certified_memory_read_insts: &'a crate::dense::IdSet<InstId>,
 }
 
+/// Whether `value` is an expression of renderable values and `loop_phi`, read through pure
+/// operations, certified loads and renderable merges.
+///
+/// Each value is decided once, after its inputs, on an explicit stack: `O(V + E)` per query. A
+/// value met again while its own inputs are still open is on a cycle that does not pass through
+/// `loop_phi`, which no expression spells, so it counts as not renderable there.
 pub(crate) fn value_renderable_modulo_loop_phi(
     env: &ExpressionRenderEnv<'_>,
     value: ValueId,
     loop_phi: ValueId,
     renderable: &crate::dense::IdSet<ValueId>,
-    visited: &mut crate::dense::IdSet<ValueId>,
-    depth: usize,
 ) -> bool {
-    if value == loop_phi || renderable.contains(value) {
-        return true;
+    let mut decided = crate::dense::IdMap::<ValueId, bool>::default();
+    let mut open = crate::dense::IdSet::<ValueId>::default();
+    let mut stack = vec![(value, false)];
+    while let Some((at, inputs_done)) = stack.pop() {
+        if at == loop_phi || renderable.contains(at) {
+            decided.insert(at, true);
+            continue;
+        }
+        let inst = env.graph.def_inst(at).and_then(|id| env.graph.inst(id));
+        if inputs_done {
+            let inputs = inst.map_or(&[][..], |inst| inst.inputs.as_slice());
+            let all = inputs
+                .iter()
+                .all(|input| decided.get(*input).copied().unwrap_or(false));
+            decided.insert(at, all);
+            open.remove(at);
+            continue;
+        }
+        if decided.contains(at) || !open.insert(at) {
+            continue;
+        }
+        let Some(inst) = inst.filter(|inst| expression_eligible(env, inst)) else {
+            decided.insert(at, false);
+            open.remove(at);
+            continue;
+        };
+        stack.push((at, true));
+        stack.extend(inst.inputs.iter().map(|input| (*input, false)));
     }
-    if depth >= 32 || !visited.insert(value) {
-        return false;
+    decided.get(value).copied().unwrap_or(false)
+}
+
+/// Whether one definition may stand inside a rendered expression.
+fn expression_eligible(env: &ExpressionRenderEnv<'_>, inst: &crate::graph::GraphInst) -> bool {
+    match &inst.payload {
+        InstPayload::Phi { .. } => expression_phi_is_renderable(env.prep, env.graph, inst),
+        InstPayload::Op(op) => {
+            expression_op_is_pure(op)
+                || (op.is_memory_read() && env.certified_memory_read_insts.contains(inst.id))
+        }
     }
-
-    let result = env
-        .graph
-        .def_inst(value)
-        .and_then(|inst_id| env.graph.inst(inst_id))
-        .is_some_and(|inst| {
-            let eligible = match &inst.payload {
-                InstPayload::Phi { .. } => expression_phi_is_renderable(env.prep, env.graph, inst),
-                InstPayload::Op(op) => {
-                    expression_op_is_pure(op)
-                        || (op.is_memory_read()
-                            && env.certified_memory_read_insts.contains(inst.id))
-                }
-            };
-            eligible
-                && inst.inputs.iter().all(|input| {
-                    value_renderable_modulo_loop_phi(
-                        env,
-                        *input,
-                        loop_phi,
-                        renderable,
-                        visited,
-                        depth + 1,
-                    )
-                })
-        });
-
-    visited.remove(value);
-    result
 }
 
 pub(crate) fn expression_op_is_pure<V>(op: &SSAOp<V>) -> bool {
