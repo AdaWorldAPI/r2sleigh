@@ -73,6 +73,9 @@ pub struct TypeAnalysis {
     function_facts: FunctionFacts,
     plan: TypePlan,
     callee_signatures: BTreeMap<u64, crate::SourceOwnedCalleeSignature>,
+    /// The evidence solve enrichment ran, which the seal keeps: its call prototypes are the
+    /// source's and the callees', which no type pass writes.
+    evidence_types: crate::EvidenceTypes,
 }
 
 #[derive(Debug, Clone)]
@@ -208,12 +211,13 @@ impl TypeAnalysis {
             return false;
         }
         let prior_plan = self.plan.clone();
-        let (changed_parameters, return_type_changed) =
+        let (changed_parameters, return_type_changed, evidence_types) =
             SourceOwnedFunctionFacts::enrich_report_from_source_with_callee_signatures(
                 self.source.as_ref(),
                 &mut self.function_facts,
                 &self.callee_signatures,
             );
+        self.evidence_types = evidence_types;
         if (!changed_parameters.is_empty() || return_type_changed)
             && !self.refresh_plan_after_source_constraints(&changed_parameters)
         {
@@ -258,6 +262,7 @@ impl TypeAnalysis {
             self.source,
             self.function_facts,
             self.callee_signatures,
+            self.evidence_types,
         )
         .map_err(|facts| FinalizationRefused {
             error: TypeAnalysisError::FunctionFactsSourceMismatch,
@@ -1404,6 +1409,7 @@ pub fn build_source_owned_type_analysis(
         function_facts,
         plan: derived.plan,
         callee_signatures,
+        evidence_types: crate::EvidenceTypes::default(),
     };
     if !analysis.enrich_from_source_for_decompile() {
         return Err(TypeAnalysisError::SourceEnrichmentFailed);

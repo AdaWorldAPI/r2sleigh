@@ -1120,7 +1120,7 @@ pub(crate) fn prepared_callee_resolution_facts(
     prepared: &r2ssa::SsaArtifact,
     function_facts: &FunctionFacts,
 ) -> CalleeResolutionFacts {
-    let type_facts = function_facts.types.clone().canonicalized();
+    let type_facts = &function_facts.types;
     // These were empty maps, so every direct call resolved to nothing and
     // rendered as `sub_<addr>` even when radare2 had the name all along.
     let function_names = function_facts
@@ -1142,7 +1142,7 @@ pub(crate) fn prepared_callee_resolution_facts(
         .collect::<HashMap<_, _>>();
     // The linkage radare2 read off the symbol or relocation that named each
     // call target is the fact import policy rests on; a name's shape is not.
-    let mut callee_facts = type_facts.callee_facts;
+    let mut callee_facts = type_facts.callee_facts.clone();
     for cert in prepared.certificates().callsites.values() {
         let linkage = match cert.callee_linkage {
             r2source::AdvisoryCalleeLinkage::Unknown => continue,
