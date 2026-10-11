@@ -232,7 +232,15 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          six signedness passes and the `2A + 1` rounds that clone the arena
          (`evidence.rs:93`); solves and signedness are 3.4 to 4.3% of a
          large `pdd`, in every root and every callee read. Exit: one solve
-         and one signedness pass per function, counted.
+         and one signedness pass per function, counted. Done (2026-10-11):
+         `meet` is the greatest lower bound of the subtype order, its laws
+         property-tested (an `int64_t` against an `int` of unknown sign met
+         at `Bottom`; arrays and structs met at `Bottom` and broke
+         associativity), and the evidence joins one incremental solver, so a
+         refinement round adds its bounds with no restart: 0.6 to 1.1% fewer
+         instructions retired, census byte-identical. Left (T1c): one session
+         across the three solves a root runs (signature inference, recovered
+         parameter types, the seal), each later one only adding prototypes.
       2. **T2**, the render projection owned once: the seal reads the
          analysis's projection instead of rebuilding it to compare
          (`seal_with_callee_signatures`): about 4% of sort `0x3f50`, a
