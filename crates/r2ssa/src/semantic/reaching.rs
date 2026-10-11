@@ -78,9 +78,7 @@ impl<'a> ReachingStorage<'a> {
                 _ => None,
             };
             if instruction.is_none() || instruction != pending.0 {
-                for inst in pending.2.drain(..) {
-                    self.close(inst, state);
-                }
+                self.close(pending.2.drain(..), state);
                 pending.0 = instruction;
                 pending.1 = state;
             }
@@ -97,14 +95,15 @@ impl<'a> ReachingStorage<'a> {
             }
             state = written(self.graph, op, self.storage).unwrap_or(state);
         }
-        for inst in pending.2 {
-            self.close(inst, state);
-        }
+        self.close(pending.2, state);
     }
 
-    fn close(&mut self, inst: InstId, end: ReachingStorageState) {
-        if let Some(boundary) = self.boundaries.get_mut(inst) {
-            boundary.instruction_end = end;
+    /// The machine instruction `insts` make up ends in `end`.
+    fn close(&mut self, insts: impl IntoIterator<Item = InstId>, end: ReachingStorageState) {
+        for inst in insts {
+            if let Some(boundary) = self.boundaries.get_mut(inst) {
+                boundary.instruction_end = end;
+            }
         }
     }
 
@@ -140,21 +139,23 @@ impl<'a> ReachingStorage<'a> {
                 true => Vec::new(),
                 false => self.function.predecessors(block),
             };
-            for predecessor in &predecessors {
-                if !self.entries.contains_key(predecessor) && self.kill(*predecessor).is_none() {
-                    stack.push(*predecessor);
-                }
-            }
+            let unsolved = predecessors.iter().copied().filter(|predecessor| {
+                !self.entries.contains_key(predecessor) && self.kill(*predecessor).is_none()
+            });
+            stack.extend(unsolved);
             region.insert(block, predecessors);
         }
         // A transparent block's entry is its exit, read by its successors in the region.
         let mut readers = BTreeMap::<u64, Vec<u64>>::new();
-        for (block, predecessors) in &region {
-            for predecessor in predecessors {
-                if region.contains_key(predecessor) {
-                    readers.entry(*predecessor).or_default().push(*block);
-                }
-            }
+        let edges = region.iter().flat_map(|(block, predecessors)| {
+            predecessors
+                .iter()
+                .map(move |predecessor| (*predecessor, *block))
+        });
+        for (predecessor, block) in
+            edges.filter(|(predecessor, _)| region.contains_key(predecessor))
+        {
+            readers.entry(predecessor).or_default().push(block);
         }
         // The walk's worklist over the region: each entry rises from `Unknown` at most twice.
         let mut solving = region
