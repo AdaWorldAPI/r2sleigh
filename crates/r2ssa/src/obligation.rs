@@ -518,6 +518,22 @@ impl SemanticObligationInventory {
     }
 }
 
+/// The dispositions that owe an obligation: graph instructions by index, native spans by identity.
+#[derive(Default)]
+struct Owing {
+    graph: crate::dense::IdSet<InstId>,
+    spans: BTreeSet<CanonicalInstructionId>,
+}
+
+impl Owing {
+    fn owes(&self, disposition: &SemanticInstructionDisposition) -> bool {
+        match disposition.source {
+            SemanticSourceSite::GraphInstruction(inst) => self.graph.contains(inst),
+            SemanticSourceSite::GenuineNativeSpan(_) => self.spans.contains(&disposition.id),
+        }
+    }
+}
+
 /// What obligation seeding reads beside the graph and boundaries: the private stack objects, the
 /// certified round trips, and the blocks whose conditional branch sends both arms to one block.
 pub(crate) struct SeedingFacts<'a> {
@@ -1145,9 +1161,10 @@ impl SemanticObligationInventory {
             return None;
         }
         let mut values = crate::dense::IdSet::default();
+        let owing = self.owing();
         for instruction in self.dispositions() {
             if instruction.state != SemanticInstructionState::StructuralControlOnly
-                || self.owned(instruction).next().is_some()
+                || owing.owes(instruction)
             {
                 continue;
             }
@@ -1298,6 +1315,7 @@ impl SemanticObligationInventory {
             );
             return false;
         }
+        let owing = self.owing();
         for instruction in self.dispositions() {
             let id = &instruction.id;
             if match instruction.source {
@@ -1329,7 +1347,7 @@ impl SemanticObligationInventory {
                     | SemanticInstructionState::UnsupportedUnknown
                     | SemanticInstructionState::CompilerInserted
             );
-            if should_have_obligations == self.owned(instruction).next().is_none() {
+            if should_have_obligations != owing.owes(instruction) {
                 return false;
             }
         }
@@ -1386,6 +1404,23 @@ impl SemanticObligationInventory {
         self.instruction_for_inst(inst)
             .into_iter()
             .flat_map(|instruction| self.owned(instruction))
+    }
+
+    /// Which dispositions owe anything, read in one pass over the table, so a pass over every
+    /// disposition asks in `O(1)`.
+    fn owing(&self) -> Owing {
+        let mut owing = Owing::default();
+        for obligation in self.obligations.values() {
+            match obligation.source {
+                SemanticSourceSite::GraphInstruction(inst) => {
+                    owing.graph.insert(inst);
+                }
+                SemanticSourceSite::GenuineNativeSpan(_) => {
+                    owing.spans.insert(obligation.id.instruction);
+                }
+            }
+        }
+        owing
     }
 
     /// What one disposition owes: its instruction's run of the table, from its own source.
