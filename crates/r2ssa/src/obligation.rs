@@ -16,7 +16,7 @@ use crate::graph::{InstId, InstPayload, SsaGraph, UseSite, ValueId};
 use crate::op::SSAOp;
 use crate::semantic::{SourceBoundaryFacts, StructuredDataflowFacts};
 
-pub const SEMANTIC_OBLIGATION_SCHEMA_VERSION: u32 = 8;
+pub const SEMANTIC_OBLIGATION_SCHEMA_VERSION: u32 = 9;
 
 /// Stable identity of one canonical SSA instruction.
 ///
