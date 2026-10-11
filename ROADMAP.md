@@ -27,8 +27,8 @@ hand before a quality claim.
 | Differential (`scripts/diff_r2.py`) | Where discovery, naming, decoding disagree with radare2, and who is right. |
 | Structure (`scripts/structure-report.sh`) | Did nesting, length, arguments or clones rise? |
 
-Where this stands (2026-10-11, the D switch: #122 to #124 on `rebuild`, follow-ups #126 and #127)
-------------------------------------------------------------------------------------------------
+Where this stands (2026-10-11: `rebuild` merged to master at the D switch, #142)
+--------------------------------------------------------------------------------
 
 | Measure | Value |
 |---------|-------|
@@ -41,7 +41,7 @@ Where this stands (2026-10-11, the D switch: #122 to #124 on `rebuild`, follow-u
 | Structure | at baseline after the deletion (long_comments 2646, too_many_lines 274) |
 | LX exit, measured 2026-10-11 at #127 (`scripts/census.py exponent`) | marginal `pdd` cost (instructions retired by `afl; pdd @ f` less `afl`, contabo) grows as instructions^0.80 (R^2 0.44) over 80 functions of 300+ instructions sampled from 0pack and pumasim: met. Peak RSS above the open grows as instructions^1.17 (R^2 0.36): not met; the pumasim Gui constructor peaks at 452 MB against 250 (396 MB after LX1d to LX1j, of which 133 MB is the open and Sleigh) |
 | SM exit, measured 2026-10-11 | callee reads are 52.8% of sort 0x3f50 `pdd` against 10%, and 85.8% of pumasim 0x1dc0a0 (300 instructions, 18.6 G instructions, 219 MB above the open): the low R^2 above is callee preparation, not body size |
-| Exit left | D27 merges `rebuild` with LX's and SM's exits met: LX's RSS and SM's callee share are not, and neither falls far by trimming passes. Measured 2026-10-11 (samply, sort `0x3f50` `pdd`): callee reads 47.3%, interface recovery's provisional fact pass 17.4% (its obligation inventory is read by `ProvenProgramObservations`, so a recovery-only subset saves about 4%), the seal's fact pass about 22% over a graph the seal rebuilds, the walk's preparation to read dispatch tables about 10%. The Gui constructor's 432 MB holds 133 MB fixed and about 50 MB of mimalloc's retained pages; its heap peak is one function in several representations (F2). LX's 250 MB for the Gui constructor, in numbers (2026-10-11, 396 MB today): 133 MB is the open and Sleigh and about 57 MB is mimalloc's retained pages at its default purge delay, which leaves 60 MB for the function's own peak against about 206 today; with the purge delay at 25 ms (13% more wall time), 117 MB. The exit as written needs the allocator set and F2's single representation, or the fixed and allocator shares excluded. Amending D27 to merge at the switch, or running F2's representations and SM's summary grade on `rebuild` first, is the maintainer's decision |
+| Exit left | The maintainer merged `rebuild` to master at the D switch (#142, 2026-10-11), with LX's RSS and SM's callee share not met: both are master's work now, and neither falls far by trimming passes. Measured 2026-10-11 (samply, sort `0x3f50` `pdd`): callee reads 47.3%, interface recovery's provisional fact pass 17.4% (its obligation inventory is read by `ProvenProgramObservations`, so a recovery-only subset saves about 4%), the seal's fact pass about 22% over a graph the seal rebuilds, the walk's preparation to read dispatch tables about 10%. The Gui constructor's 432 MB holds 133 MB fixed and about 50 MB of mimalloc's retained pages; its heap peak is one function in several representations (F2). LX's 250 MB for the Gui constructor, in numbers (2026-10-11, 396 MB today): 133 MB is the open and Sleigh and about 57 MB is mimalloc's retained pages at its default purge delay, which leaves 60 MB for the function's own peak against about 206 today; with the purge delay at 25 ms (13% more wall time), 117 MB. The exit as written needs the allocator set and F2's single representation, or the fixed and allocator shares excluded. |
 
 The 2026-10-04 review rated the code 4/10: sound ideas and discipline (~7),
 weak algorithms and structure (~3) — hand-rolled iteration, recomputation,
@@ -82,7 +82,7 @@ Decisions
 | D23 | Summaries compose over the call graph: a body is prepared once per session at summary grade and held; a root reads held summaries, and its demand beyond its direct callees reads only what is already held, so no `pdd` pays a transitive closure; components are solved on the fixpoint driver ([next-pass](doc/adr-next-pass.md)) | SM |
 | D24 | The lift is a query per address over a compact IL: `Lifted(address, mode)` held under a byte budget, the Sleigh context persisting across decodes, a varnode `(space, offset, size)` whose metadata is the machine profile's ([next-pass](doc/adr-next-pass.md)) | PF, LF |
 | D25 | Types are one monotone system: union-find with one lattice meet per class over dense ids, incremental, with no restart and no round cap; the confidence-scored second system is deleted and what it found that the lattice cannot state is a residual ([next-pass](doc/adr-next-pass.md)) | T |
-| D27 | Contract first, then the layers behind it (2026-10-08): D0's `RenderInput` is the dense input F2 and T must provide, served first by an adapter over today's `SourceOwnedFunctionFacts`; D1 to D5 are written against it and the old r2dec is deleted; LX and T then replace the adapter's backing with no change to D. Old r2dec reads every fact shape r2ssa and r2types produce, so changing those first pays adapters on code D deletes, and writing D against today's shapes pays D twice. The work runs on one integration branch, `rebuild`, where equivalence, certification and the census report instead of block; every commit there still builds and passes the workspace tests, the Dylints and the proofs, so equivalence stays measurable and a regression bisects; master keeps every gate. `rebuild` merges at D's switch criterion with LX's and SM's exits met | standing |
+| D27 | Contract first, then the layers behind it (2026-10-08): D0's `RenderInput` is the dense input F2 and T must provide, served first by an adapter over today's `SourceOwnedFunctionFacts`; D1 to D5 are written against it and the old r2dec is deleted; LX and T then replace the adapter's backing with no change to D. Old r2dec reads every fact shape r2ssa and r2types produce, so changing those first pays adapters on code D deletes, and writing D against today's shapes pays D twice. The work runs on one integration branch, `rebuild`, where equivalence, certification and the census report instead of block; every commit there still builds and passes the workspace tests, the Dylints and the proofs, so equivalence stays measurable and a regression bisects; master keeps every gate. `rebuild` merges at D's switch criterion with LX's and SM's exits met | done: `rebuild` merged to master at the switch (#142, 2026-10-11) |
 | D26 | Allocation is budgeted: one arena per function, indexes sized at the seal, a global allocator chosen by measurement, and the allocation count gated with time and peak RSS (D19) ([next-pass](doc/adr-next-pass.md)) | PF |
 
 The Sleigh crates (`libsla`, `libsla-sys`, `sleigh-config`) are vendored (`vendor/`), so M0's rest reads `.ldefs` and `.dwarf` by changing `vendor/sleigh-config/build.rs`.
@@ -218,8 +218,9 @@ maintainer accepts broken renderings on `rebuild` until it merges.
       boundaries and live-out) leaves only the render-only certificate maps
       and r2types' render build to skip, 4.9% of pumasim 0x23fdf0's `pdd`
       and 5.7% of 0pack 0x62ecf0's.
-   7. `rebuild` merges to master when D's switch criterion and LX's and SM's
-      exits hold.
+   7. `rebuild` merged to master at D's switch (#142, 2026-10-11), the
+      maintainer's call, before LX's and SM's exits held; LX2, SM and T
+      continue on master, stacked as before.
 6. **LP2 to LP4**, then **I**, **C2, C4**, **P7, P8, P9, P11**.
 7. Beside the path, as small items when a step waits on CI: **L5**, **M6**
    rest.
