@@ -247,7 +247,8 @@ pub struct CertifiedExpr {
     pub fact: ExpressionRenderFact,
     pub inputs: Vec<r2ssa::SemanticId>,
     pub bindings: BTreeSet<r2ssa::SemanticId>,
-    pub guarded_phi: Option<GuardedPhiRenderFact>,
+    /// Boxed: few expressions are a guarded merge, and inline it would double every entry.
+    pub guarded_phi: Option<Box<GuardedPhiRenderFact>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1819,7 +1820,7 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
                 renderable: cert.renderable || call_result.is_some(),
             };
             (
-                r2ssa::SemanticId::expression(value),
+                value,
                 CertifiedExpr {
                     id: r2ssa::SemanticId::expression(value),
                     fact,
@@ -1830,11 +1831,11 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
                         .map(r2ssa::SemanticId::expression)
                         .collect(),
                     bindings,
-                    guarded_phi: prepared_guarded_phi_render_fact(prepared, value),
+                    guarded_phi: prepared_guarded_phi_render_fact(prepared, value).map(Box::new),
                 },
             )
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<r2ssa::dense::IdMap<_, _>>();
     let mut certified_memory_effects = certificates
         .memory_accesses
         .iter()
@@ -2026,7 +2027,7 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
         carrier_edge_roots.extend(carrier.entries.iter().map(|entry| entry.value));
         carrier_edge_roots.extend(carrier.updates.iter().map(|update| update.value));
         for value in carrier.members.iter().map(|member| member.value) {
-            if let Some(expr) = certified_exprs.get_mut(&r2ssa::SemanticId::expression(value)) {
+            if let Some(expr) = certified_exprs.get_mut(value) {
                 expr.bindings.insert(carrier.id);
             }
         }

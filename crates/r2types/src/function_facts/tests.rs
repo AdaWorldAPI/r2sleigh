@@ -1053,7 +1053,7 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
     };
     let mut render = FunctionRenderFacts::default();
     render.certified_exprs.insert(
-        r2ssa::SemanticId::expression(value),
+        value,
         CertifiedExpr {
             id: r2ssa::SemanticId::expression(value),
             fact: ExpressionRenderFact {
@@ -2825,8 +2825,8 @@ fn function_facts_owns_canonical_render_facts() {
     let return_at = r2ssa::InstId(9);
     let return_id = r2ssa::SemanticId::return_value(return_at);
     let render = FunctionRenderFacts {
-        certified_exprs: BTreeMap::from([(
-            expression_id,
+        certified_exprs: [(
+            value,
             CertifiedExpr {
                 id: expression_id,
                 fact: ExpressionRenderFact {
@@ -2839,7 +2839,9 @@ fn function_facts_owns_canonical_render_facts() {
                 bindings: BTreeSet::new(),
                 guarded_phi: None,
             },
-        )]),
+        )]
+        .into_iter()
+        .collect(),
         certified_entities: BTreeMap::from([(
             r2ssa::SemanticId::stack_slot(object),
             CertifiedEntity::StackSlot {

@@ -231,8 +231,8 @@ impl FunctionControlFacts {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionRenderFacts {
-    /// Canonical certified expression graph keyed by stable semantic identity.
-    pub certified_exprs: BTreeMap<r2ssa::SemanticId, CertifiedExpr>,
+    /// Canonical certified expression graph, indexed by the value each expression defines.
+    pub certified_exprs: r2ssa::dense::IdMap<r2ssa::ValueId, CertifiedExpr>,
     /// Canonical certified addressable entities keyed by stable semantic identity.
     pub certified_entities: BTreeMap<r2ssa::SemanticId, CertifiedEntity>,
     /// Canonical certified observable-effect graph keyed by stable semantic identity.
@@ -269,18 +269,15 @@ impl FunctionRenderFacts {
     }
 
     pub fn expression_for_value(&self, value: r2ssa::ValueId) -> Option<&ExpressionRenderFact> {
-        self.certified_exprs
-            .get(&r2ssa::SemanticId::expression(value))
-            .map(|cert| &cert.fact)
+        self.certified_exprs.get(value).map(|cert| &cert.fact)
     }
 
     pub fn certified_expr_for_value(&self, value: r2ssa::ValueId) -> Option<&CertifiedExpr> {
-        self.certified_exprs
-            .get(&r2ssa::SemanticId::expression(value))
+        self.certified_exprs.get(value)
     }
 
     pub fn guarded_phi_for_value(&self, value: r2ssa::ValueId) -> Option<&GuardedPhiRenderFact> {
-        self.certified_expr_for_value(value)?.guarded_phi.as_ref()
+        self.certified_expr_for_value(value)?.guarded_phi.as_deref()
     }
 
     pub fn certified_effect(&self, id: r2ssa::SemanticId) -> Option<&CertifiedEffect> {
@@ -337,7 +334,10 @@ impl FunctionRenderFacts {
             if !visited.insert(id) {
                 continue;
             }
-            let Some(expr) = self.certified_exprs.get(&id) else {
+            let r2ssa::SemanticId::Expression(value) = id else {
+                continue;
+            };
+            let Some(expr) = self.certified_exprs.get(value) else {
                 continue;
             };
             for binding in &expr.bindings {
@@ -2158,11 +2158,7 @@ impl FunctionFacts {
             let Some(parameter_id) = r2ssa::SemanticId::parameter(slot) else {
                 continue;
             };
-            let Some(cert) = self
-                .render
-                .certified_exprs
-                .get_mut(&r2ssa::SemanticId::expression(value.id))
-            else {
+            let Some(cert) = self.render.certified_exprs.get_mut(value.id) else {
                 continue;
             };
             cert.bindings.insert(parameter_id);
@@ -2197,11 +2193,7 @@ impl FunctionFacts {
             if !slots.is_empty() {
                 continue;
             }
-            let Some(expr) = self
-                .render
-                .certified_exprs
-                .get_mut(&r2ssa::SemanticId::expression(reload.value))
-            else {
+            let Some(expr) = self.render.certified_exprs.get_mut(reload.value) else {
                 continue;
             };
             expr.bindings.insert(r2ssa::SemanticId::Parameter(slot));
@@ -2236,11 +2228,7 @@ impl FunctionFacts {
                 let Some(slot) = parameter_slot_by_value.get(source).copied() else {
                     continue;
                 };
-                let Some(expr) = self
-                    .render
-                    .certified_exprs
-                    .get_mut(&r2ssa::SemanticId::expression(value.id))
-                else {
+                let Some(expr) = self.render.certified_exprs.get_mut(value.id) else {
                     continue;
                 };
                 expr.bindings.insert(r2ssa::SemanticId::Parameter(slot));

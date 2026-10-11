@@ -287,6 +287,8 @@ impl<I: DenseId, T> FromIterator<(I, T)> for IdMap<I, T> {
 
 impl<I: DenseId, T> Extend<(I, T)> for IdMap<I, T> {
     fn extend<A: IntoIterator<Item = (I, T)>>(&mut self, entries: A) {
+        let entries = entries.into_iter();
+        self.entries.reserve(entries.size_hint().0);
         for (id, value) in entries {
             self.insert(id, value);
         }
