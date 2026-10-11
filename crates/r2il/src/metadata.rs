@@ -132,14 +132,6 @@ impl InstructionRuns {
         (op < run.end()).then_some(run.addr)
     }
 
-    /// The operations of the run holding `op`, where one does.
-    pub fn run_of(&self, op: usize) -> Option<std::ops::Range<usize>> {
-        let op = u32::try_from(op).ok()?;
-        let after = self.0.partition_point(|run| run.first <= op);
-        let run = self.0.get(after.checked_sub(1)?)?;
-        (op < run.end()).then_some(run.first as usize..run.end() as usize)
-    }
-
     /// `count` operations from `first` came from `addr`; appends in order, as a join lifts.
     pub fn push(&mut self, first: usize, count: usize, addr: u64) {
         for op in first..first + count {
@@ -147,7 +139,7 @@ impl InstructionRuns {
         }
     }
 
-    /// Operation `op` came from `addr`: `O(1)` continuing the last run, `O(runs)` elsewhere.
+    /// Operation `op` came from `addr`: `O(1)` at or past the last run's end, `O(runs)` inside.
     pub fn stamp(&mut self, op: usize, addr: u64) {
         let op = u32::try_from(op).expect("fewer than 2^32 operations in a block");
         if let Some(last) = self.0.last_mut()
@@ -155,6 +147,14 @@ impl InstructionRuns {
             && last.end() == op
         {
             last.len += 1;
+            return;
+        }
+        if self.0.last().is_none_or(|last| op >= last.end()) {
+            self.0.push(InstructionRun {
+                first: op,
+                len: 1,
+                addr,
+            });
             return;
         }
         if self.of(op as usize) == Some(addr) {
@@ -218,7 +218,6 @@ mod tests {
         assert_eq!(runs.iter().count(), 2);
         runs.stamp(7, 0x30);
         assert_eq!((runs.of(6), runs.of(7)), (None, Some(0x30)));
-        assert_eq!(runs.run_of(4), Some(3..5));
     }
 
     #[test]

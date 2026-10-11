@@ -959,9 +959,10 @@ fn control_op_is_intra_instruction(block: &GenuineLiftedBlock, op_index: usize) 
     let Some(instruction) = block.block.instruction_of(op_index) else {
         return false;
     };
-    if (op_index + 1..block.block.ops.len())
-        .any(|later| block.block.instruction_of(later) == Some(instruction))
-    {
+    // A later operation of the same instruction: a run of it ends past this one.
+    if block.block.instructions.iter().any(|run| {
+        run.addr == instruction && (run.first as usize + run.len as usize) > op_index + 1
+    }) {
         return true;
     }
     let target = match &block.block.ops[op_index] {
