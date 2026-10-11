@@ -94,9 +94,8 @@ pub struct OpMetadata {
     pub atomic_kind: Option<AtomicKind>,
 }
 
-/// The machine instruction each operation of a block was lifted from: one run of operations per
-/// instruction, ascending, so a block holds one entry per instruction and an op finds its own in
-/// `O(log runs)`. An operation in no run was stamped by none.
+/// The instruction each operation of a block was lifted from, one run per instruction, ascending;
+/// an operation in no run was stamped by none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(transparent)]
 pub struct InstructionRuns(Vec<InstructionRun>);
