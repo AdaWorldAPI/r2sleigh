@@ -1,8 +1,5 @@
-//! What one storage holds at the points a pass asks (adr-next-pass model 2).
-//!
-//! A block's entry is solved over the blocks backward-reachable from it through blocks that do
-//! not write the storage: the whole-function walk's equations, closed over that region, so the
-//! same least fixpoint, final once found and kept for the next ask.
+//! What one storage holds at the points a pass asks: the reaching walk's least fixpoint, solved
+//! over the blocks a question needs (doc/adr-next-pass.md, model 2).
 
 use super::*;
 
