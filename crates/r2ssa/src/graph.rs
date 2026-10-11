@@ -240,13 +240,11 @@ pub struct SsaGraph {
     pub(crate) inst_by_op: Vec<Option<InstId>>,
     /// The operation or phi each instruction is, indexed by [`InstId`].
     pub(crate) op_by_inst: Vec<OpId>,
-    /// Which machine instruction each operation came from.
-    ///
-    /// Carried here from the function so a consumer holding only the graph can
-    /// ask. Absent for a phi and for anything the lifter stamped no address on.
-    pub(crate) instruction_by_inst: crate::dense::IdMap<InstId, u64>,
-    /// The inverse: every operation one machine instruction became, in order.
-    pub(crate) insts_by_instruction: BTreeMap<u64, Vec<InstId>>,
+    /// The machine instruction each operation came from, as runs over [`InstId`]; a phi and an
+    /// operation the lifter stamped no address on are in none.
+    pub(crate) instructions: r2il::InstructionRuns,
+    /// Each instruction's runs, by address then run: a block the CFG split holds one in two.
+    pub(crate) runs_by_instruction: Vec<(u64, u32)>,
     /// Entry-lane projections by value, valued by the lane's storage
     /// (`SSAFunction::mint_entry_lane_projections`).
     pub(crate) formal_projections: crate::dense::IdMap<ValueId, CanonicalStorageId>,
@@ -257,18 +255,20 @@ pub struct SsaGraph {
     pub(crate) entry_lanes: Vec<(SSAVar, SSAVar)>,
 }
 
-/// Record which machine instruction one operation came from, both ways round.
-fn record_instruction(
-    by_inst: &mut crate::dense::IdMap<InstId, u64>,
-    by_instruction: &mut BTreeMap<u64, Vec<InstId>>,
-    inst: InstId,
-    from: Option<u64>,
-) {
-    let Some(from) = from else {
-        return;
-    };
-    by_inst.insert(inst, from);
-    by_instruction.entry(from).or_default().push(inst);
+/// Each instruction's runs, by address, so the insts one instruction became are found by search.
+pub(crate) fn runs_by_instruction(instructions: &r2il::InstructionRuns) -> Vec<(u64, u32)> {
+    let mut runs = instructions
+        .iter()
+        .enumerate()
+        .map(|(index, run)| {
+            (
+                run.addr,
+                u32::try_from(index).expect("fewer than 2^32 runs"),
+            )
+        })
+        .collect::<Vec<_>>();
+    runs.sort_unstable();
+    runs
 }
 
 /// Every value, addressed by its variable's hash.
@@ -433,8 +433,7 @@ impl SsaGraph {
         let mut insts = Vec::new();
         let mut inst_by_op = vec![None; function.id_limit()];
         let mut op_by_inst = Vec::new();
-        let mut instruction_by_inst = crate::dense::IdMap::default();
-        let mut insts_by_instruction: BTreeMap<u64, Vec<InstId>> = BTreeMap::new();
+        let mut instructions = r2il::InstructionRuns::default();
 
         for block in function.blocks() {
             let block_id = block_by_addr[&block.addr];
@@ -496,12 +495,9 @@ impl SsaGraph {
                 blocks[block_id.0 as usize].insts.push(inst_id);
                 inst_by_op[op_id.index()] = Some(inst_id);
                 op_by_inst.push(op_id);
-                record_instruction(
-                    &mut instruction_by_inst,
-                    &mut insts_by_instruction,
-                    inst_id,
-                    function.instruction_of(op_id),
-                );
+                if let Some(from) = function.instruction_of(op_id) {
+                    instructions.stamp(inst_id.0 as usize, from);
+                }
             }
         }
         let ValueNumbering {
@@ -548,8 +544,8 @@ impl SsaGraph {
             value_index,
             inst_by_op,
             op_by_inst,
-            instruction_by_inst,
-            insts_by_instruction,
+            runs_by_instruction: runs_by_instruction(&instructions),
+            instructions,
             formal_projections,
             formal_roots,
             entry_lanes,
@@ -685,7 +681,7 @@ impl SsaGraph {
     /// index space instead was wrong from the first operation renaming added
     /// to a block, and wrong in silence.
     pub fn instruction_for_inst(&self, id: InstId) -> Option<u64> {
-        self.instruction_by_inst.get(id).copied()
+        self.instructions.of(id.0 as usize)
     }
 
     /// Every operation one machine instruction became, in order.
@@ -693,10 +689,14 @@ impl SsaGraph {
     /// This used to be answered by finding the instruction's span of *lifted*
     /// operations and reading that range out of the graph, which is a range in
     /// the wrong index space and misses a block the CFG split.
-    pub fn insts_for_instruction(&self, from: u64) -> &[InstId] {
-        self.insts_by_instruction
-            .get(&from)
-            .map_or(&[], Vec::as_slice)
+    pub fn insts_for_instruction(&self, from: u64) -> impl DoubleEndedIterator<Item = InstId> + '_ {
+        let runs = &self.runs_by_instruction;
+        let first = runs.partition_point(|(at, _)| *at < from);
+        let end = runs.partition_point(|(at, _)| *at <= from);
+        runs[first..end]
+            .iter()
+            .filter_map(|(_, run)| self.instructions.get(*run as usize))
+            .flat_map(|run| (run.first..run.first + run.len).map(InstId))
     }
 
     /// What one instruction leaves in each storage it writes: the last value it defines there, in the order it leaves them.
@@ -704,9 +704,8 @@ impl SsaGraph {
         let mut seen = BTreeSet::new();
         let mut left = self
             .insts_for_instruction(from)
-            .iter()
             .rev()
-            .filter_map(|inst| self.inst(*inst))
+            .filter_map(|inst| self.inst(inst))
             .filter_map(|inst| Some((inst.canonical_storage?, inst.output?)))
             .filter(|(storage, _)| seen.insert(*storage))
             .collect::<Vec<_>>();

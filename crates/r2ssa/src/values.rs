@@ -113,8 +113,10 @@ pub fn instruction_bound(
 ) -> Option<InstructionBound> {
     let left = graph.left_by_instruction(instruction, storage)?;
     let mut local = BTreeMap::new();
-    let insts = graph.insts_for_instruction(instruction);
-    for inst in insts.iter().filter_map(|inst| graph.inst(*inst)) {
+    for inst in graph
+        .insts_for_instruction(instruction)
+        .filter_map(|inst| graph.inst(inst))
+    {
         let Some(output) = inst.output else {
             continue;
         };

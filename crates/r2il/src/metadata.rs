@@ -123,6 +123,11 @@ impl InstructionRuns {
         self.0.iter()
     }
 
+    /// The run at `index`, in ascending order.
+    pub fn get(&self, index: usize) -> Option<&InstructionRun> {
+        self.0.get(index)
+    }
+
     /// The instruction operation `op` was lifted from.
     pub fn of(&self, op: usize) -> Option<u64> {
         let op = u32::try_from(op).ok()?;

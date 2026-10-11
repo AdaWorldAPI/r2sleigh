@@ -540,8 +540,12 @@ fn malformed_shift_graph_reports_instruction_width_mismatch() {
         value_index: crate::graph::value_index_of(&values),
         inst_by_op: vec![Some(InstId(0))],
         op_by_inst: vec![crate::arena::local_id(0)],
-        instruction_by_inst: [(InstId(0), 0x1000)].into_iter().collect(),
-        insts_by_instruction: [(0x1000, vec![InstId(0)])].into(),
+        instructions: {
+            let mut instructions = r2il::InstructionRuns::default();
+            instructions.stamp(0, 0x1000);
+            instructions
+        },
+        runs_by_instruction: vec![(0x1000, 0)],
         formal_projections: crate::dense::IdMap::default(),
         formal_roots: crate::dense::IdMap::default(),
         entry_lanes: Vec::new(),
