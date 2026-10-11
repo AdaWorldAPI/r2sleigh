@@ -16,7 +16,7 @@ use crate::graph::{InstId, InstPayload, SsaGraph, UseSite, ValueId};
 use crate::op::SSAOp;
 use crate::semantic::{SourceBoundaryFacts, StructuredDataflowFacts};
 
-pub const SEMANTIC_OBLIGATION_SCHEMA_VERSION: u32 = 10;
+pub const SEMANTIC_OBLIGATION_SCHEMA_VERSION: u32 = 11;
 
 /// Stable identity of one canonical SSA instruction.
 ///
@@ -305,19 +305,19 @@ pub enum SemanticInstructionState {
 
 /// Exact source owner for one semantic site.
 ///
-/// Graph instructions and genuine zero-op native spans are disjoint by type;
-/// callers cannot silently coerce a native span into a fabricated `InstId`.
+/// Graph instructions and genuine zero-op native spans are disjoint by type; a span's geometry
+/// is the inventory's `native_spans`, under the site's instruction identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SemanticSourceSite {
     GraphInstruction(InstId),
-    GenuineNativeSpan(crate::GenuineNativeInstructionSpan),
+    GenuineNativeSpan,
 }
 
 impl SemanticSourceSite {
     pub const fn graph_inst(self) -> Option<InstId> {
         match self {
             Self::GraphInstruction(inst) => Some(inst),
-            Self::GenuineNativeSpan(_) => None,
+            Self::GenuineNativeSpan => None,
         }
     }
 }
@@ -529,7 +529,7 @@ impl Owing {
     fn owes(&self, disposition: &SemanticInstructionDisposition) -> bool {
         match disposition.source {
             SemanticSourceSite::GraphInstruction(inst) => self.graph.contains(inst),
-            SemanticSourceSite::GenuineNativeSpan(_) => self.spans.contains(&disposition.id),
+            SemanticSourceSite::GenuineNativeSpan => self.spans.contains(&disposition.id),
         }
     }
 }
@@ -1100,7 +1100,7 @@ impl SemanticObligationInventory {
                     id,
                     SemanticInstructionDisposition {
                         id,
-                        source: SemanticSourceSite::GenuineNativeSpan(span),
+                        source: SemanticSourceSite::GenuineNativeSpan,
                         state,
                     },
                 )
@@ -1110,7 +1110,7 @@ impl SemanticObligationInventory {
             }
             late.push(SemanticObligation {
                 id: obligation_id,
-                source: SemanticSourceSite::GenuineNativeSpan(span),
+                source: SemanticSourceSite::GenuineNativeSpan,
                 inputs: Vec::new(),
                 edge_use: None,
             });
@@ -1216,7 +1216,7 @@ impl SemanticObligationInventory {
     ) -> Option<&SemanticInstructionDisposition> {
         match source {
             SemanticSourceSite::GraphInstruction(inst) => self.instruction_for_inst(inst),
-            SemanticSourceSite::GenuineNativeSpan(_) => self.span_instructions.get(&id),
+            SemanticSourceSite::GenuineNativeSpan => self.span_instructions.get(&id),
         }
     }
 
@@ -1322,11 +1322,10 @@ impl SemanticObligationInventory {
                 SemanticSourceSite::GraphInstruction(inst) => {
                     self.instruction_for_inst(inst).map(|held| &held.id) != Some(id)
                 }
-                SemanticSourceSite::GenuineNativeSpan(source_span) => {
+                SemanticSourceSite::GenuineNativeSpan => {
                     self.native_spans.get(id).is_none_or(|span| {
                         (span.canonical_op_count() != 0)
                             != (instruction.state == SemanticInstructionState::CompilerInserted)
-                            || *span != source_span
                             || id.block_addr != span.block_addr()
                             || !matches!(
                                 id.site,
@@ -1415,7 +1414,7 @@ impl SemanticObligationInventory {
                 SemanticSourceSite::GraphInstruction(inst) => {
                     owing.graph.insert(inst);
                 }
-                SemanticSourceSite::GenuineNativeSpan(_) => {
+                SemanticSourceSite::GenuineNativeSpan => {
                     owing.spans.insert(obligation.id.instruction);
                 }
             }
