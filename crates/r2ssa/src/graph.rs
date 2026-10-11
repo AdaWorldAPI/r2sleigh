@@ -430,9 +430,15 @@ impl SsaGraph {
         }
 
         let mut numbering = ValueNumbering::new(function);
-        let mut insts = Vec::new();
+        // Sized once: an array grown by doubling holds up to twice its instructions at the peak.
+        let count = function
+            .blocks()
+            .iter()
+            .map(|block| block.phis().len() + block.ops().len())
+            .sum::<usize>();
+        let mut insts = Vec::with_capacity(count);
         let mut inst_by_op = vec![None; function.id_limit()];
-        let mut op_by_inst = Vec::new();
+        let mut op_by_inst = Vec::with_capacity(count);
         let mut instructions = r2il::InstructionRuns::default();
 
         for block in function.blocks() {
