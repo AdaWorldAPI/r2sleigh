@@ -15,14 +15,21 @@
                                                    peak RSS grow with a function's instructions
                                                    (ROADMAP LX's exit): `afl; pdd @ f` less `afl`,
                                                    under `perf stat` (Linux); fails above X
+  census.py heap [--top N] [INSTRUCTIONS=]PROFILE...
+                                                   bytes live at each dhat profile's heap peak by
+                                                   allocation site (a `--features dhat-heap` build
+                                                   writes dhat-heap.json); given each profile's
+                                                   instruction count, how fast each site grows
 
 With no binaries, `run` reads the repository's own: tests/coverage/pinned,
 tests/fixtures and, where the coverage sweep compiled them, tests/coverage/artifacts/bin.
 """
 import argparse
+import collections
 import concurrent.futures
 import difflib
 import hashlib
+import json
 import math
 import os
 import re
@@ -40,6 +47,11 @@ TIMED = [("0pack", "pdd @ 0x0058e3d0"), ("0pack", "pdd @ 0x0062ecf0"),
          ("pumasim", "afl"), ("0pack", "afl")]
 ALLOCATIONS = re.compile(r"^r2s: allocations: (\d+)$", re.MULTILINE)
 INFO = re.compile(r"^addr: (0x[0-9a-f]+)\n(?:.*\n)*?num-instrs: (\d+)$", re.MULTILINE)
+# A dhat frame the project does not own: the allocator, the standard library and its collections.
+LIBRARY_FRAME = re.compile(r": <?(alloc|core|std|hashbrown)::|\((\?\?\?|dhat-|alloc/|core/|std/|hashbrown|smallvec"
+                           r"|collections/|iter/|r2s/src/allocator"
+                           r"|src/(raw_vec|vec|boxed|collections|alloc|ops|panic|iter|slice|str|string|fmt"
+                           r"|hash|sync|rc|option|result|cell|ptr|mem|array|btree|clone|raw)/)")
 
 
 def corpus():
@@ -318,6 +330,35 @@ def exponent(args):
         sys.exit(1)
 
 
+def heap_sites(profile):
+    """Bytes live at a dhat profile's global peak, by the first two frames the project owns."""
+    frames = profile["ftbl"]
+    sites = collections.Counter()
+    for point in profile["pps"]:
+        if not point["gb"]:
+            continue
+        own = [frames[i].split(": ", 1)[-1] for i in point["fs"]
+               if frames[i] != "[root]" and not LIBRARY_FRAME.search(frames[i])]
+        sites[" <- ".join(frame[:70] for frame in own[:2]) or "?"] += point["gb"]
+    return sites
+
+
+def heap(args):
+    runs = []
+    for spec in args.profiles:
+        size, _, path = spec.rpartition("=")
+        runs.append((int(size) if size else None, heap_sites(json.loads(Path(path).read_text()))))
+    print("heap peak MB: " + "  ".join(f"{sum(sites.values()) / 1e6:.1f}" for _, sites in runs))
+    total = collections.Counter()
+    for _, sites in runs:
+        total.update(sites)
+    for site, _ in total.most_common(args.top):
+        points = [(size, sites[site]) for size, sites in runs if size and sites.get(site)]
+        growth = f"{fit(points)[0]:5.2f}" if len({size for size, _ in points}) >= 2 else "    -"
+        cells = " ".join(f"{sites.get(site, 0) / 1e6:7.2f}" for _, sites in runs)
+        print(f"{growth} {cells}  {site[:150]}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -351,6 +392,10 @@ def main():
     p.add_argument("--out")
     p.add_argument("binaries", nargs="+")
     p.set_defaults(func=exponent)
+    p = sub.add_parser("heap")
+    p.add_argument("--top", type=int, default=30)
+    p.add_argument("profiles", nargs="+")
+    p.set_defaults(func=heap)
     args = parser.parse_args()
     if args.command == "time" and len(args.r2s) != 2:
         parser.error("time takes --r2s twice: base, then head")

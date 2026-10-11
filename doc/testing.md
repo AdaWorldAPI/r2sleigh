@@ -48,6 +48,8 @@ and `run_coverage.sh` builds and uses the release binary.
 | What does DecBench score, on its own protocol? | `tests/decbench/run_decbench.sh` (see its README) |
 | Did any rendering move, base against head? | `python3 scripts/census.py run --r2s <r2s> --out <dir>` per side, then `census.py diff <base> <head> --report <file>` (CI: Census + Timing vs Base) |
 | Did a large function get slower? | `python3 scripts/census.py time --r2s <base> --r2s <head> --bins <radare2>/test/bins/elf` (fails above 1.3x in CI) |
+| How does `pdd` cost grow with function size (LX's exit)? | `python3 scripts/census.py exponent --r2s <r2s> --max-exponent 1.05 <binary>...` (Linux, `perf`) |
+| What holds the heap at its peak, and which sites grow faster than the function? | `cargo build --profile profiling -p r2s --features sleigh,dhat-heap`, run `r2s -q -c 'pdd @ <f>' <binary>` (writes `dhat-heap.json`), then `python3 scripts/census.py heap [<instructions>=]<dhat-heap.json>...` |
 | How robust is one large binary? | `tests/coverage/sweep_binary.sh <binary>` |
 
 `scripts/setup_corpus.py` builds local corpora (coreutils, CGC, Juliet) under

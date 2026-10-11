@@ -17,6 +17,7 @@ clap.workspace = true
 reedline.workspace = true
 serde_json.workspace = true
 mimalloc = { version = "0.1", default-features = false }
+dhat = { version = "0.3", optional = true }
 
 [dev-dependencies]
 insta.workspace = true
@@ -28,6 +29,8 @@ default = []
 sleigh = ["r2engine/x86", "r2engine/arm", "r2engine/riscv"]
 # Count allocations; with R2S_ALLOCATIONS set, print the count after a script (the timing gate).
 alloc-count = []
+# Profile the heap: dhat's allocator, and a script writes dhat-heap.json as it exits (`census.py heap`).
+dhat-heap = ["dep:dhat"]
 
 [lints]
 workspace = true

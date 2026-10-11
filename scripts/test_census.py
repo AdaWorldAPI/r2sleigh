@@ -81,5 +81,19 @@ class ExponentFit(unittest.TestCase):
         self.assertEqual(max(n for _, n in picked), 1299)
 
 
+
+class HeapSites(unittest.TestCase):
+    def test_a_site_is_its_first_two_project_frames_past_the_allocator(self):
+        profile = {
+            "ftbl": ["[root]", "0x1: alloc (alloc/src/alloc.rs:95:9)",
+                     "0x2: push (r2ssa/src/graph.rs:485:23)", "0x3: seal (src/function/stage.rs:199:25)",
+                     "0x4: main (r2s/src/main.rs:47:29)"],
+            "pps": [{"gb": 300, "fs": [1, 2, 3, 4]}, {"gb": 0, "fs": [1, 4]}, {"gb": 20, "fs": [1, 2, 3]}],
+        }
+        sites = census.heap_sites(profile)
+        site = "push (r2ssa/src/graph.rs:485:23) <- seal (src/function/stage.rs:199:25)"
+        self.assertEqual(sites, {site: 320})
+
+
 if __name__ == "__main__":
     unittest.main()
