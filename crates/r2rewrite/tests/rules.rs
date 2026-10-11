@@ -90,13 +90,13 @@ fn a_constant_chain_across_instructions_is_one_literal() {
     assert_eq!(bits.bits(), 0x0000_9ce4_8422_2325);
     assert_eq!(last.multiplicity, Multiplicity::Any);
     assert_eq!(
-        last.discharges.len(),
+        roots.discharges(&projection, last.value).len(),
         3,
         "the three earlier steps render here"
     );
     let rax = roots.value(value_named(&artifact, "RAX_1")).expect("rax");
     assert_eq!(rax.canonical, last.canonical);
-    assert_eq!(rax.discharges.len(), 4);
+    assert_eq!(roots.discharges(&projection, rax.value).len(), 4);
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn identities_compose_through_a_single_use_chain() {
     // The double negation is gone too, taken by the affine normal form
     // before the rule could see it; the rule still proves on its own shape.
     assert_eq!(
-        xor.discharges.len(),
+        roots.discharges(&projection, xor.value).len(),
         3,
         "the or and both negations render here"
     );
@@ -373,7 +373,8 @@ fn a_signed_branch_on_flags_becomes_a_comparison_through_the_difference_by_name(
     // in the graph. What this test still pins is the shape that reaches the
     // renderer -- a signed comparison of the two operands, read by name.
     assert!(rules.is_empty(), "{rules:?}");
-    assert!(branch.discharges.is_empty(), "{:?}", branch.discharges);
+    let discharges = roots.discharges(&projection, branch.value);
+    assert!(discharges.is_empty(), "{discharges:?}");
     let zero_flag = roots
         .value(value_named(&artifact, "tmp:300_1"))
         .expect("zero flag");

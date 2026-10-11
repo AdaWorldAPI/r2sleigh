@@ -55,11 +55,6 @@ pub struct CanonicalValue {
     pub value: ValueId,
     pub base_root: MachineExprId,
     pub canonical: TermId,
-    /// Instructions other than this value's own that rendering `canonical`
-    /// renders: producers expanded into the term whose values the term no
-    /// longer reads. The binding plan decides, per instruction, whether that
-    /// rendering is admissible at this site.
-    pub discharges: DischargedInstructions,
     /// The values `canonical` still reads, sorted and distinct.
     ///
     /// The graph's use table is the population *before* rewriting. A branch
@@ -77,9 +72,6 @@ pub struct CanonicalValue {
 pub struct CanonicalAccess {
     pub access: StructuredAccessId,
     pub canonical: TermId,
-    /// Instructions rendering `canonical` at the access renders: the address
-    /// producers expanded into the term whose values it no longer reads.
-    pub discharges: DischargedInstructions,
     /// The values `canonical` still reads, sorted and distinct.
     pub reads: Box<[ValueId]>,
 }
@@ -144,6 +136,33 @@ impl CanonicalRoots {
         &self.budget_failures
     }
 
+    /// The instructions rendering a value's canonical term renders besides its own, walked on
+    /// demand: held per value, a substitution chain's sets grow with its square.
+    pub fn discharges(
+        &self,
+        projection: &MachineProjection,
+        value: ValueId,
+    ) -> DischargedInstructions {
+        self.value(value)
+            .map_or_else(Default::default, |canonical| {
+                let substituted = self.import.substituted(value);
+                discharged_from(substituted, projection, &self.arena, canonical.canonical)
+            })
+    }
+
+    /// The instructions rendering an access's canonical cell renders, walked on demand.
+    pub fn access_discharges(
+        &self,
+        projection: &MachineProjection,
+        access: StructuredAccessId,
+    ) -> DischargedInstructions {
+        self.access(access)
+            .map_or_else(Default::default, |canonical| {
+                let substituted = self.import.access_substituted(access);
+                discharged_from(substituted, projection, &self.arena, canonical.canonical)
+            })
+    }
+
     /// Every rewrite that produced a value's canonical term, copy elisions included, in
     /// application order.
     pub fn trace(&self, value: ValueId) -> Vec<Rewrite> {
@@ -192,36 +211,16 @@ pub fn renders_inline(arena: &TermArena, id: TermId) -> bool {
     !matches!(arena.term(id).kind, TermKind::Opaque(_))
 }
 
-/// The instructions rendering `canonical` in place of `value` renders besides
-/// the value's own: every producer expanded into the imported term whose
-/// value the canonical term no longer reads. The one function that answers
-/// this; construction and the seal both call it.
-pub fn discharged_origins(
-    import: &Import,
-    projection: &MachineProjection,
-    arena: &TermArena,
-    value: ValueId,
-    canonical: TermId,
-) -> DischargedInstructions {
-    if import.value(value).is_none() {
-        return DischargedInstructions::default();
-    }
-    discharged_from(&import.substituted(value), projection, arena, canonical)
-}
-
 /// The values a canonical term still reads, sorted and distinct.
 ///
-/// A leaf names a value two ways and both count. It can be a `Source` read of
-/// another value's binding, and it can be the root of an entity -- which is how
-/// a memory read appears, since its expression kind is the read and not a
-/// source. Counting only the first made every load look unread.
+/// A leaf is a `Source` read of a binding or an entity's root, which is how a memory read
+/// appears; an expanded producer a `Source` leaf still reads is read, not discharged.
 fn values_read(
     projection: &MachineProjection,
     value_by_root: &HashMap<MachineExprId, ValueId>,
     arena: &TermArena,
     term: TermId,
     substituted: &BTreeSet<CanonicalInstructionId>,
-    discharges: &DischargedInstructions,
 ) -> Box<[ValueId]> {
     let mut read = Vec::new();
     for leaf in arena.leaves(term) {
@@ -232,14 +231,10 @@ fn values_read(
             projection.expr(leaf).map(|expr| expr.kind())
         {
             read.push(binding.value());
-        }
-    }
-    // A producer expanded into this term is read by it just as much as a leaf
-    // is; it simply has no leaf to be found at. The ones the rewrite then
-    // removed are exactly the discharged set, so what is left is still read.
-    for producer in substituted.difference(&discharges.iter().copied().collect()) {
-        if let Some(entity) = projection.entity_for_producer(*producer) {
-            read.push(entity.output().value());
+            let kept = projection.entity_for_output(binding.value());
+            let kept = kept.filter(|entity| substituted.contains(&entity.producer()));
+            let kept = kept.and_then(|entity| projection.entity_for_producer(entity.producer()));
+            read.extend(kept.map(|entity| entity.output().value()));
         }
     }
     read.sort_unstable();
@@ -250,12 +245,11 @@ fn values_read(
 /// The producers among `substituted` whose values `canonical` no longer
 /// reads.
 fn discharged_from(
-    substituted: &BTreeSet<CanonicalInstructionId>,
+    mut discharged: BTreeSet<CanonicalInstructionId>,
     projection: &MachineProjection,
     arena: &TermArena,
     canonical: TermId,
 ) -> DischargedInstructions {
-    let mut discharged = substituted.clone();
     for leaf in arena.leaves(canonical) {
         if let Some(MachineExprKind::Source { binding, .. }) =
             projection.expr(leaf).map(|expr| expr.kind())
@@ -268,11 +262,6 @@ fn discharged_from(
 }
 
 /// The instructions that rendering a term also renders, in identity order.
-///
-/// A sorted run rather than an ordered set. Every use is iteration,
-/// membership, emptiness, length or equality, and a set node costs several
-/// hundred bytes whether it holds one identity or eleven -- one per value of a
-/// thirty-thousand-value function, for about two identities each.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct DischargedInstructions(Box<[CanonicalInstructionId]>);
@@ -474,7 +463,6 @@ pub fn canonicalize_with(
             .copied()
             .unwrap_or(imported.term);
         let substituted = import.substituted(imported.value);
-        let discharges = discharged_from(&substituted, projection, &arena, canonical_term);
         let multiplicity = if import.is_duplicable(projection, &arena, canonical_term) {
             Multiplicity::Any
         } else {
@@ -486,14 +474,12 @@ pub fn canonicalize_with(
             &arena,
             canonical_term,
             &substituted,
-            &discharges,
         );
         if let Some(cell) = values.get_mut(imported.value.0 as usize) {
             *cell = Some(CanonicalValue {
                 value: imported.value,
                 base_root: imported.base_root,
                 canonical: canonical_term,
-                discharges,
                 reads,
                 multiplicity,
             });
@@ -511,7 +497,6 @@ pub fn canonicalize_with(
             value,
             base_root,
             canonical: canonical_term,
-            discharges: DischargedInstructions::default(),
             reads: Box::new([]),
             multiplicity: Multiplicity::Any,
         });
@@ -523,7 +508,6 @@ pub fn canonicalize_with(
             .copied()
             .unwrap_or(imported.term);
         let substituted = import.access_substituted(imported.access);
-        let discharges = discharged_from(&substituted, projection, &arena, canonical_term);
         accesses.insert(
             imported.access,
             CanonicalAccess {
@@ -535,9 +519,7 @@ pub fn canonicalize_with(
                     &arena,
                     canonical_term,
                     &substituted,
-                    &discharges,
                 ),
-                discharges,
             },
         );
     }
