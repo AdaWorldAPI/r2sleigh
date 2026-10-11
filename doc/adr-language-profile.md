@@ -53,7 +53,16 @@ The profile, owned by r2abi (the cited rows) and selected by r2engine, states:
    return is stated per profile (C's stack protector, Go's `morestack`
    prologue, Rust's bounds and overflow checks). It is decided in r2ssa,
    recorded as compiler-inserted, and counted in the proof's column, exactly
-   as the canary is.
+   as the canary is. What a decision rests on differs: the canary rests on a
+   premise about the source (a UB-free source writes no guard, so both reads
+   agree), which the consumer accepts or refuses. Go's stack check rests on a
+   fact about its callee, a runtime model (item 4): `runtime.morestack`
+   grows the goroutine's stack and re-enters the function at its entry, never
+   returning to the call, so the failing edge composes to the passing one and
+   no premise is accepted for it. The check compares a stack-pointer value
+   with `stackguard0`, which r2abi states per architecture (the goroutine
+   register, R14 on amd64 and R28 on arm64, and the field's offset in
+   `runtime.g`).
 4. **Runtime models.** Library and runtime functions per language, in r2abi:
    libc for C, Go's runtime, Rust's `core` and `alloc`, the C++ ABI
    (`__cxa_throw`, operator `new`). A model names a callee's effect and
