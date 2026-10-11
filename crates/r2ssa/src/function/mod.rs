@@ -2314,7 +2314,10 @@ impl TrustedSsaArtifact {
         let sealed = (constructed.function)
             .seal(&constructed.machine_context)
             .map_err(integrity_refusal)?;
-        Ok(crate::indirect::sealed_dispatch_table_reads(&sealed))
+        control.poll()?;
+        let reads = crate::indirect::sealed_dispatch_table_reads(&sealed);
+        control.poll()?;
+        Ok(reads)
     }
 
     /// The function built against its interface, stated or recovered, and the context it is sealed in.
