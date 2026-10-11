@@ -12,7 +12,7 @@
 //! belongs to, and spelling is a projection of the pair. Whoever opened the
 //! binary fills it; the engine and the shell read it.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// The longest text that will be read out of one address.
 ///
@@ -178,8 +178,8 @@ fn identifier(text: &str) -> String {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct NameDb {
     by_address: BTreeMap<u64, Vec<Name>>,
-    /// Every address each spelling names, so a name resolves in `O(log n)`.
-    by_spelling: BTreeMap<String, BTreeSet<u64>>,
+    /// The lowest address each spelling names, the one a seek reads; names are only ever added.
+    by_spelling: BTreeMap<Box<str>, u64>,
 }
 
 impl NameDb {
@@ -194,7 +194,8 @@ impl NameDb {
             return;
         }
         for spelling in name.seeks() {
-            self.by_spelling.entry(spelling).or_default().insert(vaddr);
+            let lowest = self.by_spelling.entry(spelling.into()).or_insert(vaddr);
+            *lowest = (*lowest).min(vaddr);
         }
         held.push(name);
         held.sort_by_key(|name| name.namespace);
@@ -205,7 +206,7 @@ impl NameDb {
     /// This is what `s sym.main` or `s entry0` reads: the name `f` lists for an
     /// address is the name that seeks there.
     pub fn address_of(&self, spelling: &str) -> Option<u64> {
-        self.by_spelling.get(spelling)?.first().copied()
+        self.by_spelling.get(spelling).copied()
     }
 
     /// The strongest name at exactly this address.
