@@ -1115,17 +1115,12 @@ impl MachineExprKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MachineExpr {
     ty: MachineType,
-    origin: Option<CanonicalInstructionId>,
     kind: MachineExprKind,
 }
 
 impl MachineExpr {
     pub const fn ty(&self) -> &MachineType {
         &self.ty
-    }
-
-    pub const fn origin(&self) -> Option<CanonicalInstructionId> {
-        self.origin
     }
 
     pub const fn kind(&self) -> &MachineExprKind {
@@ -1334,7 +1329,7 @@ impl MachineProjection {
                 .value(output_id)
                 .ok_or(MachineBuildError::MissingGraphValue(output_id))?;
             let output = binding_for_value(graph_value)?;
-            match builder.lower_inst(artifact, inst, disposition.id, output) {
+            match builder.lower_inst(artifact, inst, output) {
                 Ok(root) => {
                     // The write decision is deferred. Whether a partial write
                     // preserves anything depends on what reads the carrier
@@ -2619,18 +2614,13 @@ impl MachineFunction {
                 .obligations()
                 .instruction_for_inst(inst_id)
                 .ok_or(MachineBuildError::MissingInstructionDisposition(inst_id))?;
-            if disposition.id != entity.producer
-                || self
-                    .arena
-                    .get(entity.root)
-                    .is_none_or(|root| root.origin != Some(entity.producer))
-            {
+            if disposition.id != entity.producer || self.arena.get(entity.root).is_none() {
                 r2il::refusal_evidence!(
                     "machine-entity",
-                    "{inst_id:?}: the disposition names {:?}, the entity names {:?}, the root names {:?}",
+                    "{inst_id:?}: the disposition names {:?}, the entity names {:?}, its root {:?}",
                     disposition.id,
                     entity.producer,
-                    self.arena.get(entity.root).and_then(|root| root.origin)
+                    entity.root
                 );
                 return Err(MachineBuildError::EntityMismatch(inst_id));
             }
@@ -3445,14 +3435,9 @@ impl MachineBuilder {
         Ok(())
     }
 
-    fn push(
-        &mut self,
-        ty: MachineType,
-        origin: Option<CanonicalInstructionId>,
-        kind: MachineExprKind,
-    ) -> MachineExprId {
+    fn push(&mut self, ty: MachineType, kind: MachineExprKind) -> MachineExprId {
         let id = MachineExprId(self.nodes.len() as u32);
-        self.nodes.push(MachineExpr { ty, origin, kind });
+        self.nodes.push(MachineExpr { ty, kind });
         id
     }
 
@@ -3528,7 +3513,7 @@ impl MachineBuilder {
                 storage: value.canonical_storage,
             }
         };
-        let id = self.push(ty, None, kind);
+        let id = self.push(ty, kind);
         self.value_nodes.insert(key, id);
         Ok(id)
     }
@@ -3573,7 +3558,7 @@ impl MachineBuilder {
                 storage: value.canonical_storage,
             }
         };
-        let id = self.push(ty, None, kind);
+        let id = self.push(ty, kind);
         self.address_nodes.insert(key, id);
         Ok(id)
     }
@@ -3665,7 +3650,6 @@ impl MachineBuilder {
         }
         Ok(self.push(
             integer_type(result_bits, MachineSignedness::Unsigned),
-            None,
             MachineExprKind::Extract { input, lsb_bits: 0 },
         ))
     }

@@ -32,7 +32,6 @@ impl MachineBuilder {
         &mut self,
         artifact: &SsaArtifact,
         inst: &GraphInst,
-        producer: CanonicalInstructionId,
         output: MachineValueBinding,
     ) -> Result<MachineExprId, MachineBuildError> {
         let graph = artifact.graph();
@@ -66,7 +65,7 @@ impl MachineBuilder {
             }
             InstPayload::Op(op) => self.lower_op(artifact, inst, op, output)?,
         };
-        Ok(self.push(ty, Some(producer), kind))
+        Ok(self.push(ty, kind))
     }
 
     pub(crate) fn lower_op(
