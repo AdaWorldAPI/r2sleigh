@@ -175,8 +175,7 @@ fn contradictory_predicate_preflight_is_input_order_independent() {
 
 #[test]
 fn equal_conversions_are_equal_however_long_their_chains() {
-    // Two separate chains of twenty narrowings and widenings from one register: deeper than the
-    // sixteen steps the walk once stopped at and answered "not equal".
+    // Two chains forty conversions deep, past the sixteen steps the walk once stopped at.
     let start = |chain: u64| 0x1000 * (chain + 1);
     let mut ops = Vec::new();
     for chain in 0..2 {

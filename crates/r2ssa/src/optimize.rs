@@ -1652,9 +1652,8 @@ fn fold_condition_codes(op: &Op, facts: &FlagFacts<'_>) -> Option<Op> {
     }
 }
 
-/// How many definitions deep one operand's fold reads: a constant number of definitions per
-/// operand, so a combine round stays linear in its operations. Deeper, the operand stays a variable
-/// and the evidence says so; the next round's propagation carries what this one folded.
+/// How deep one operand's fold reads, so a combine round stays linear; deeper, the operand stays a
+/// variable, the evidence says so, and the next round's propagation carries the rest.
 const FOLD_DEPTH: u32 = 8;
 
 /// The constant a value is, computed through its definitions, so `x9 = 4; (x9 == 0)` is decided

@@ -357,9 +357,8 @@ pub(crate) fn combine_compare_provenance_by(
     })
 }
 
-/// Whether two values are one value under the same unary conversions. Each step strips one
-/// definition from both sides, and definitions outside merges are acyclic, so the walk stops
-/// within the shorter chain: `O(min(chain))`, no budget.
+/// Whether two values are one under the same unary conversions: definitions outside merges are
+/// acyclic, so stripping one per side per step ends within the shorter chain.
 pub(crate) fn compare_values_equivalent(graph: &SsaGraph, lhs: ValueId, rhs: ValueId) -> bool {
     let (mut lhs, mut rhs) = (lhs, rhs);
     loop {

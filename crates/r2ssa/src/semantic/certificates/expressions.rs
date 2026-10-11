@@ -533,12 +533,8 @@ pub(crate) struct ExpressionRenderEnv<'a> {
     pub(crate) certified_memory_read_insts: &'a crate::dense::IdSet<InstId>,
 }
 
-/// Whether `value` is an expression of renderable values and `loop_phi`, read through pure
-/// operations, certified loads and renderable merges.
-///
-/// Each value is decided once, after its inputs, on an explicit stack: `O(V + E)` per query. A
-/// value met again while its own inputs are still open is on a cycle that does not pass through
-/// `loop_phi`, which no expression spells, so it counts as not renderable there.
+/// Whether `value` is an expression over renderable values and `loop_phi`: each value decided once,
+/// `O(V + E)`; one met while its inputs are open is on a cycle no expression spells.
 pub(crate) fn value_renderable_modulo_loop_phi(
     env: &ExpressionRenderEnv<'_>,
     value: ValueId,
