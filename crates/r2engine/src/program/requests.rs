@@ -17,7 +17,7 @@ use crate::query::{
     Answer, Answered, Completion, Coverage, Decoders, Line, Listing, Memory, Proved, References,
     Stop, Unread, WalkedBody, Work,
 };
-use crate::{EngineDecompileResponse, RenderTier, SealedFunctionAnalysis};
+use crate::{EngineDecompileResponse, SealedFunctionAnalysis};
 
 /// One function listed block by block, and why the analysis its lines would
 /// carry was refused, where it was.
@@ -142,7 +142,7 @@ pub struct AnalysisRefused {
     pub unresolved: Vec<u64>,
 }
 
-/// A function rendered at one tier, with what of its analysis the rendering is shown with.
+/// A function rendered, with what of its analysis the rendering is shown with.
 #[derive(Clone)]
 pub struct Rendering {
     pub response: EngineDecompileResponse,
@@ -206,10 +206,10 @@ pub struct Syscall {
 }
 
 /// The one decoder a body was walked with, whatever the address.
-struct Walked<'m>(&'m r2sleigh_lift::EmbeddedMachine);
+struct Walked<'m>(&'m crate::machine::Machine);
 
 impl Decoders for Walked<'_> {
-    fn at(&self, _vaddr: u64) -> Option<&r2sleigh_lift::EmbeddedMachine> {
+    fn at(&self, _vaddr: u64) -> Option<&crate::machine::Machine> {
         Some(self.0)
     }
 }
@@ -278,12 +278,12 @@ impl<S: Source + 'static> OpenProgram<S> {
         Ok(isolated(|| read(&sealed)).map_err(refused))
     }
 
-    /// One function rendered at one tier.
-    pub fn rendered(&mut self, entry: u64, tier: RenderTier) -> Result<Rendering, String> {
+    /// One function rendered.
+    pub fn rendered(&mut self, entry: u64) -> Result<Rendering, String> {
         self.start_request();
         self.loaded()?;
         self.assembled()?;
-        let key = (entry, self.view().thumb_at(entry), tier);
+        let key = (entry, self.view().thumb_at(entry));
         let render = self.db.get::<super::analysis::Rendered>(&key);
         let render = render.map_err(|cycle| format!("{cycle:?}"))?;
         let drawn = render.0.as_ref().map_err(Clone::clone)?;
@@ -672,10 +672,7 @@ fn indexed<S: Source + 'static>(view: &View<'_, S>) -> Result<References, String
 /// One body listed as the reference index reads it, or why it is unread.
 fn claimed_by<S: Source + 'static>(
     view: &View<'_, S>,
-    (target, machine): (
-        &crate::native::NativeTarget<'_>,
-        &r2sleigh_lift::EmbeddedMachine,
-    ),
+    (target, machine): (&crate::native::NativeTarget<'_>, &crate::machine::Machine),
     blocks: Vec<crate::body::BodyBlock>,
 ) -> Result<Vec<Line>, Unread> {
     let lifted = blocks

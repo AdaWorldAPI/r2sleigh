@@ -52,7 +52,7 @@ impl std::fmt::Display for SpaceId {
 }
 
 /// Full address space definition with metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddressSpace {
     /// Space identifier
     pub id: SpaceId,

@@ -147,7 +147,7 @@ fn has_effect(inventory: &SemanticObligationInventory, inst: InstId) -> bool {
 }
 
 /// Why an instruction renders no statement: a switch's dispatch, which the structured `switch`
-/// names, or what a certificate elides (`crate::certified::Elisions`, legacy's rule too).
+/// names, or what a certificate elides (`crate::certified::Elisions`).
 fn certified_elision(
     artifact: &SsaArtifact,
     (elisions, dispatch): (&crate::certified::Elisions, &r2ssa::dense::IdSet<InstId>),
@@ -1050,7 +1050,7 @@ impl<'a> Values<'a> {
     }
 
     /// An entry register no parameter admits, which C cannot read: an unadmitted argument slot
-    /// (the convention's, as legacy's `unspecified_reads` asks), else a value held from entry.
+    /// (the convention's), else a value held from entry.
     fn entry_read(&self, value: ValueId, ty: &MachineType) -> Option<CExpr> {
         let storage = (self.graph.formal_projection_storage(value)).or(self
             .graph
@@ -1621,6 +1621,13 @@ impl<'a> Values<'a> {
             .result
             .and_then(|(result, _)| Some((result, self.names.get(result.0 as usize)?.as_ref()?)));
         let Some((result, (name, held))) = named else {
+            // No rendered text reads the result, so the call written for its effect discards it.
+            if let Some(def) = plan
+                .result
+                .and_then(|(result, _)| self.graph.def_inst(result))
+            {
+                self.mark(def);
+            }
             return Some(CStmt::Expr(call));
         };
         let value = fit(call, &self.own.result?, held)?;
@@ -1996,7 +2003,6 @@ impl<'a> Values<'a> {
         let covered = self.covered_by_residuals();
         let certificates = self.artifact.certificates();
         let frame_setup = &certificates.stack_geometry.frame_setup;
-        let unobserved_reads = &certificates.unobserved_private_reads;
         for obligation in self.inventory.obligations().values() {
             let index = obligation.source.graph_inst().map(|inst| inst.0 as usize);
             let certified = obligation.source.graph_inst().and_then(|inst| {
@@ -2032,20 +2038,6 @@ impl<'a> Values<'a> {
                     .is_some_and(|i| frame_setup.contains(i)) =>
                 {
                     Outcome::Elided(ElisionReason::StackFrame)
-                }
-                // Deleted when r2ssa seeds unobserved obligations (ROADMAP D, the close() elision).
-                (SemanticObligationKind::LiveValueProducer, _)
-                    if matches!(
-                        obligation.id.component,
-                        SemanticObligationComponent::MemoryAccess(_)
-                    ) && obligation
-                        .source
-                        .graph_inst()
-                        .is_some_and(|i| unobserved_reads.contains(i)) =>
-                {
-                    let reason = crate::ledger::UnsitedReason::PendingObligationSeeding;
-                    let _ = ledger.record_unsited(obligation.id, reason);
-                    continue;
                 }
                 _ => continue,
             };

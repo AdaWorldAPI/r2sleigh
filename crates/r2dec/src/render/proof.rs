@@ -31,10 +31,6 @@ fn proof_columns(
     if closure.gapped > 0 {
         let _ = write!(&mut line, ", {} residual", closure.gapped);
     }
-    // A residual with no site in the text is spelled with its cause, never silent.
-    for (reason, count) in ledger.unsited() {
-        let _ = write!(&mut line, " ({count} without a site: {})", reason.spelled());
-    }
     // Rendered, through a variable split out of a shared one so every read sees its value.
     if split > 0 {
         let _ = write!(&mut line, " ({split} through a split variable)");
@@ -177,16 +173,7 @@ pub(crate) enum UnassignedCause {
     Unassigned,
 }
 
-impl UnassignedCause {
-    /// The cause each residual standing for such a read carries.
-    pub(crate) const fn residual(self) -> crate::prelude::ResidualCause {
-        match self {
-            Self::Held => crate::prelude::ResidualCause::HeldFromEntry,
-            Self::UnadmittedArgument => crate::prelude::ResidualCause::UnadmittedArgument,
-            Self::Unassigned => crate::prelude::ResidualCause::NeverAssigned,
-        }
-    }
-}
+impl UnassignedCause {}
 
 /// One object whose every read is now a residual, and why.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

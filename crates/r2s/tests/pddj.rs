@@ -154,6 +154,7 @@ fn check_proof(label: &str, answer: &Value) {
     .sum::<u64>();
     assert_eq!(Some(columns), proof["total"].as_u64(), "{label}: {proof}");
     let residuals = answer["residuals"].as_array().expect("residuals");
+    // Every residual the proof line counts has a site: r2ssa owes no obligation it cannot site.
     assert_eq!(
         proof["residual"].as_u64() == Some(0),
         residuals.is_empty(),
