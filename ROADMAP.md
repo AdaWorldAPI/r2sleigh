@@ -292,7 +292,19 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          preparation) and reads its inventory, objects, boundaries, call
          sites, loops and liveness; a cheaper recovery is a new algorithm
          whose output is the interface, so it moves the census, every moved
-         line judged.
+         line judged. Measured 2026-10-12 after LX3 (samply, sort `0x3f50`):
+         recovery is 18.3% of `pdd`, nearly all its fact pass (objects 3.8%,
+         the inventory 3.1%, certificates 2.4%, addresses 1.3%, loops 1.2%,
+         value ranges 1.1%, liveness 0.9%). It reads the inventory's
+         observation roots (`ProvenProgramObservations`), objects,
+         boundaries, call sites, structured memory accesses and one
+         certificate (`machine_return_controls`), whose closure is most of
+         the pass: a recovery-grade collector saves under 3 points. The seal
+         collects the pass again because its rewrites read the recovered
+         interface (lane projections for each formal lane, demand over the
+         result carriers) and rebuild the graph, so one collection is F2.4's
+         incremental builder: the seal's edits applied to the preliminary
+         graph and its facts. LX4 lands with F2.4.
       6. **F2's representations** (models 4 and 9): one function held once,
          the graph, machine projection and term arena indexes over it, the
          obligation dispositions (112 bytes) and `OpMetadata` (about 200
