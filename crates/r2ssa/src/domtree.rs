@@ -414,6 +414,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -421,6 +422,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -430,6 +432,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -471,6 +474,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -480,6 +484,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -487,6 +492,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -496,6 +502,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -532,6 +539,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -541,6 +549,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -548,6 +557,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -557,6 +567,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -578,6 +589,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -585,6 +597,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -594,6 +607,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 

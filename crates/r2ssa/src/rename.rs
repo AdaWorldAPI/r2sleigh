@@ -2147,6 +2147,7 @@ mod tests {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         }];
 
         let function = crate::function::SSAFunction::from_blocks_raw(

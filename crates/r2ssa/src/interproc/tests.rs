@@ -204,6 +204,7 @@ fn block(addr: u64, ops: Vec<R2ILOp>) -> R2ILBlock {
         ops,
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     };
     for op_index in 0..block.ops.len() {
         if matches!(
@@ -281,8 +282,7 @@ fn exact_untyped_artifact(
                             revision.to_vec(),
                             crate::SourceCallSiteIdentity::new(
                                 block
-                                    .op_metadata(op_index)
-                                    .and_then(|metadata| metadata.instruction_addr)
+                                    .instruction_of(op_index)
                                     .expect("test transfers are lifted from an instruction"),
                                 crate::CanonicalStorageId::from_varnode(target),
                             ),

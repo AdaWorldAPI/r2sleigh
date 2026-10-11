@@ -866,6 +866,7 @@ mod tests {
                 ops: Vec::new(),
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             }],
             None,
         )

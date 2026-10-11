@@ -135,6 +135,7 @@ fn stack_root_follows_a_displacement_materialised_into_a_temp() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let artifact = SsaArtifact::for_decompile_with_interface(
         &blocks,
@@ -216,6 +217,7 @@ fn decompile_artifact_two_address_stack_updates_read_incoming_versions() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let interface = SourceFunctionInterface::new_exact(
         b"two-address-stack-updates".to_vec(),
@@ -295,6 +297,7 @@ fn prepared_function_ssa_refuses_display_named_stack_object_facts() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1104,
@@ -304,6 +307,7 @@ fn prepared_function_ssa_refuses_display_named_stack_object_facts() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1108,
@@ -313,6 +317,7 @@ fn prepared_function_ssa_refuses_display_named_stack_object_facts() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -417,6 +422,7 @@ fn prepared_function_refuses_display_named_stack_reload_at_control_return() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1890,
@@ -426,6 +432,7 @@ fn prepared_function_refuses_display_named_stack_reload_at_control_return() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -492,6 +499,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1904,
@@ -508,6 +516,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1908,
@@ -523,6 +532,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x190c,
@@ -532,6 +542,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -610,6 +621,7 @@ fn an_apple_arm64_variadic_tail_is_read_from_the_stack() {
         ops,
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     };
     block.stamp_instruction(3, 0x1603);
     let blocks = vec![block];
@@ -708,6 +720,7 @@ fn prepared_stack_reload_refuses_display_named_param_home() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
 
     let prepared = SsaArtifact::for_decompile(&blocks, Some(&crate::Arch::from(arch.clone())))
@@ -758,6 +771,7 @@ fn prepared_callsite_refuses_display_named_stack_home_arguments() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
 
     let prepared = prepared_preserving(&blocks, &arch, &["rbx", "rsp", "rbp"])
@@ -807,6 +821,7 @@ fn test_decompile_prep_facts_refuse_display_named_stack_roots() {
         }],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
 
     let mut func = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -918,6 +933,7 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let sp_storage = CanonicalStorageId {
         space: crate::CanonicalStorageSpace::Register,
@@ -1108,6 +1124,7 @@ fn artifact_projects_typed_stack_roots_by_value_id_without_register_aliases() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let sp_storage = CanonicalStorageId {
         space: crate::CanonicalStorageSpace::Register,
@@ -1257,6 +1274,7 @@ fn a_mask_that_aligns_the_stack_pointer_opens_a_frame_of_its_own() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let artifact = SsaArtifact::for_decompile_with_interface(
         &blocks,
@@ -1377,6 +1395,7 @@ fn entry_stack_roots_use_call_preservation_but_refuse_unknown_effects() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         }];
         let artifact = crate::testing::prepared(
             &blocks,
@@ -1461,6 +1480,7 @@ fn new_subregister_result_cannot_inherit_stack_address_authority() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let artifact = SsaArtifact::for_decompile_with_interface(
         &blocks,
@@ -1517,6 +1537,7 @@ fn test_decompile_prep_facts_refuse_renamed_stack_carriers() {
         }],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let mut func = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
     func.edit_block(0x1000).expect("entry").replace_ops(

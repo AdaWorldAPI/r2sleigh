@@ -1387,10 +1387,7 @@ fn collect_raw_call_site_identities(
     let mut tails = BTreeSet::new();
     for block in blocks {
         for (op_index, op) in block.ops.iter().enumerate() {
-            let Some(instruction) = block
-                .op_metadata(op_index)
-                .and_then(|metadata| metadata.instruction_addr)
-            else {
+            let Some(instruction) = block.instruction_of(op_index) else {
                 continue;
             };
             let identity = match op {

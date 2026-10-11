@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::memory::MemoryOrdering;
-use crate::metadata::OpMetadata;
+use crate::metadata::{InstructionRuns, OpMetadata};
 use crate::space::SpaceId;
 use crate::varnode::Varnode;
 
@@ -1483,6 +1483,9 @@ pub struct R2ILBlock {
     /// Optional metadata for ops, keyed by operation index.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub op_metadata: BTreeMap<usize, OpMetadata>,
+    /// The instruction each operation was lifted from, where a join or a stamp said.
+    #[serde(default, skip_serializing_if = "InstructionRuns::is_empty")]
+    pub instructions: InstructionRuns,
 }
 
 /// Whether these operations leave the return address in `link`.
@@ -1577,6 +1580,7 @@ impl R2ILBlock {
             ops: Vec::new(),
             switch_info: None,
             op_metadata: BTreeMap::new(),
+            instructions: InstructionRuns::default(),
         }
     }
 
@@ -1594,13 +1598,20 @@ impl R2ILBlock {
         }
     }
 
-    /// Record the native instruction the operation at `op_index` was lifted
-    /// from, keeping whatever other metadata it already carries.
+    /// Add an operation lifted from the instruction at `instruction`.
+    pub fn push_from(&mut self, op: R2ILOp, instruction: u64) {
+        self.instructions.stamp(self.ops.len(), instruction);
+        self.ops.push(op);
+    }
+
+    /// Record the native instruction the operation at `op_index` was lifted from.
     pub fn stamp_instruction(&mut self, op_index: usize, instruction_addr: u64) {
-        self.op_metadata
-            .entry(op_index)
-            .or_default()
-            .instruction_addr = Some(instruction_addr);
+        self.instructions.stamp(op_index, instruction_addr);
+    }
+
+    /// The native instruction the operation at `op_index` was lifted from.
+    pub fn instruction_of(&self, op_index: usize) -> Option<u64> {
+        self.instructions.of(op_index)
     }
 
     /// Set metadata for an operation index.
@@ -1627,11 +1638,9 @@ impl R2ILBlock {
         let mut joined = Self::new(addr, size);
         for part in parts {
             let base = joined.ops.len();
-            let mut metadata = part.op_metadata;
-            for (index, op) in part.ops.into_iter().enumerate() {
-                joined.ops.push(op);
-                let mut meta = metadata.remove(&index).unwrap_or_default();
-                meta.instruction_addr = Some(part.addr);
+            joined.instructions.push(base, part.ops.len(), part.addr);
+            joined.ops.extend(part.ops);
+            for (index, meta) in part.op_metadata {
                 joined.set_op_metadata(base + index, meta);
             }
         }

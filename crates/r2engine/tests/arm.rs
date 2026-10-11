@@ -373,8 +373,7 @@ fn an_instruction_an_it_predicates_is_listed_as_the_walk_decodes_it() {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, op)| {
-                    (block.lifted.op_metadata(index)?.instruction_addr == Some(guarded))
-                        .then_some(op.clone())
+                    (block.lifted.instruction_of(index) == Some(guarded)).then_some(op.clone())
                 })
         })
         .collect();

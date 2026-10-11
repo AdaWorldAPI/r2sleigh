@@ -663,6 +663,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -678,6 +679,7 @@ mod tests {
                 ],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -693,6 +695,7 @@ mod tests {
                 ],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -704,6 +707,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -807,6 +811,7 @@ mod tests {
                 ],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x3000,
@@ -822,6 +827,7 @@ mod tests {
                 ],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1020,
@@ -829,6 +835,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -848,6 +855,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             });
             blocks.push(R2ILBlock {
                 addr: 0x3004 + idx * 8,
@@ -857,6 +865,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             });
         }
         blocks.push(R2ILBlock {
@@ -867,6 +876,7 @@ mod tests {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         });
 
         assert!(crate::SsaArtifact::for_symbolic(&blocks, None).is_none());

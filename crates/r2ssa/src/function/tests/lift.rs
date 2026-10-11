@@ -57,6 +57,7 @@ fn decompile_ssa_models_post_call_arm64_return_register_clobber() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
 
     let prepared = prepared_preserving(&blocks, &arch, &[]).expect("prepared SSA should build");
@@ -196,6 +197,7 @@ fn call_result_certificates_require_a_complete_machine_boundary() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
 
     let callee_saved = ["rbx", "rsp", "rbp"];
@@ -237,6 +239,7 @@ fn call_result_certificates_require_a_complete_machine_boundary() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let full_result = CanonicalStorageId {
         space: CanonicalStorageSpace::Register,
@@ -334,6 +337,7 @@ fn prepared_return_register_subpiece_zext_chain_is_renderable() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
     let prepared = SsaArtifact::for_decompile(&blocks, Some(&crate::Arch::from(arch.clone())))
         .expect("prepared SSA");

@@ -1809,8 +1809,7 @@ fn unique_call_site_identity(
             .filter_map(move |(op_index, op)| {
                 let instruction = || {
                     block
-                        .op_metadata(op_index)
-                        .and_then(|metadata| metadata.instruction_addr)
+                        .instruction_of(op_index)
                         .filter(|instruction| *instruction == call.instruction_address())
                 };
                 let last = op_index + 1 == block.ops.len();
@@ -1867,10 +1866,7 @@ fn reads_after(
             let this = match op {
                 R2ILOp::Call { target } => target.offset == entry,
                 R2ILOp::CallInd { .. } => {
-                    block
-                        .op_metadata(index)
-                        .and_then(|metadata| metadata.instruction_addr)
-                        == Some(identity.instruction())
+                    block.instruction_of(index) == Some(identity.instruction())
                 }
                 _ => false,
             };

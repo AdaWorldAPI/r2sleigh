@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use r2il::{R2ILBlock, R2ILOp, SwitchInfo};
+use r2il::{InstructionRuns, R2ILBlock, R2ILOp, SwitchInfo};
 use serde::{Deserialize, Serialize};
 
 use crate::function::CFGRiskSummary;
@@ -39,19 +39,10 @@ pub struct BasicBlock {
     /// Address attributed to the final operation by the source lifter. When
     /// metadata is absent this falls back to the block address.
     terminal_instruction_addr: Option<u64>,
-    /// Source instruction each operation was lifted from, parallel to `ops`.
-    ///
-    /// One machine instruction lifts to several operations, and the boundary
-    /// between two of them is not recoverable from the operations themselves.
-    /// Anything reasoning about what a whole instruction did -- as opposed to
-    /// what one operation did -- needs that boundary, and the lifter is the
-    /// only thing that ever saw it.
-    ///
-    /// Empty, or `None` at an index, where the lifter attached no metadata.
-    /// Nothing may then claim to know where an instruction begins, which is
-    /// the honest answer rather than assuming the block is one.
+    /// The lifter's instruction for each operation, the boundary no operation carries itself;
+    /// an operation in no run has none, and nothing may assume where its instruction begins.
     #[serde(default)]
-    op_instruction_addrs: Vec<Option<u64>>,
+    instructions: InstructionRuns,
 }
 
 /// How a basic block terminates.
@@ -178,7 +169,7 @@ impl BasicBlock {
             terminator: BlockTerminator::None,
             switch_info: None,
             terminal_instruction_addr: None,
-            op_instruction_addrs: Vec::new(),
+            instructions: InstructionRuns::default(),
         }
     }
 
@@ -216,19 +207,10 @@ impl BasicBlock {
             switch_info: block.switch_info.clone(),
             terminal_instruction_addr: (!block.ops.is_empty()).then(|| {
                 block
-                    .op_metadata
-                    .get(&(block.ops.len() - 1))
-                    .and_then(|metadata| metadata.instruction_addr)
+                    .instruction_of(block.ops.len() - 1)
                     .unwrap_or(block.addr)
             }),
-            op_instruction_addrs: (0..block.ops.len())
-                .map(|index| {
-                    block
-                        .op_metadata
-                        .get(&index)
-                        .and_then(|metadata| metadata.instruction_addr)
-                })
-                .collect(),
+            instructions: block.instructions.clone(),
         }
     }
 
@@ -237,7 +219,7 @@ impl BasicBlock {
     /// `None` where the lifter attached no metadata for it, and then no caller
     /// may treat the operation as beginning or continuing an instruction.
     pub fn op_instruction_addr(&self, index: usize) -> Option<u64> {
-        self.op_instruction_addrs.get(index).copied().flatten()
+        self.instructions.of(index)
     }
 
     /// Analyze the operations to determine the block terminator.
@@ -392,13 +374,6 @@ fn op_terminates_basic_block(op: &R2ILOp) -> bool {
     )
 }
 
-fn op_instruction_addr(block: &R2ILBlock, op_idx: usize) -> Option<u64> {
-    block
-        .op_metadata
-        .get(&op_idx)
-        .and_then(|metadata| metadata.instruction_addr)
-}
-
 fn split_internal_control_flow_targets(block: &R2ILBlock) -> Vec<R2ILBlock> {
     if block.switch_info.is_some() || block.ops.is_empty() {
         return vec![block.clone()];
@@ -410,9 +385,9 @@ fn split_internal_control_flow_targets(block: &R2ILBlock) -> Vec<R2ILBlock> {
     }
 
     let instruction_addrs = block
-        .op_metadata
-        .values()
-        .filter_map(|metadata| metadata.instruction_addr)
+        .instructions
+        .iter()
+        .map(|run| run.addr)
         .collect::<BTreeSet<_>>();
     if instruction_addrs.is_empty() {
         return vec![block.clone()];
@@ -421,7 +396,7 @@ fn split_internal_control_flow_targets(block: &R2ILBlock) -> Vec<R2ILBlock> {
     let mut op_instruction_addrs = Vec::with_capacity(block.ops.len());
     let mut last_instruction_addr = block.addr;
     for op_idx in 0..block.ops.len() {
-        if let Some(instruction_addr) = op_instruction_addr(block, op_idx) {
+        if let Some(instruction_addr) = block.instruction_of(op_idx) {
             last_instruction_addr = instruction_addr;
         }
         op_instruction_addrs.push(last_instruction_addr);
@@ -475,6 +450,7 @@ fn split_internal_control_flow_targets(block: &R2ILBlock) -> Vec<R2ILBlock> {
                 ops: Vec::new(),
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             }
         })
         .collect::<Vec<_>>();
@@ -494,6 +470,9 @@ fn split_internal_control_flow_targets(block: &R2ILBlock) -> Vec<R2ILBlock> {
             chunks[chunk_idx]
                 .op_metadata
                 .insert(next_op_idx, metadata.clone());
+        }
+        if let Some(instruction) = block.instruction_of(op_idx) {
+            chunks[chunk_idx].stamp_instruction(next_op_idx, instruction);
         }
     }
 
@@ -1051,7 +1030,7 @@ impl CFG {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use r2il::{OpMetadata, R2ILBlock, R2ILOp, SpaceId, Varnode};
+    use r2il::{R2ILBlock, R2ILOp, SpaceId, Varnode};
 
     fn make_const(val: u64, size: u32) -> Varnode {
         Varnode {
@@ -1077,6 +1056,7 @@ mod tests {
             ops: vec![R2ILOp::Nop],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         };
 
         let bb = BasicBlock::from_r2il(&block);
@@ -1112,6 +1092,7 @@ mod tests {
                 cases,
             }),
             op_metadata: Default::default(),
+            instructions: Default::default(),
         }];
         for addr in [0x4010, 0x4020] {
             blocks.push(R2ILBlock {
@@ -1122,6 +1103,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             });
         }
 
@@ -1154,6 +1136,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1163,6 +1146,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
         let cfg = CFG::from_blocks(&looping).expect("cfg");
@@ -1189,6 +1173,7 @@ mod tests {
             ops: vec![R2ILOp::Nop],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         }];
         assert!(CFG::from_blocks(&claimed).is_none());
     }
@@ -1206,6 +1191,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x2000,
@@ -1215,6 +1201,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1244,6 +1231,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1005,
@@ -1253,6 +1241,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1290,6 +1279,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1299,6 +1289,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
         let mut trap = DeclaredSuccessors::default();
@@ -1321,6 +1312,7 @@ mod tests {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         };
 
         let bb = BasicBlock::from_r2il(&block);
@@ -1339,6 +1331,7 @@ mod tests {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         };
 
         let bb = BasicBlock::from_r2il(&block);
@@ -1362,6 +1355,7 @@ mod tests {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         };
 
         let bb = BasicBlock::from_r2il(&block);
@@ -1379,6 +1373,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1388,6 +1383,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1418,6 +1414,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1427,6 +1424,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -1434,6 +1432,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -1443,6 +1442,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1476,6 +1476,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1485,6 +1486,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1511,6 +1513,7 @@ mod tests {
                 },
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             })
             .collect::<Vec<_>>();
         let expected = blocks.iter().map(|block| block.addr).collect::<Vec<_>>();
@@ -1532,6 +1535,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1541,6 +1545,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -1550,6 +1555,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1571,6 +1577,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1580,6 +1587,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -1589,6 +1597,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1608,6 +1617,7 @@ mod tests {
                 ops: vec![R2ILOp::Nop],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1617,6 +1627,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1642,6 +1653,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -1651,6 +1663,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -1660,6 +1673,7 @@ mod tests {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
 
@@ -1673,23 +1687,11 @@ mod tests {
 
     #[test]
     fn test_internal_pcode_branch_target_splits_block() {
-        let mut op_metadata = std::collections::BTreeMap::new();
+        let mut op_metadata = r2il::InstructionRuns::default();
         for op_idx in 0..3 {
-            op_metadata.insert(
-                op_idx,
-                OpMetadata {
-                    instruction_addr: Some(0x1000),
-                    ..Default::default()
-                },
-            );
+            op_metadata.stamp(op_idx, 0x1000);
         }
-        op_metadata.insert(
-            3,
-            OpMetadata {
-                instruction_addr: Some(0x1004),
-                ..Default::default()
-            },
-        );
+        op_metadata.stamp(3, 0x1004);
 
         let blocks = vec![R2ILBlock {
             addr: 0x1000,
@@ -1712,7 +1714,8 @@ mod tests {
                 },
             ],
             switch_info: None,
-            op_metadata,
+            op_metadata: Default::default(),
+            instructions: op_metadata,
         }];
 
         let cfg = CFG::from_blocks(&blocks).expect("cfg");
@@ -1725,7 +1728,7 @@ mod tests {
 
     #[test]
     fn test_internal_conditional_fallthrough_splits_block() {
-        let mut op_metadata = std::collections::BTreeMap::new();
+        let mut op_metadata = r2il::InstructionRuns::default();
         for (op_idx, instruction_addr) in [
             (0, 0x1000),
             (1, 0x1004),
@@ -1734,13 +1737,7 @@ mod tests {
             (4, 0x1010),
             (5, 0x1014),
         ] {
-            op_metadata.insert(
-                op_idx,
-                OpMetadata {
-                    instruction_addr: Some(instruction_addr),
-                    ..Default::default()
-                },
-            );
+            op_metadata.stamp(op_idx, instruction_addr);
         }
 
         let blocks = vec![R2ILBlock {
@@ -1771,7 +1768,8 @@ mod tests {
                 },
             ],
             switch_info: None,
-            op_metadata,
+            op_metadata: Default::default(),
+            instructions: op_metadata,
         }];
 
         let cfg = CFG::from_blocks(&blocks).expect("cfg");

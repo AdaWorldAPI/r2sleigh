@@ -1675,6 +1675,7 @@ fn a_source_member_name_reaches_only_its_own_parameter_s_fields() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     };
     let prepared = r2ssa::SsaArtifact::for_decompile_with_interface(
         &[block],

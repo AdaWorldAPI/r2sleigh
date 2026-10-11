@@ -6,14 +6,11 @@ use super::*;
 #[test]
 fn tail_jump_identity_requires_matching_terminal_branch() {
     let mut branch = R2ILBlock::new(0x1000, 4);
-    branch.push_with_metadata(
+    branch.push_from(
         R2ILOp::Branch {
             target: make_const(0x5000, 8),
         },
-        Some(r2il::OpMetadata {
-            instruction_addr: Some(0x1000),
-            ..r2il::OpMetadata::default()
-        }),
+        0x1000,
     );
     let tail = advisory_call_site(0x1000, 0x5000, r2source::AdvisoryCallTransfer::TailJump);
     let identity = unique_call_site_identity(&[branch.clone()], &tail)
@@ -28,14 +25,11 @@ fn tail_jump_identity_requires_matching_terminal_branch() {
     assert!(unique_call_site_identity(&[branch], &tail).is_none());
 
     let mut call = R2ILBlock::new(0x2000, 4);
-    call.push_with_metadata(
+    call.push_from(
         R2ILOp::Call {
             target: make_const(0x6000, 8),
         },
-        Some(r2il::OpMetadata {
-            instruction_addr: Some(0x2000),
-            ..r2il::OpMetadata::default()
-        }),
+        0x2000,
     );
     call.push(R2ILOp::Nop);
     let ordinary_call = advisory_call_site(0x2000, 0x6000, r2source::AdvisoryCallTransfer::Call);
@@ -102,6 +96,7 @@ fn prepared_function_ssa_tracks_mode_and_keeps_named_blocks() {
         ],
         switch_info: None,
         op_metadata: Default::default(),
+        instructions: Default::default(),
     }];
 
     let prepared = SsaArtifact::for_decompile(&blocks, Some(&arch))
@@ -131,6 +126,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1104,
@@ -146,6 +142,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1110,
@@ -161,6 +158,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1114,
@@ -170,6 +168,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -198,6 +197,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1714,
@@ -213,6 +213,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                 ],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1724,
@@ -228,6 +229,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                 ],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
             R2ILBlock {
                 addr: 0x1730,
@@ -237,6 +239,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                 }],
                 switch_info: None,
                 op_metadata: Default::default(),
+                instructions: Default::default(),
             },
         ];
         SsaArtifact::for_decompile(&blocks, Some(&arch)).expect("prepared SSA should build")
@@ -286,6 +289,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1810,
@@ -296,6 +300,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1814,
@@ -305,6 +310,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1820,
@@ -314,6 +320,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -400,6 +407,7 @@ fn prepared_predicates_preserve_machine_point_comparison_before_normalization() 
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1904,
@@ -409,6 +417,7 @@ fn prepared_predicates_preserve_machine_point_comparison_before_normalization() 
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1910,
@@ -418,6 +427,7 @@ fn prepared_predicates_preserve_machine_point_comparison_before_normalization() 
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -496,6 +506,7 @@ fn prepared_predicates_recover_signed_greater_equal_from_x86_flags() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1924,
@@ -505,6 +516,7 @@ fn prepared_predicates_recover_signed_greater_equal_from_x86_flags() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1930,
@@ -514,6 +526,7 @@ fn prepared_predicates_recover_signed_greater_equal_from_x86_flags() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -589,6 +602,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1a10,
@@ -598,6 +612,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1a20,
@@ -608,6 +623,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1a30,
@@ -618,6 +634,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1a40,
@@ -627,6 +644,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1a50,
@@ -636,6 +654,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -956,6 +975,7 @@ fn prepared_predicates_recover_signed_less_from_of_sf_flags() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1604,
@@ -965,6 +985,7 @@ fn prepared_predicates_recover_signed_less_from_of_sf_flags() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1608,
@@ -974,6 +995,7 @@ fn prepared_predicates_recover_signed_less_from_of_sf_flags() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -1004,6 +1026,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1013,6 +1036,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1010,
@@ -1022,6 +1046,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1020,
@@ -1042,6 +1067,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
                 ],
             }),
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1030,
@@ -1051,6 +1077,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1040,
@@ -1060,6 +1087,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -1162,6 +1190,7 @@ fn public_ssa_path_handles_a_deep_cycle_and_reports_its_back_edge() {
             },
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         })
         .collect::<Vec<_>>();
     // The latch branches back to the first block, so control enters by the
@@ -1198,6 +1227,7 @@ fn test_from_blocks_default_runs_optimization() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1207,6 +1237,7 @@ fn test_from_blocks_default_runs_optimization() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1008,
@@ -1216,6 +1247,7 @@ fn test_from_blocks_default_runs_optimization() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -1238,6 +1270,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1247,6 +1280,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1008,
@@ -1256,6 +1290,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x100c,
@@ -1265,6 +1300,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 
@@ -1290,6 +1326,7 @@ fn test_for_each_source_reports_phi_and_op_sites() {
                 cond: make_const(1, 1),
             }],
             op_metadata: std::collections::BTreeMap::new(),
+            instructions: Default::default(),
             switch_info: None,
         },
         R2ILBlock {
@@ -1305,6 +1342,7 @@ fn test_for_each_source_reports_phi_and_op_sites() {
                 },
             ],
             op_metadata: std::collections::BTreeMap::new(),
+            instructions: Default::default(),
             switch_info: None,
         },
         R2ILBlock {
@@ -1320,6 +1358,7 @@ fn test_for_each_source_reports_phi_and_op_sites() {
                 },
             ],
             op_metadata: std::collections::BTreeMap::new(),
+            instructions: Default::default(),
             switch_info: None,
         },
         R2ILBlock {
@@ -1331,6 +1370,7 @@ fn test_for_each_source_reports_phi_and_op_sites() {
                 b: make_const(3, 8),
             }],
             op_metadata: std::collections::BTreeMap::new(),
+            instructions: Default::default(),
             switch_info: None,
         },
     ];
@@ -1431,6 +1471,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1446,6 +1487,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
             ],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x1008,
@@ -1456,6 +1498,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
         R2ILBlock {
             addr: 0x100c,
@@ -1465,6 +1508,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
             }],
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         },
     ];
 

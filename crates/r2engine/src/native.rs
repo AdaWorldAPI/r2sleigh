@@ -1829,11 +1829,7 @@ fn call_sites(body: &crate::body::Body, program: &dyn Program) -> Vec<NativeCall
             let Some((target, transfer)) = site else {
                 continue;
             };
-            let Some(instruction) = block
-                .lifted
-                .op_metadata(index)
-                .and_then(|metadata| metadata.instruction_addr)
-            else {
+            let Some(instruction) = block.lifted.instruction_of(index) else {
                 continue;
             };
             sites.push(NativeCall {

@@ -1482,7 +1482,7 @@ mod tests {
     /// `mvn r3, 0` computes one value from its literal, and `xor eax, eax` is nought: each instruction alone fixes it.
     #[test]
     fn an_instruction_alone_fixes_what_it_computes_from_literals() {
-        use r2il::{OpMetadata, R2ILBlock, R2ILOp, Varnode};
+        use r2il::{R2ILBlock, R2ILOp, Varnode};
         let r3 = Varnode::register(0, 4);
         let eax = Varnode::register(8, 4);
         let scratch = Varnode::unique(0x100, 4);
@@ -1518,11 +1518,7 @@ mod tests {
         ];
         let mut block = R2ILBlock::new(0x1000, 8);
         for (addr, op) in ops {
-            let meta = OpMetadata {
-                instruction_addr: Some(addr),
-                ..OpMetadata::default()
-            };
-            block.push_with_metadata(op, Some(meta));
+            block.push_from(op, addr);
         }
         let graph = crate::def_use_graph(&[block], None).expect("it builds");
         let fixed = |at: u64, storage: &Varnode| {

@@ -86,7 +86,7 @@ impl Open {
 /// Whether the call at `index` is one its own instruction may skip (an ARM32 conditional `bl`
 /// lifts to a branch around it).
 fn predicated(block: &R2ILBlock, index: usize) -> bool {
-    let instruction = |at: usize| block.op_metadata(at).and_then(|meta| meta.instruction_addr);
+    let instruction = |at: usize| block.instruction_of(at);
     let Some(call) = instruction(index) else {
         return true;
     };
@@ -133,13 +133,9 @@ mod tests {
     };
 
     fn block(ops: Vec<R2ILOp>) -> R2ILBlock {
-        let at = Some(r2il::OpMetadata {
-            instruction_addr: Some(0x1000),
-            ..r2il::OpMetadata::default()
-        });
         let mut block = R2ILBlock::new(0x1000, 16);
         for op in ops {
-            block.push_with_metadata(op, at.clone());
+            block.push_from(op, 0x1000);
         }
         block
     }
@@ -177,31 +173,25 @@ mod tests {
     /// it may see the value from before the call, so the site is no evidence. A plain `bl` is.
     #[test]
     fn a_call_its_own_instruction_may_skip_is_no_evidence() {
-        let at = |instruction| {
-            Some(r2il::OpMetadata {
-                instruction_addr: Some(instruction),
-                ..r2il::OpMetadata::default()
-            })
-        };
         let mut conditional = R2ILBlock::new(0x1000, 4);
-        conditional.push_with_metadata(
+        conditional.push_from(
             R2ILOp::CBranch {
                 target: Varnode::ram(0x1004, 4),
                 cond: Varnode::register(0x100, 1),
             },
-            at(0x1000),
+            0x1000,
         );
-        conditional.push_with_metadata(call(), at(0x1000));
+        conditional.push_from(call(), 0x1000);
         assert!(super::predicated(&conditional, 1));
         let mut plain = R2ILBlock::new(0x1000, 8);
-        plain.push_with_metadata(
+        plain.push_from(
             R2ILOp::CBranch {
                 target: Varnode::ram(0x1008, 4),
                 cond: Varnode::register(0x100, 1),
             },
-            at(0x0ffc),
+            0x0ffc,
         );
-        plain.push_with_metadata(call(), at(0x1000));
+        plain.push_from(call(), 0x1000);
         assert!(!super::predicated(&plain, 1));
     }
 

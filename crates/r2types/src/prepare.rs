@@ -332,6 +332,7 @@ mod tests {
             ops,
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         };
         r2ssa::SsaArtifact::for_decompile_with_interface(
             &[block],

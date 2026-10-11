@@ -56,6 +56,7 @@ fn dual_space_artifact(
             ops: prefix,
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         }],
         arch,
     )
@@ -2628,6 +2629,7 @@ fn byte_sources_follow_zero_extension_insertion_and_copies() {
             ops,
             switch_info: None,
             op_metadata: Default::default(),
+            instructions: Default::default(),
         }],
         None,
     )
