@@ -288,3 +288,168 @@ fn storage_phi_value(
         _ => Err(()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use r2il::{ArchSpec, R2ILBlock, R2ILOp, RegisterDef, SpaceId, Varnode};
+
+    fn reg(offset: u64, size: u32) -> Varnode {
+        Varnode::new(SpaceId::Register, offset, size)
+    }
+
+    fn ssa(blocks: &[R2ILBlock]) -> SSAFunction {
+        let mut arch = ArchSpec::new("reaching");
+        arch.add_register(RegisterDef::new("x", 0, 8));
+        arch.add_register(RegisterDef::new("y", 8, 8));
+        arch.add_register(RegisterDef::new("cond", 32, 1));
+        arch.add_register(RegisterDef::new("pc", 0x80, 8));
+        SSAFunction::from_blocks_raw(blocks, Some(&crate::Arch::from(arch))).expect("fixture SSA")
+    }
+
+    fn function(blocks: &[R2ILBlock]) -> (SSAFunction, SsaGraph) {
+        let function = ssa(blocks);
+        let graph = SsaGraph::from_function_with_storage(&function);
+        (function, graph)
+    }
+
+    fn copy(dst: Varnode, src: Varnode) -> R2ILOp {
+        R2ILOp::Copy { dst, src }
+    }
+
+    fn block(addr: u64, ops: Vec<R2ILOp>) -> R2ILBlock {
+        let mut block = R2ILBlock::new(addr, 4);
+        for op in ops {
+            block.push(op);
+        }
+        block
+    }
+
+    /// The instructions of a block in order, and the storage `x` is, read off its write.
+    fn insts(function: &SSAFunction, graph: &SsaGraph, addr: u64) -> Vec<InstId> {
+        let block = function.get_block(addr).expect("block");
+        block
+            .sited()
+            .filter_map(|(op, _)| graph.inst_for_op(op))
+            .collect()
+    }
+
+    fn written_storage(graph: &SsaGraph, inst: InstId) -> (CanonicalStorageId, ValueId) {
+        let inst = graph.inst(inst).expect("inst");
+        (
+            inst.canonical_storage.expect("storage"),
+            inst.output.expect("output"),
+        )
+    }
+
+    #[test]
+    fn a_value_reaches_round_a_loop_whose_latch_does_not_write_it() {
+        let branch = |target| R2ILOp::Branch {
+            target: Varnode::constant(target, 8),
+        };
+        let (function, graph) = function(&[
+            block(
+                0x1000,
+                vec![copy(reg(0, 8), Varnode::constant(7, 8)), branch(0x1004)],
+            ),
+            block(
+                0x1004,
+                vec![R2ILOp::CBranch {
+                    target: Varnode::constant(0x100c, 8),
+                    cond: reg(32, 1),
+                }],
+            ),
+            block(0x1008, vec![copy(reg(8, 8), reg(0, 8)), branch(0x1004)]),
+            block(
+                0x100c,
+                vec![R2ILOp::Return {
+                    target: reg(0x80, 8),
+                }],
+            ),
+        ]);
+        let (x, seven) = written_storage(&graph, insts(&function, &graph, 0x1000)[0]);
+        let mut reaching = ReachingStorage::new(&function, &graph, x);
+        // The latch is asked first: its entry is its header's, which the latch's own exit feeds.
+        let latch = insts(&function, &graph, 0x1008)[0];
+        assert_eq!(
+            reaching.before(latch),
+            Some(ReachingStorageState::Value(seven))
+        );
+        let header = insts(&function, &graph, 0x1004)[0];
+        assert_eq!(
+            reaching.before(header),
+            Some(ReachingStorageState::Value(seven))
+        );
+    }
+
+    #[test]
+    fn a_merge_of_two_writes_with_no_phi_is_a_conflict() {
+        let branch = |target| R2ILOp::Branch {
+            target: Varnode::constant(target, 8),
+        };
+        let (function, graph) = function(&[
+            block(
+                0x1000,
+                vec![R2ILOp::CBranch {
+                    target: Varnode::constant(0x1008, 8),
+                    cond: reg(32, 1),
+                }],
+            ),
+            block(
+                0x1004,
+                vec![copy(reg(0, 8), Varnode::constant(1, 8)), branch(0x100c)],
+            ),
+            block(
+                0x1008,
+                vec![copy(reg(0, 8), Varnode::constant(2, 8)), branch(0x100c)],
+            ),
+            block(
+                0x100c,
+                vec![
+                    copy(reg(8, 8), Varnode::constant(3, 8)),
+                    R2ILOp::Return {
+                        target: reg(0x80, 8),
+                    },
+                ],
+            ),
+        ]);
+        let (x, _) = written_storage(&graph, insts(&function, &graph, 0x1004)[0]);
+        // A merge nothing reads after keeps no phi once a pass drops it; the arms then disagree.
+        let mut function = function;
+        function
+            .edit_block(0x100c)
+            .expect("merge")
+            .retain_phis(crate::Pass::Fixture, |phi| phi.canonical_storage != Some(x));
+        let graph = SsaGraph::from_function_with_storage(&function);
+        let mut reaching = ReachingStorage::new(&function, &graph, x);
+        let merge = insts(&function, &graph, 0x100c)[0];
+        assert_eq!(reaching.before(merge), Some(ReachingStorageState::Conflict));
+    }
+
+    #[test]
+    fn a_write_inside_a_block_decides_the_points_after_it() {
+        let (function, graph) = function(&[block(
+            0x1000,
+            vec![
+                copy(reg(8, 8), Varnode::constant(1, 8)),
+                copy(reg(0, 8), Varnode::constant(5, 8)),
+                copy(reg(8, 8), Varnode::constant(2, 8)),
+                R2ILOp::Return {
+                    target: reg(0x80, 8),
+                },
+            ],
+        )]);
+        let insts = insts(&function, &graph, 0x1000);
+        let (x, five) = written_storage(&graph, insts[1]);
+        let mut reaching = ReachingStorage::new(&function, &graph, x);
+        let first = reaching.at(insts[0]).expect("first");
+        let write = reaching.at(insts[1]).expect("write");
+        let third = reaching.at(insts[2]).expect("third");
+        assert_ne!(first.before, ReachingStorageState::Value(five));
+        assert_eq!(third.before, ReachingStorageState::Value(five));
+        // An operation no machine instruction stamps is an instruction of its own.
+        assert_eq!(write.instruction_start, first.before);
+        assert_eq!(write.instruction_end, ReachingStorageState::Value(five));
+        assert_eq!(third.instruction_start, third.before);
+    }
+}
