@@ -97,8 +97,9 @@ engine. Commands, the visual mode and the agent surface all ask it.
   question needs them (`ProgramInputs::machines`, a cell the container
   alone decides); `ensure_current` and the open program's copies of the
   names, stubs and modes are deleted, so every reader asks the database
-  and none reads a stale table. `StatedNames` is what the container names
-  with no decoder, which is all `start` needs: `iS` loads no machine.
+  and none reads a stale table. `start` reads what the container names
+  with no decoder (`naming::of`, built and dropped; since 2026-10-11 no
+  held `StatedNames` copy beside `Names`), so `iS` loads no machine.
 - Q4d: `Revision` and the revision an `Answer` carried are deleted: no
   reader compared it once every answer moved onto the database. The tests
   that read its axes now say what those axes protected, as analyses
