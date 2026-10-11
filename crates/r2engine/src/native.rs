@@ -347,8 +347,7 @@ pub fn analysed(
     program: &dyn Program,
     entry: u64,
 ) -> Result<Prepared, NativeRefusal> {
-    let walk = std::sync::Arc::new(walk(target, program, entry)?);
-    analyse(target, program, entry, &walk)
+    analyse(target, program, entry, &walk(target, program, entry)?)
 }
 
 /// Prepare one function from its walk; the query `Analysed` reads the walk from `Walked`.
@@ -356,7 +355,7 @@ pub(crate) fn analysed_from(
     target: &NativeTarget<'_>,
     program: &dyn Program,
     entry: u64,
-    walk: &std::sync::Arc<Walk>,
+    walk: &Walk,
 ) -> Result<Prepared, NativeRefusal> {
     analyse(target, program, entry, walk)
 }
@@ -364,7 +363,8 @@ pub(crate) fn analysed_from(
 /// One function's walk, through the dispatch tables it reads (doc/adr-resolved-bodies.md, P6a).
 #[derive(Clone)]
 pub struct Walk {
-    root: Walked,
+    /// Shared with each analysis of the body; the tables stay the walk's.
+    root: std::sync::Arc<Walked>,
     tables: Vec<NativePointerTable>,
 }
 
@@ -389,7 +389,7 @@ pub fn walk(
     let dispatches = root.body.unresolved.iter().any(indirect);
     if !dispatches {
         return Ok(Walk {
-            root,
+            root: std::sync::Arc::new(root),
             tables: Vec::new(),
         });
     }
@@ -410,11 +410,12 @@ pub fn walk(
     let reads = native.dispatch_reads(&root, &imports, restatement)?;
     let tables = native.pointer_tables(&reads);
     if tables.is_empty() {
+        let root = std::sync::Arc::new(root);
         return Ok(Walk { root, tables });
     }
     let dispatched = tables.iter();
     let dispatched = dispatched.map(|table| (table.instruction, table.targets.clone()));
-    let root = native.walk_dispatched(entry, &dispatched.collect())?;
+    let root = std::sync::Arc::new(native.walk_dispatched(entry, &dispatched.collect())?);
     Ok(Walk { root, tables })
 }
 
@@ -425,8 +426,9 @@ pub fn walk(
 /// about its values used to walk, lift and prepare the same body twice.
 pub struct Prepared {
     artifact: std::sync::Arc<TrustedSsaArtifact>,
-    /// The walk the query database holds, shared rather than copied.
-    walk: std::sync::Arc<Walk>,
+    /// The walked body the query database holds, shared rather than copied; its tables are not
+    /// held here, so they go when the walk does.
+    root: std::sync::Arc<Walked>,
     facts: Vec<crate::CalleeFacts>,
     declared: Vec<r2types::SourceOwnedCalleeSignature>,
     ptr_bits: u32,
@@ -472,7 +474,7 @@ impl Prepared {
 
     /// The walked body's blocks, dispatches followed, and where the walk could not follow.
     pub fn body(&self) -> &crate::body::Body {
-        &self.walk.root.body
+        &self.root.body
     }
 
     pub fn artifact(&self) -> &std::sync::Arc<TrustedSsaArtifact> {
@@ -481,13 +483,12 @@ impl Prepared {
 
     /// What the program calls the function this analysis is of.
     pub fn name(&self) -> &str {
-        &self.walk.root.name
+        &self.root.name
     }
 
     /// The lift of each block of the body this analysis read, dispatches followed.
     pub fn lifted(&self) -> Vec<r2il::R2ILBlock> {
-        self.walk
-            .root
+        self.root
             .body
             .blocks
             .iter()
@@ -663,7 +664,7 @@ fn request(
 ) -> EngineFunctionDecompileRequestInput {
     let Prepared {
         artifact,
-        walk,
+        root,
         facts,
         declared,
         ptr_bits,
@@ -672,7 +673,6 @@ fn request(
         tables: _,
     } = prepared;
     let block_count = artifact.source_block_count();
-    let root = &walk.root;
     let signatures = declared_signatures(target, root, extents);
     EngineFunctionDecompileRequestInput::single_function(
         EngineFunctionInput {
@@ -966,7 +966,7 @@ fn analyse(
     target: &NativeTarget<'_>,
     program: &dyn Program,
     entry: u64,
-    walk: &std::sync::Arc<Walk>,
+    walk: &Walk,
 ) -> Result<Prepared, NativeRefusal> {
     // A convention whose boundaries carry what none states refuses before anything is read.
     if let Some(reason) = target.convention.refused {
@@ -992,7 +992,7 @@ fn analyse(
     let tables = walk.tables.iter().map(DispatchTable::of).collect();
     Ok(Prepared {
         artifact,
-        walk: std::sync::Arc::clone(walk),
+        root: std::sync::Arc::clone(&walk.root),
         facts,
         declared,
         ptr_bits,
@@ -2539,7 +2539,7 @@ mod tests {
             declarations: &declarations,
         };
         let walked = walk(&target, &HandsAfterADouble, BASE).expect("walks");
-        let handed = handed(&target, &HandsAfterADouble, walked.root.body);
+        let handed = handed(&target, &HandsAfterADouble, walked.root.body.clone());
         assert_eq!(handed, [0x1020]);
     }
 }
