@@ -215,6 +215,7 @@ impl Prepared {
             )
             .expect("an unchecked control never stops");
         crate::semantic::ensure_source_formal_parameter_values(&mut graph, machine_context);
+        graph.shrink_to_fit();
         let formal_parameters =
             crate::semantic::collect_source_formal_parameter_facts(&graph, machine_context);
         prep.install_exact_formal_parameters(&graph, &formal_parameters);

@@ -545,15 +545,12 @@ impl SsaGraph {
             }
         }
         let ValueNumbering {
-            mut values,
+            values,
             by_var: value_by_var,
-            mut def_of,
+            def_of,
             uses_of,
             ..
         } = numbering;
-        // Grown one value at a time; the graph keeps them as long as the analysis does.
-        values.shrink_to_fit();
-        def_of.shrink_to_fit();
 
         let entry = block_by_addr
             .get(&function.root())
@@ -773,6 +770,12 @@ impl SsaGraph {
 
     pub fn inst(&self, id: InstId) -> Option<&GraphInst> {
         self.insts.get(id.0 as usize)
+    }
+
+    /// Give back the room the values grew, once the seal has added the last entry value.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.values.shrink_to_fit();
+        self.def_of.shrink_to_fit();
     }
 
     /// The storage an instruction writes: its output value's, which a phi shares with its merge.
