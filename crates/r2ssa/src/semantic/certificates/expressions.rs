@@ -308,6 +308,7 @@ pub(crate) fn collect_renderable_expression_values(
             })
         })
         .collect::<Vec<_>>();
+    let mut reads_memory = None;
     loop {
         while let Some(value) = ready.pop_front() {
             for use_site in graph.use_sites(value) {
@@ -332,6 +333,17 @@ pub(crate) fn collect_renderable_expression_values(
             inst.output
                 .is_some_and(|output| !renderable.contains(output))
         });
+        let reads_memory = match &reads_memory {
+            Some(reads) => reads,
+            None if loop_phis.is_empty() => break,
+            None => reads_memory.insert(values_reading_memory(graph)),
+        };
+        let env = ExpressionRenderEnv {
+            prep,
+            graph,
+            certified_memory_read_insts: &certified_memory_read_insts,
+            reads_memory,
+        };
         for inst in &loop_phis {
             let Some(output) = inst.output else {
                 continue;
@@ -339,14 +351,8 @@ pub(crate) fn collect_renderable_expression_values(
             if renderable.contains(output) {
                 continue;
             }
-            if expression_loop_phi_is_renderable(
-                prep,
-                graph,
-                structured,
-                inst,
-                &renderable,
-                &certified_memory_read_insts,
-            ) && renderable.insert(output)
+            if expression_loop_phi_is_renderable(&env, structured, inst, &renderable)
+                && renderable.insert(output)
             {
                 ready.push_back(output);
                 added_loop_phi = true;
@@ -388,31 +394,30 @@ pub(crate) fn expression_inst_is_renderable(
     }
 }
 
-pub(crate) fn expression_phi_is_identity_renderable(
-    graph: &SsaGraph,
+fn expression_phi_is_identity_renderable(
+    env: &ExpressionRenderEnv<'_>,
     inst: &crate::graph::GraphInst,
 ) -> bool {
     let Some(first) = inst.inputs.first() else {
         return false;
     };
-    expression_phi_is_identity(inst) && !expression_value_depends_on_memory_read(graph, *first)
+    expression_phi_is_identity(inst) && !env.reads_memory.contains(*first)
 }
 
-pub(crate) fn expression_phi_is_renderable(
-    prep: Option<&crate::DecompilePrepFacts>,
-    graph: &SsaGraph,
+fn expression_phi_is_renderable(
+    env: &ExpressionRenderEnv<'_>,
     inst: &crate::graph::GraphInst,
 ) -> bool {
-    expression_phi_is_identity_renderable(graph, inst)
-        || expression_phi_has_single_canonical_root(prep, graph, inst)
+    expression_phi_is_identity_renderable(env, inst)
+        || expression_phi_has_single_canonical_root(env, inst)
 }
 
-pub(crate) fn expression_phi_has_single_canonical_root(
-    prep: Option<&crate::DecompilePrepFacts>,
-    graph: &SsaGraph,
+fn expression_phi_has_single_canonical_root(
+    env: &ExpressionRenderEnv<'_>,
     inst: &crate::graph::GraphInst,
 ) -> bool {
-    let Some(prep_facts) = prep else {
+    let graph = env.graph;
+    let Some(prep_facts) = env.prep else {
         return false;
     };
     // The inputs are one value when they name one representative: the same
@@ -433,56 +438,37 @@ pub(crate) fn expression_phi_has_single_canonical_root(
         return false;
     };
     let first = crate::view::class_value(graph, Some(&prep_facts.views), first_input);
-    if expression_value_depends_on_memory_read(graph, first) {
+    if env.reads_memory.contains(first) {
         return false;
     }
     roots.all(|(root, _)| root == first_root)
 }
 
-/// Whether any value this one is computed from reads memory.
-///
-/// The visited set is the termination argument: the def-use graph is finite
-/// and each value is expanded once, so the walk is linear in it. A depth bound
-/// here would answer "no memory read" for a dependence it declined to look
-/// at, which is the one answer that must never be guessed.
-#[cfg_attr(
-    dylint_lib = "r2sleigh_lints",
-    allow(
-        entity_keyed_map,
-        reason = "a walk guard of one query: the few ids one walk visits, where a bitset would cost O(values) per query"
-    )
-)]
-pub(crate) fn expression_value_depends_on_memory_read(graph: &SsaGraph, value: ValueId) -> bool {
-    let mut stack = vec![value];
-    let mut visited = BTreeSet::new();
-
-    while let Some(current) = stack.pop() {
-        if !visited.insert(current) {
-            continue;
+/// Every value computed, through any chain of definitions, from a memory read: one pass from the
+/// reads along their uses, `O(V + E)`, where asking per value was a walk each.
+fn values_reading_memory(graph: &SsaGraph) -> crate::dense::IdSet<ValueId> {
+    let mut reads = crate::dense::IdSet::new(graph.values.len());
+    let mut work = (graph.insts.iter())
+        .filter(|inst| matches!(&inst.payload, InstPayload::Op(op) if op.is_memory_read()))
+        .filter_map(|inst| inst.output)
+        .filter(|value| reads.insert(*value))
+        .collect::<Vec<_>>();
+    while let Some(value) = work.pop() {
+        for site in graph.use_sites(value) {
+            let output = graph.inst(site.inst).and_then(|inst| inst.output);
+            work.extend(output.filter(|output| reads.insert(*output)));
         }
-        let Some(inst) = graph
-            .def_inst(current)
-            .and_then(|inst_id| graph.inst(inst_id))
-        else {
-            continue;
-        };
-        if matches!(&inst.payload, InstPayload::Op(op) if op.is_memory_read()) {
-            return true;
-        }
-        stack.extend(inst.inputs.iter().copied());
     }
-
-    false
+    reads
 }
 
-pub(crate) fn expression_loop_phi_is_renderable(
-    prep: Option<&crate::DecompilePrepFacts>,
-    graph: &SsaGraph,
+fn expression_loop_phi_is_renderable(
+    env: &ExpressionRenderEnv<'_>,
     structured: &StructuredDataflowFacts,
     inst: &crate::graph::GraphInst,
     renderable: &crate::dense::IdSet<ValueId>,
-    certified_memory_read_insts: &crate::dense::IdSet<InstId>,
 ) -> bool {
+    let graph = env.graph;
     let InstPayload::Phi { predecessors } = &inst.payload else {
         return false;
     };
@@ -500,11 +486,6 @@ pub(crate) fn expression_loop_phi_is_renderable(
     }
 
     let latches = loop_fact.latches.iter().copied().collect::<BTreeSet<_>>();
-    let env = ExpressionRenderEnv {
-        prep,
-        graph,
-        certified_memory_read_insts,
-    };
     let mut saw_entry = false;
     let mut saw_backedge = false;
     for (pred_id, input) in predecessors.iter().zip(inst.inputs.iter().copied()) {
@@ -513,7 +494,7 @@ pub(crate) fn expression_loop_phi_is_renderable(
         };
         if latches.contains(&pred_addr) {
             saw_backedge = true;
-            if !value_renderable_modulo_loop_phi(&env, input, output, renderable) {
+            if !value_renderable_modulo_loop_phi(env, input, output, renderable) {
                 return false;
             }
         } else {
@@ -531,6 +512,8 @@ pub(crate) struct ExpressionRenderEnv<'a> {
     pub(crate) prep: Option<&'a crate::DecompilePrepFacts>,
     pub(crate) graph: &'a SsaGraph,
     pub(crate) certified_memory_read_insts: &'a crate::dense::IdSet<InstId>,
+    /// The values a memory read reaches (`values_reading_memory`).
+    pub(crate) reads_memory: &'a crate::dense::IdSet<ValueId>,
 }
 
 /// Whether `value` is an expression over renderable values and `loop_phi`: each value decided once,
@@ -576,7 +559,7 @@ pub(crate) fn value_renderable_modulo_loop_phi(
 /// Whether one definition may stand inside a rendered expression.
 fn expression_eligible(env: &ExpressionRenderEnv<'_>, inst: &crate::graph::GraphInst) -> bool {
     match &inst.payload {
-        InstPayload::Phi { .. } => expression_phi_is_renderable(env.prep, env.graph, inst),
+        InstPayload::Phi { .. } => expression_phi_is_renderable(env, inst),
         InstPayload::Op(op) => {
             expression_op_is_pure(op)
                 || (op.is_memory_read() && env.certified_memory_read_insts.contains(inst.id))
