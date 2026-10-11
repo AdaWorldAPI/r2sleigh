@@ -250,10 +250,25 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          field certificates in place
          (`normalize_field_certificates_from_external_layout`), so built once
          it is built after the last type change, and that rewrite becomes
-         the type pass's.
+         the type pass's. Done (2026-10-12): enrichment normalises and
+         canonicalises the types, then projects once (`project` writes no
+         type fact); the seal takes a `ProjectedFacts`, which only
+         enrichment makes, and keeps enrichment's evidence solve. 0.8 to
+         1.7% fewer instructions retired; peak RSS unmoved (the clone was
+         transient, not at the peak); census byte-identical.
       3. **SM1**, the summary grade (model 3) over T1 and T2, measured again
          before its design: callee reads are 47% of sort `pdd` against
          SM's 10%, and a callee's signature reads almost every type pass.
+         Measured 2026-10-12 after T2 (samply, sort `0x3f50`): callee reads
+         45.3%, of which preparation 33.2% (the SSA build 11.9%, interface
+         recovery 8.7%, the seal's fact passes about 10%), type analysis
+         8.1% (struct inference 2.2%, enrichment 2.0%), the summary 1.7%
+         and the lift 1.8%. The exported signature and
+         `PreparedCalleeSummary` read everything but the render-only
+         certificate maps (about 1.5%) and the callee's render projection
+         (about 1.5%), so a summary grade's ceiling is about 3 points, and
+         struct inference only where the signature names no struct. SM's
+         10% exit is LX4's (recovery) and F2's (the build), not SM1's.
       4. **LX3**, `version_at` (model 2): Braun's `readVariable` memoised
          per `(block, location)` over the locations a pass asks, a merge
          with no phi answered by its predecessors' agreement as the
