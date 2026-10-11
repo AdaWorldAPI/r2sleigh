@@ -332,9 +332,7 @@ fn genuine_x86_xmm_subpieces_read_their_operand_whole_of_the_owned_carrier() {
             src: r2il::Varnode::register(xmm2.offset, xmm2.size),
             offset: 4,
         }],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     let artifact =
         SsaArtifact::raw(&blocks, Some(&r2ssa::Arch::from(arch))).expect("x86 vector subpiece SSA");

@@ -199,9 +199,7 @@ fn equal_conversions_are_equal_however_long_their_chains() {
         addr: 0x1000,
         size: 4,
         ops,
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     };
     let artifact = SsaArtifact::for_symbolic(&[block], None).expect("artifact");
     let last = |chain: u64| {

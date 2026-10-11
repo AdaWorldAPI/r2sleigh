@@ -864,9 +864,7 @@ mod tests {
                 addr: 0x1000,
                 size: 4,
                 ops: Vec::new(),
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             }],
             None,
         )

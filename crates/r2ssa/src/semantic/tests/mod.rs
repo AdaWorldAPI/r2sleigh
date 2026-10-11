@@ -54,9 +54,7 @@ fn dual_space_artifact(
             addr: 0x1000,
             size: 4,
             ops: prefix,
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         }],
         arch,
     )
@@ -2627,9 +2625,7 @@ fn byte_sources_follow_zero_extension_insertion_and_copies() {
             addr: 0x1000,
             size: 4,
             ops,
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         }],
         None,
     )

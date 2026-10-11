@@ -265,9 +265,7 @@ fn vector_loop_alias_blocks(base: u64) -> Vec<R2ILBlock> {
                     target: make_const(header, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: header,
@@ -276,9 +274,7 @@ fn vector_loop_alias_blocks(base: u64) -> Vec<R2ILBlock> {
                 target: make_const(body, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: exit,
@@ -297,17 +293,13 @@ fn vector_loop_alias_blocks(base: u64) -> Vec<R2ILBlock> {
                     target: make_reg(0x300, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: body,
             size: 4,
             ops: body_ops,
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ]
 }
@@ -339,9 +331,7 @@ fn graph_value_storage_is_retained_from_varnodes_across_cosmetic_names() {
                 target: make_reg(0x30, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     let left =
         SSAFunction::from_blocks_raw(&blocks, Some(&arch("left"))).expect("left SSA must build");
@@ -514,9 +504,7 @@ fn controlled_prep_blocks() -> Vec<R2ILBlock> {
                     target: make_const(0x1004, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -530,9 +518,7 @@ fn controlled_prep_blocks() -> Vec<R2ILBlock> {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ]
 }
@@ -623,9 +609,7 @@ fn test_ssa_function_linear() {
                     src: make_const(2, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -633,9 +617,7 @@ fn test_ssa_function_linear() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -669,9 +651,7 @@ fn a_lane_read_is_a_subpiece_of_the_root_it_reads() {
                 target: make_ram(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     let func = SSAFunction::from_blocks_raw(&blocks, Some(&arch)).expect("raw SSA");
@@ -720,9 +700,7 @@ fn a_lane_read_of_a_constant_root_is_the_constant() {
                 target: make_ram(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     let func = SSAFunction::from_blocks_for_decompile(&blocks, Some(&arch)).expect("decompile SSA");
@@ -764,9 +742,7 @@ fn ssa_artifact_exposes_typed_graph_queries() {
                 target: make_reg(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     let artifact = SsaArtifact::for_decompile(&blocks, Some(&arch)).expect("artifact");
@@ -811,9 +787,7 @@ fn prepared_function_refuses_return_without_source_boundary_authority() {
                 target: make_const(0x1010, 8),
                 cond: make_reg(8, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -827,9 +801,7 @@ fn prepared_function_refuses_return_without_source_boundary_authority() {
                     target: make_const(0x1014, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1010,
@@ -843,9 +815,7 @@ fn prepared_function_refuses_return_without_source_boundary_authority() {
                     target: make_const(0x1014, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1014,
@@ -853,9 +823,7 @@ fn prepared_function_refuses_return_without_source_boundary_authority() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -892,9 +860,7 @@ fn ssa_artifact_graph_ids_are_deterministic() {
                 dst: make_reg(0, 8),
                 src: make_const(1, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1204,
@@ -902,9 +868,7 @@ fn ssa_artifact_graph_ids_are_deterministic() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -928,9 +892,7 @@ fn prepared_function_ssa_collects_structured_dataflow_facts() {
                 target: make_const(0x1408, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1404,
@@ -938,9 +900,7 @@ fn prepared_function_ssa_collects_structured_dataflow_facts() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1408,
@@ -955,9 +915,7 @@ fn prepared_function_ssa_collects_structured_dataflow_facts() {
                     target: make_const(0x1400, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -993,9 +951,7 @@ fn prepared_function_ssa_collects_structured_dataflow_facts() {
             ops: vec![R2ILOp::Call {
                 target: make_const(0x1500, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1504,
@@ -1003,9 +959,7 @@ fn prepared_function_ssa_collects_structured_dataflow_facts() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
     let recursive = SsaArtifact::raw(&recursive_blocks, None).expect("recursive SSA should build");
@@ -1092,9 +1046,7 @@ fn variadic_format_call_artifact_formed(
         addr: 0x1600,
         size: 4,
         ops,
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     };
     block.stamp_instruction(call_index, 0x1600 + call_index as u64);
     let blocks = vec![block];
@@ -1180,9 +1132,7 @@ fn merged_format_call(first: &str, second: &str) -> CallsiteCertificate {
                 target: make_const(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     };
     join.stamp_instruction(0, 0x1014);
     let blocks = vec![
@@ -1199,9 +1149,7 @@ fn merged_format_call(first: &str, second: &str) -> CallsiteCertificate {
                     cond: make_reg(24, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1215,9 +1163,7 @@ fn merged_format_call(first: &str, second: &str) -> CallsiteCertificate {
                     target: make_const(0x1014, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1010,
@@ -1231,9 +1177,7 @@ fn merged_format_call(first: &str, second: &str) -> CallsiteCertificate {
                     target: make_const(0x1014, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         join,
     ];
@@ -1402,9 +1346,7 @@ fn two_calls_to_one_variadic_callee_may_pass_different_counts() {
                 target: make_const(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     blocks[0].stamp_instruction(first_call_index, 0x1680 + first_call_index as u64);
     blocks[0].stamp_instruction(second_call_index, 0x1680 + second_call_index as u64);
@@ -1522,9 +1464,7 @@ fn prepared_expression_certificates_require_structural_render_proof() {
                 target: make_reg(8, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     let pure = SsaArtifact::raw(&pure_blocks, None).expect("pure SSA");
     let pure_value = pure
@@ -1554,9 +1494,7 @@ fn prepared_expression_certificates_require_structural_render_proof() {
                 target: make_reg(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     let loaded = SsaArtifact::raw(&load_blocks, None).expect("load SSA");
     let loaded_value = loaded
@@ -1590,9 +1528,7 @@ fn prepared_expression_certificates_require_structural_render_proof() {
             },
             R2ILOp::Return { target: userop_out },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     let userop = SsaArtifact::raw(&userop_blocks, None).expect("userop SSA");
     let userop_value = userop
@@ -1627,9 +1563,7 @@ fn prepared_return_certificates_require_complete_source_boundary() {
                     target: Varnode::ram(0x1770, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1770,
@@ -1643,9 +1577,7 @@ fn prepared_return_certificates_require_complete_source_boundary() {
                     target: make_reg(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
     let prepared = SsaArtifact::for_decompile(&blocks, Some(&arch)).expect("prepared SSA");
@@ -1678,9 +1610,7 @@ fn projected_peer_loop_artifact(
             ops: vec![R2ILOp::Branch {
                 target: make_ram(0x1b10, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1b10,
@@ -1689,9 +1619,7 @@ fn projected_peer_loop_artifact(
                 target: make_ram(0x1b30, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1b20,
@@ -1699,9 +1627,7 @@ fn projected_peer_loop_artifact(
             ops: vec![R2ILOp::Branch {
                 target: make_ram(0x1b10, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1b30,
@@ -1709,9 +1635,7 @@ fn projected_peer_loop_artifact(
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
     let widths = [8_u32, 4, 2];
@@ -1989,9 +1913,7 @@ fn test_ssa_function_diamond() {
                 target: make_const(0x1008, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -2005,9 +1927,7 @@ fn test_ssa_function_diamond() {
                     target: make_const(0x100c, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1008,
@@ -2016,9 +1936,7 @@ fn test_ssa_function_diamond() {
                 dst: make_reg(0, 8),
                 src: make_const(2, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x100c,
@@ -2026,9 +1944,7 @@ fn test_ssa_function_diamond() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -2055,9 +1971,7 @@ fn test_raw_ssa_construction_is_deterministic_across_runs() {
                 target: make_const(0x1008, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -2075,9 +1989,7 @@ fn test_raw_ssa_construction_is_deterministic_across_runs() {
                     target: make_const(0x100c, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1008,
@@ -2095,9 +2007,7 @@ fn test_raw_ssa_construction_is_deterministic_across_runs() {
                     target: make_const(0x100c, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x100c,
@@ -2112,9 +2022,7 @@ fn test_raw_ssa_construction_is_deterministic_across_runs() {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -2141,9 +2049,7 @@ fn the_graph_names_a_definition_and_its_readers() {
                 dst: make_reg(0, 8),
                 src: make_const(1, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -2153,9 +2059,7 @@ fn the_graph_names_a_definition_and_its_readers() {
                 a: make_reg(0, 8),
                 b: make_const(1, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -2182,9 +2086,7 @@ fn test_dump() {
                 dst: make_reg(0, 8),
                 src: make_const(42, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -2192,9 +2094,7 @@ fn test_dump() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -2292,9 +2192,7 @@ fn a_low_byte_read_of_a_constant_lane_write_is_the_constant() {
                 b: make_const(0x41, 1),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     // The lane write inserts into `RAX`; reading the byte back through
@@ -2349,9 +2247,7 @@ fn prepared_ssa_preserves_exact_widths_when_unique_offsets_are_reused() {
                 src: make_reg(0x10, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     let artifact = SsaArtifact::raw(&blocks, None).expect("width-coherent prepared SSA");
@@ -2394,9 +2290,7 @@ fn prepared_ssa_refuses_implicit_copy_and_comparison_width_changes() {
             addr: 0x1000,
             size: 4,
             ops: vec![op],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         }];
         assert!(
             SsaArtifact::raw(&blocks, None).is_none(),
@@ -2451,9 +2345,7 @@ fn call_preservation_block(ops: Vec<R2ILOp>) -> R2ILBlock {
         addr: 0x1000,
         size: 16,
         ops,
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }
 }
 

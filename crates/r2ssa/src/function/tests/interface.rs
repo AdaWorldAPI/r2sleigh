@@ -226,9 +226,7 @@ fn prepared_function_ssa_recovers_direct_call_target_from_ram_literal() {
             ops: vec![R2ILOp::Call {
                 target: make_ram(0x401239, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1304,
@@ -236,9 +234,7 @@ fn prepared_function_ssa_recovers_direct_call_target_from_ram_literal() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -271,9 +267,7 @@ fn symbolic_function_ssa_recovers_indirect_call_target_from_copied_ram_literal()
                 },
                 R2ILOp::CallInd { target: tmp },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1314,
@@ -281,9 +275,7 @@ fn symbolic_function_ssa_recovers_indirect_call_target_from_copied_ram_literal()
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -316,9 +308,7 @@ fn resolved_call_target_uses_canonical_copied_const_root_when_fact_is_unresolved
             },
             R2ILOp::CallInd { target: tmp },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     let prepared =
@@ -397,9 +387,7 @@ fn source_declared_entry_parameter_flows_into_an_implicit_call_read() {
         ops: vec![R2ILOp::Call {
             target: target.clone(),
         }],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     blocks[0].stamp_instruction(0, 0x1600);
     let function_interface = SourceFunctionInterface::new_exact(
@@ -518,9 +506,7 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
                 target: make_reg(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
     blocks[0].stamp_instruction(2, 0x1602);
 

@@ -94,9 +94,7 @@ fn prepared_function_ssa_tracks_mode_and_keeps_named_blocks() {
                 target: make_reg(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     let prepared = SsaArtifact::for_decompile(&blocks, Some(&arch))
@@ -124,9 +122,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
                 target: make_const(0x1110, 8),
                 cond: make_reg(8, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1104,
@@ -140,9 +136,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
                     target: make_const(0x1114, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1110,
@@ -156,9 +150,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
                     target: make_const(0x1114, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1114,
@@ -166,9 +158,7 @@ fn prepared_function_does_not_infer_return_phi_without_source_boundary_authority
             ops: vec![R2ILOp::Return {
                 target: make_reg(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -195,9 +185,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                     target: make_const(0x1724, 8),
                     cond: make_reg(8, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1714,
@@ -211,9 +199,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                         target: make_const(0x1730, 8),
                     },
                 ],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1724,
@@ -227,9 +213,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                         target: make_const(0x1730, 8),
                     },
                 ],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1730,
@@ -237,9 +221,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
                 ops: vec![R2ILOp::Return {
                     target: make_reg(0, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
         ];
         SsaArtifact::for_decompile(&blocks, Some(&arch)).expect("prepared SSA should build")
@@ -287,9 +269,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
             ops: vec![R2ILOp::Branch {
                 target: make_ram(0x1810, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1810,
@@ -298,9 +278,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
                 target: make_ram(0x1820, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1814,
@@ -308,9 +286,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1820,
@@ -318,9 +294,7 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
             ops: vec![R2ILOp::Branch {
                 target: make_ram(0x1810, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -405,9 +379,7 @@ fn prepared_predicates_preserve_machine_point_comparison_before_normalization() 
                 target: make_ram(0x1910, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1904,
@@ -415,9 +387,7 @@ fn prepared_predicates_preserve_machine_point_comparison_before_normalization() 
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1910,
@@ -425,9 +395,7 @@ fn prepared_predicates_preserve_machine_point_comparison_before_normalization() 
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -504,9 +472,7 @@ fn prepared_predicates_recover_signed_greater_equal_from_x86_flags() {
                 target: make_ram(0x1930, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1924,
@@ -514,9 +480,7 @@ fn prepared_predicates_recover_signed_greater_equal_from_x86_flags() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1930,
@@ -524,9 +488,7 @@ fn prepared_predicates_recover_signed_greater_equal_from_x86_flags() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -600,9 +562,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
                 target: make_ram(0x1a30, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1a10,
@@ -610,9 +570,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             ops: vec![R2ILOp::Branch {
                 target: make_ram(0x1a20, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1a20,
@@ -621,9 +579,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
                 target: make_ram(0x1a20, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1a30,
@@ -632,9 +588,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
                 target: make_ram(0x1a50, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1a40,
@@ -642,9 +596,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             ops: vec![R2ILOp::Branch {
                 target: make_ram(0x1a50, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1a50,
@@ -652,9 +604,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
     let mut function = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -973,9 +923,7 @@ fn prepared_predicates_recover_signed_less_from_of_sf_flags() {
                     cond,
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1604,
@@ -983,9 +931,7 @@ fn prepared_predicates_recover_signed_less_from_of_sf_flags() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1608,
@@ -993,9 +939,7 @@ fn prepared_predicates_recover_signed_less_from_of_sf_flags() {
             ops: vec![R2ILOp::Return {
                 target: make_const(1, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -1024,9 +968,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
                 target: make_const(0x1010, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1034,9 +976,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             ops: vec![R2ILOp::Branch {
                 target: make_const(0x1020, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1010,
@@ -1044,9 +984,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             ops: vec![R2ILOp::Branch {
                 target: make_const(0x1000, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1020,
@@ -1066,8 +1004,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
                     },
                 ],
             }),
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1030,
@@ -1075,9 +1012,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1040,
@@ -1085,9 +1020,7 @@ fn cfg_risk_summary_reports_loops_and_switch_density() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -1188,9 +1121,7 @@ fn public_ssa_path_handles_a_deep_cycle_and_reports_its_back_edge() {
             } else {
                 vec![R2ILOp::Nop]
             },
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         })
         .collect::<Vec<_>>();
     // The latch branches back to the first block, so control enters by the
@@ -1225,9 +1156,7 @@ fn test_from_blocks_default_runs_optimization() {
                 target: make_const(0x1008, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1235,9 +1164,7 @@ fn test_from_blocks_default_runs_optimization() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1008,
@@ -1245,9 +1172,7 @@ fn test_from_blocks_default_runs_optimization() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -1268,9 +1193,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
                 target: make_const(0x1008, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1278,9 +1201,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
             ops: vec![R2ILOp::Branch {
                 target: make_const(0x100c, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1008,
@@ -1288,9 +1209,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
             ops: vec![R2ILOp::Branch {
                 target: make_const(0x100c, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x100c,
@@ -1298,9 +1217,7 @@ fn a_plan_that_removes_a_block_and_reorders_recomputes_order_and_domtree() {
             ops: vec![R2ILOp::Return {
                 target: make_ram(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -1469,9 +1386,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
                 target: make_const(0x1008, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1004,
@@ -1485,9 +1400,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
                     target: make_const(0x100c, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1008,
@@ -1496,9 +1409,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
                 dst: make_reg(0, 8),
                 src: make_const(0x42, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x100c,
@@ -1506,9 +1417,7 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 

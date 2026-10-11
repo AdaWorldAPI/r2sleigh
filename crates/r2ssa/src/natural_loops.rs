@@ -116,9 +116,7 @@ mod tests {
             addr,
             size: 4,
             ops: vec![op],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         }
     }
 

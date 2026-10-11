@@ -152,9 +152,7 @@ fn prepared_function_does_not_infer_memory_backed_return_phi() {
                 target: make_const(0x1210, 8),
                 cond: make_reg(8, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1204,
@@ -169,9 +167,7 @@ fn prepared_function_does_not_infer_memory_backed_return_phi() {
                     target: make_const(0x1214, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1210,
@@ -186,9 +182,7 @@ fn prepared_function_does_not_infer_memory_backed_return_phi() {
                     target: make_const(0x1214, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1214,
@@ -196,9 +190,7 @@ fn prepared_function_does_not_infer_memory_backed_return_phi() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0, 4),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -222,9 +214,7 @@ fn prepared_function_ssa_collects_call_sites_and_memory_effects() {
             ops: vec![R2ILOp::Call {
                 target: make_const(0x401000, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1204,
@@ -232,9 +222,7 @@ fn prepared_function_ssa_collects_call_sites_and_memory_effects() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -287,9 +275,7 @@ fn prepared_function_ssa_builds_memory_phis_per_object() {
                 target: make_const(0x1308, 8),
                 cond: make_const(1, 1),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1304,
@@ -304,9 +290,7 @@ fn prepared_function_ssa_builds_memory_phis_per_object() {
                     target: make_const(0x130c, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1308,
@@ -316,9 +300,7 @@ fn prepared_function_ssa_builds_memory_phis_per_object() {
                 addr: make_const(0x5000, 8),
                 val: make_const(2, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x130c,
@@ -333,9 +315,7 @@ fn prepared_function_ssa_builds_memory_phis_per_object() {
                     target: make_reg(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
-            instructions: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -392,17 +372,13 @@ fn a_loop_merges_a_location_only_where_it_stores_to_it() {
                     addr: make_const(0x5000, 8),
                     val: make_const(1, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1404,
                 size: 4,
                 ops: body,
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1408,
@@ -410,9 +386,7 @@ fn a_loop_merges_a_location_only_where_it_stores_to_it() {
                 ops: vec![R2ILOp::Return {
                     target: make_reg(0, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
         ];
         let prepared = SsaArtifact::raw(&blocks, None).expect("prepared SSA should build");
@@ -484,9 +458,7 @@ fn prepared_call_result_refuses_display_named_stack_store_reload_owner() {
                 offset: 0,
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     }];
 
     let prepared = prepared_preserving(&blocks, &arch, &["rbx", "rsp", "rbp"])

@@ -412,17 +412,13 @@ mod tests {
                 addr: 0x1000,
                 size: 4,
                 ops: vec![R2ILOp::Nop],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
                 size: 4,
                 ops: vec![R2ILOp::Nop],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -430,9 +426,7 @@ mod tests {
                 ops: vec![R2ILOp::Return {
                     target: make_ram(0, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
         ];
 
@@ -472,9 +466,7 @@ mod tests {
                     target: make_const(0x1008, 8),
                     cond: make_const(1, 1),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -482,17 +474,13 @@ mod tests {
                 ops: vec![R2ILOp::Branch {
                     target: make_const(0x100c, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1008,
                 size: 4,
                 ops: vec![R2ILOp::Nop],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -500,9 +488,7 @@ mod tests {
                 ops: vec![R2ILOp::Return {
                     target: make_ram(0, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
         ];
 
@@ -537,9 +523,7 @@ mod tests {
                     target: make_const(0x1008, 8),
                     cond: make_const(1, 1),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -547,17 +531,13 @@ mod tests {
                 ops: vec![R2ILOp::Branch {
                     target: make_const(0x100c, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1008,
                 size: 4,
                 ops: vec![R2ILOp::Nop],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -565,9 +545,7 @@ mod tests {
                 ops: vec![R2ILOp::Return {
                     target: make_ram(0, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
         ];
 
@@ -587,17 +565,13 @@ mod tests {
                 addr: 0x1000,
                 size: 4,
                 ops: vec![R2ILOp::Nop],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
                 size: 4,
                 ops: vec![R2ILOp::Nop],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -605,9 +579,7 @@ mod tests {
                 ops: vec![R2ILOp::Return {
                     target: make_ram(0, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
-                instructions: Default::default(),
+                ..Default::default()
             },
         ];
 

@@ -202,9 +202,7 @@ fn block(addr: u64, ops: Vec<R2ILOp>) -> R2ILBlock {
         addr,
         size: 4,
         ops,
-        switch_info: None,
-        op_metadata: Default::default(),
-        instructions: Default::default(),
+        ..Default::default()
     };
     for op_index in 0..block.ops.len() {
         if matches!(
