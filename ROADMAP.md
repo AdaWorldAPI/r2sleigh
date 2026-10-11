@@ -277,7 +277,16 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          `reaching_storage_boundaries` keys it) is the last write to the
          location before it in the block, else the block's entry value:
          4.5% of a large `pdd` today. Exit:
-         `reaching_storage_boundaries` deleted, census byte-identical.
+         `reaching_storage_boundaries` deleted, census byte-identical. Done
+         (2026-10-12): `ReachingStorage` solves a block's entry over the
+         blocks backward-reachable from it through blocks that do not write
+         the storage (the walk's equations closed over that region, so the
+         same least fixpoint), keeps it, and scans a queried block once; the
+         walk and its three graph-sized maps are deleted. Sort `0x3f50`
+         4.9% to 2.8% of `pdd`; 1.4 to 2.7% fewer instructions retired;
+         census byte-identical. Measured beside it: the root is
+         constructed twice, once by the walk to read its dispatch tables
+         (11.5% of sort `pdd`) and again by `prepare_restated` (13.2%).
       5. **LX4**, recovery's pass: interface recovery collects the full fact
          pass on the preliminary build (17.4% of sort `pdd` across every
          preparation) and reads its inventory, objects, boundaries, call
