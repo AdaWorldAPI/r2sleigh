@@ -310,6 +310,18 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          obligation dispositions (112 bytes) and `OpMetadata` (about 200
          bytes per op, a tree per block) dense columns: about 206 MB of the
          Gui constructor's peak against the 60 MB LX's 250 MB exit leaves.
+         In part (2026-10-12, #152 to #159, each census byte-identical):
+         an op's instruction is a run column, the name table holds the
+         lowest address per spelling, the graph's instruction index is
+         runs, its arrays are sized from the arena's live count, an
+         instruction's storage is its output value's, a native-span source
+         names no span, the sealed function and graph shrink once edited,
+         and certified expressions are a dense index. pumasim `pdd @
+         0x23fdf0` heap peak (dhat) 236.9 MB to 199.4 MB; release `pdd`
+         peak RSS 16 to 19% under master at #153 (exit bar). Left, per
+         `doc/adr-one-ir.md` ("The op after the seal"): the graph indexing
+         the function's renumbered operations, its inputs a `Csr`, the
+         machine projection and term arena as indexes (F2.5).
       7. **LX2**, D27's adapter deleted: D0 reads T's and F2's dense
          indexes.
       8. **D26**'s purge delay, the maintainer's (PF row).
