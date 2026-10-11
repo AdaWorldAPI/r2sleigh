@@ -530,19 +530,14 @@ pub struct ObligationInventoryFailure {
 pub struct SemanticObligationInventory {
     schema_version: u32,
     source_instruction_count: usize,
-    /// What every graph instruction owes, indexed by the instruction.
-    ///
-    /// This was an ordered map from the canonical identity, which is forty
-    /// bytes and stored a second time inside each disposition. Every graph
-    /// instruction has an entry and the identity is `by_inst`'s answer, so the
-    /// dense vector holds the same table without the keys or the tree.
+    /// What every graph instruction owes, indexed by the instruction; its identity is the
+    /// disposition's own, held once.
     instructions: Vec<Option<SemanticInstructionDisposition>>,
     /// The dispositions of native instruction spans the translator emitted no
     /// canonical operation for. They have no graph instruction to be indexed
     /// by, and there are none in an ordinary function.
     span_instructions: BTreeMap<CanonicalInstructionId, SemanticInstructionDisposition>,
     obligations: ObligationTable,
-    by_inst: Vec<Option<CanonicalInstructionId>>,
     native_spans: BTreeMap<CanonicalInstructionId, crate::GenuineNativeInstructionSpan>,
     construction_failures: Vec<ObligationInventoryFailure>,
     unstructured_cycle_blocks: BTreeSet<u64>,
@@ -564,7 +559,6 @@ impl SemanticObligationInventory {
             instructions: vec![None; source_instruction_count],
             span_instructions: BTreeMap::new(),
             obligations: ObligationTable::default(),
-            by_inst: vec![None; source_instruction_count],
             native_spans: BTreeMap::new(),
             construction_failures: Vec::new(),
             unstructured_cycle_blocks: BTreeSet::new(),
@@ -1082,7 +1076,6 @@ impl SemanticObligationInventory {
                     edge_use: explicit_edge_uses.remove(&(inst.id, kind, component)),
                 });
             }
-            inventory.by_inst[inst.id.0 as usize] = Some(id);
             inventory.instructions[inst.id.0 as usize] = Some(SemanticInstructionDisposition {
                 id,
                 source: SemanticSourceSite::GraphInstruction(inst.id),
@@ -1172,6 +1165,11 @@ impl SemanticObligationInventory {
         self.instructions.get(inst.0 as usize)?.as_ref()
     }
 
+    /// How many graph instructions have a disposition.
+    fn graph_instruction_count(&self) -> usize {
+        self.instructions.iter().flatten().count()
+    }
+
     /// Values whose exact source instruction is structural, owns no semantic
     /// obligation, and that the program never reads.
     ///
@@ -1197,7 +1195,7 @@ impl SemanticObligationInventory {
     ) -> Option<crate::dense::IdSet<ValueId>> {
         if !self.is_complete()
             || self.source_instruction_count != graph.insts.len()
-            || self.by_inst.iter().flatten().count() != graph.insts.len()
+            || self.graph_instruction_count() != graph.insts.len()
         {
             return None;
         }
@@ -1295,7 +1293,7 @@ impl SemanticObligationInventory {
             "instructions {} obligations {} by_inst {} native_spans {} inputs {} owned {} sizeof(id) {} sizeof(obligation) {} sizeof(disposition) {} sizeof(instid) {} sizeof(span) {}",
             self.disposition_count(),
             self.obligations.len(),
-            self.by_inst.iter().flatten().count(),
+            self.graph_instruction_count(),
             self.native_spans.len(),
             obligation_inputs,
             owned,
@@ -1335,7 +1333,7 @@ impl SemanticObligationInventory {
         if self.schema_version != SEMANTIC_OBLIGATION_SCHEMA_VERSION
             || !self.construction_failures.is_empty()
             || self.disposition_count() != self.source_instruction_count + zero_op_span_count
-            || self.by_inst.iter().flatten().count() != self.source_instruction_count
+            || self.graph_instruction_count() != self.source_instruction_count
         {
             // An incomplete inventory refuses the function at the binding
             // plan, and until now it said only that. Which of the five
@@ -1351,7 +1349,7 @@ impl SemanticObligationInventory {
                 self.disposition_count(),
                 self.source_instruction_count,
                 zero_op_span_count,
-                self.by_inst.iter().flatten().count()
+                self.graph_instruction_count()
             );
             return false;
         }
@@ -1359,12 +1357,7 @@ impl SemanticObligationInventory {
             let id = &instruction.id;
             if match instruction.source {
                 SemanticSourceSite::GraphInstruction(inst) => {
-                    self.by_inst
-                        .get(inst.0 as usize)
-                        .copied()
-                        .flatten()
-                        .as_ref()
-                        != Some(id)
+                    self.instruction_for_inst(inst).map(|held| &held.id) != Some(id)
                 }
                 SemanticSourceSite::GenuineNativeSpan(source_span) => {
                     self.native_spans.get(id).is_none_or(|span| {
@@ -1404,9 +1397,9 @@ impl SemanticObligationInventory {
                 return false;
             }
         }
-        for (index, id) in self.by_inst.iter().enumerate() {
+        for (index, held) in self.instructions.iter().enumerate() {
             let inst = InstId(index as u32);
-            if id.is_none() {
+            if held.is_none() {
                 continue;
             }
             if self
@@ -2229,7 +2222,7 @@ mod tests {
         let inventory = &artifact.facts().obligations;
         assert_eq!(inventory.disposition_count(), artifact.graph().insts.len());
         assert_eq!(
-            inventory.by_inst.iter().flatten().count(),
+            inventory.graph_instruction_count(),
             artifact.graph().insts.len()
         );
         assert!(inventory.dispositions().all(|instruction| {
