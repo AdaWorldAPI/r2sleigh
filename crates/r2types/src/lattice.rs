@@ -48,6 +48,12 @@ use crate::model::{Signedness, StructField, StructShape, Type, TypeArena, TypeId
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TypeLattice;
 
+#[cfg(test)]
+thread_local! {
+    /// Aggregate pairs `meet_pair` built on this thread, for the test that each is built once.
+    static AGGREGATE_PAIRS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl TypeLattice {
     /// The narrower width under the signedness both admit: `Unknown` admits either sign, as
     /// `is_subtype` reads it, so only a signed against an unsigned has no common integer.
@@ -93,7 +99,10 @@ impl TypeLattice {
         match (arena.get(sub), arena.get(sup)) {
             (_, Type::Top) => true,
             (Type::Bottom, _) => true,
-            (Type::Bool, Type::Int { bits, .. }) => *bits >= 1,
+            // `_Bool` is an unsigned integer type (C11 6.2.5p6), so it is below no signed one.
+            (Type::Bool, Type::Int { bits, signedness }) => {
+                *bits >= 1 && *signedness != Signedness::Signed
+            }
             (
                 Type::Int {
                     bits: a_bits,
@@ -251,18 +260,24 @@ impl TypeLattice {
             ) => {
                 // Two stated lengths that differ have no array below both.
                 let len = match (a_len, b_len) {
-                    (Some(a), Some(b)) if a != b => return arena.bottom(),
+                    (Some(x), Some(y)) if x != y => return arena.bottom(),
                     (Some(len), _) | (None, Some(len)) => Some(len),
                     (None, None) => None,
                 };
+                let slot = state.open(arena, a, b);
+                #[cfg(test)]
+                AGGREGATE_PAIRS.with(|built| built.set(built.get() + 1));
                 let elem = Self::meet_pair(arena, a_elem, b_elem, state);
                 let stride = (a_stride == b_stride).then_some(a_stride).flatten();
-                arena.array(elem, len, stride)
+                state.close(arena, slot, Type::Array { elem, len, stride }, a, b)
             }
-            (Type::Struct(a), Type::Struct(b)) => {
+            (Type::Struct(a_shape), Type::Struct(b_shape)) => {
                 // Width subtyping: below both is every field of either, a shared offset met.
-                let mut fields = a.fields.clone();
-                for (offset, b_field) in b.fields {
+                let slot = state.open(arena, a, b);
+                #[cfg(test)]
+                AGGREGATE_PAIRS.with(|built| built.set(built.get() + 1));
+                let mut fields = a_shape.fields.clone();
+                for (offset, b_field) in b_shape.fields {
                     let field = match fields.remove(&offset) {
                         Some(a_field) => StructField {
                             name: agreed(a_field.name, b_field.name),
@@ -272,8 +287,14 @@ impl TypeLattice {
                     };
                     fields.insert(offset, field);
                 }
-                let name = agreed(a.name, b.name);
-                arena.intern(Type::Struct(StructShape { name, fields }))
+                let name = agreed(a_shape.name, b_shape.name);
+                state.close(
+                    arena,
+                    slot,
+                    Type::Struct(StructShape { name, fields }),
+                    a,
+                    b,
+                )
             }
             _ => arena.bottom(),
         }
@@ -478,7 +499,14 @@ mod tests {
                 };
                 Shape::Int(bits, sign)
             }
-            Shape::Bool if pick & 2 != 0 => Shape::Int(8, Signedness::Unknown),
+            Shape::Bool if pick & 2 != 0 => {
+                let sign = if pick & 4 != 0 {
+                    Signedness::Unsigned
+                } else {
+                    Signedness::Unknown
+                };
+                Shape::Int(if pick & 8 != 0 { 32 } else { 8 }, sign)
+            }
             Shape::Float(bits) if pick & 2 != 0 => Shape::Float(64.max(*bits)),
             Shape::Ptr(inner) => Shape::Ptr(Box::new(widen(inner, seed))),
             Shape::Array(elem, len) => {
@@ -504,6 +532,94 @@ mod tests {
             }
             other => other.clone(),
         }
+    }
+
+    /// Every scalar of the order, so a law over scalars is checked on all of them.
+    fn scalars(arena: &mut TypeArena) -> Vec<TypeId> {
+        let mut all = vec![arena.top(), arena.bottom(), arena.bool_ty()];
+        for bits in [8, 16, 32, 64] {
+            for sign in [
+                Signedness::Signed,
+                Signedness::Unsigned,
+                Signedness::Unknown,
+            ] {
+                all.push(arena.int(bits, sign));
+            }
+        }
+        all.push(arena.float(32));
+        all.push(arena.float(64));
+        all
+    }
+
+    #[test]
+    fn every_scalar_meet_is_the_greatest_lower_bound() {
+        let mut arena = TypeArena::default();
+        let all = scalars(&mut arena);
+        for &a in &all {
+            for &b in &all {
+                let m = TypeLattice::meet(&mut arena, a, b);
+                assert!(TypeLattice::is_subtype(&arena, m, a));
+                assert!(TypeLattice::is_subtype(&arena, m, b));
+                for &c in &all {
+                    if TypeLattice::is_subtype(&arena, c, a)
+                        && TypeLattice::is_subtype(&arena, c, b)
+                    {
+                        assert!(
+                            TypeLattice::is_subtype(&arena, c, m),
+                            "{:?} is below {:?} and {:?} but not their meet {:?}",
+                            arena.get(c),
+                            arena.get(a),
+                            arena.get(b),
+                            arena.get(m)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_signed_and_an_unsigned_integer_have_no_common_type_bool_included() {
+        let mut arena = TypeArena::default();
+        let signed = arena.int(32, Signedness::Signed);
+        let unsigned = arena.int(32, Signedness::Unsigned);
+        let boolean = arena.bool_ty();
+        let su = TypeLattice::meet(&mut arena, signed, unsigned);
+        let left = TypeLattice::meet(&mut arena, su, boolean);
+        let ub = TypeLattice::meet(&mut arena, unsigned, boolean);
+        let right = TypeLattice::meet(&mut arena, signed, ub);
+        assert_eq!(ub, boolean);
+        assert_eq!(left, arena.bottom());
+        assert_eq!(right, arena.bottom());
+    }
+
+    #[test]
+    fn a_struct_pair_shared_by_two_fields_is_met_once() {
+        let mut arena = TypeArena::default();
+        let s8 = arena.int(8, Signedness::Signed);
+        // A field at different offsets: neither struct is below the other, so each pair is met.
+        let leaf = |arena: &mut TypeArena, offset| {
+            let fields = BTreeMap::from([(offset, StructField { name: None, ty: s8 })]);
+            arena.intern(Type::Struct(StructShape { name: None, fields }))
+        };
+        let (mut a, mut b) = (leaf(&mut arena, 0), leaf(&mut arena, 8));
+        // Each level holds the level below twice, so a meet that does not memoise aggregate
+        // pairs visits 2^depth of them.
+        for _ in 0..24 {
+            let twice = |arena: &mut TypeArena, ty| {
+                let fields = BTreeMap::from([
+                    (0, StructField { name: None, ty }),
+                    (64, StructField { name: None, ty }),
+                ]);
+                arena.intern(Type::Struct(StructShape { name: None, fields }))
+            };
+            a = twice(&mut arena, a);
+            b = twice(&mut arena, b);
+        }
+        AGGREGATE_PAIRS.with(|built| built.set(0));
+        let met = TypeLattice::meet(&mut arena, a, b);
+        assert!(TypeLattice::is_subtype(&arena, met, a));
+        assert_eq!(AGGREGATE_PAIRS.with(std::cell::Cell::get), 25);
     }
 
     fn equivalent(arena: &TypeArena, a: TypeId, b: TypeId) -> bool {
