@@ -1176,6 +1176,7 @@ dependencies = [
 name = "r2types"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "r2il",
  "r2source",
  "r2ssa",

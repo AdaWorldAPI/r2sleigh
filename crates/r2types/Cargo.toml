@@ -12,6 +12,9 @@ r2ssa = { path = "../r2ssa" }
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+proptest = "1.6"
+
 [features]
 default = []
 

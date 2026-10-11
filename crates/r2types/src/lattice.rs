@@ -43,20 +43,26 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::{Signedness, Type, TypeArena, TypeId};
+use crate::model::{Signedness, StructField, StructShape, Type, TypeArena, TypeId};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TypeLattice;
 
 impl TypeLattice {
+    /// The narrower width under the signedness both admit: `Unknown` admits either sign, as
+    /// `is_subtype` reads it, so only a signed against an unsigned has no common integer.
     fn meet_integer_shape(
         a_bits: u32,
         a_sign: Signedness,
         b_bits: u32,
         b_sign: Signedness,
     ) -> Option<(u32, Signedness)> {
-        let bits = a_bits.min(b_bits);
-        (a_sign == b_sign).then_some((bits, a_sign))
+        let signedness = match (a_sign, b_sign) {
+            (a, b) if a == b => a,
+            (Signedness::Unknown, known) | (known, Signedness::Unknown) => known,
+            _ => return None,
+        };
+        Some((a_bits.min(b_bits), signedness))
     }
 
     pub fn is_subtype(arena: &TypeArena, sub: TypeId, sup: TypeId) -> bool {
@@ -231,8 +237,54 @@ impl TypeLattice {
             (Type::Float { bits: a_bits }, Type::Float { bits: b_bits }) => {
                 arena.float(a_bits.min(b_bits))
             }
+            (
+                Type::Array {
+                    elem: a_elem,
+                    len: a_len,
+                    stride: a_stride,
+                },
+                Type::Array {
+                    elem: b_elem,
+                    len: b_len,
+                    stride: b_stride,
+                },
+            ) => {
+                // Two stated lengths that differ have no array below both.
+                let len = match (a_len, b_len) {
+                    (Some(a), Some(b)) if a != b => return arena.bottom(),
+                    (Some(len), _) | (None, Some(len)) => Some(len),
+                    (None, None) => None,
+                };
+                let elem = Self::meet_pair(arena, a_elem, b_elem, state);
+                let stride = (a_stride == b_stride).then_some(a_stride).flatten();
+                arena.array(elem, len, stride)
+            }
+            (Type::Struct(a), Type::Struct(b)) => {
+                // Width subtyping: below both is every field of either, a shared offset met.
+                let mut fields = a.fields.clone();
+                for (offset, b_field) in b.fields {
+                    let field = match fields.remove(&offset) {
+                        Some(a_field) => StructField {
+                            name: agreed(a_field.name, b_field.name),
+                            ty: Self::meet_pair(arena, a_field.ty, b_field.ty, state),
+                        },
+                        None => b_field,
+                    };
+                    fields.insert(offset, field);
+                }
+                let name = agreed(a.name, b.name);
+                arena.intern(Type::Struct(StructShape { name, fields }))
+            }
             _ => arena.bottom(),
         }
+    }
+}
+
+/// A name both sides give, or the one side that gives one; two names are none.
+fn agreed(a: Option<String>, b: Option<String>) -> Option<String> {
+    match (a, b) {
+        (Some(a), Some(b)) => (a == b).then_some(a),
+        (a, b) => a.or(b),
     }
 }
 
@@ -338,6 +390,181 @@ mod tests {
         );
     }
 
+    /// A small type, interned into an arena: the shapes the order relates, without recursion.
+    #[derive(Debug, Clone)]
+    enum Shape {
+        Top,
+        Bottom,
+        Bool,
+        Int(u32, Signedness),
+        Float(u32),
+        Ptr(Box<Shape>),
+        Array(Box<Shape>, Option<usize>),
+        Struct(BTreeMap<u64, Shape>),
+    }
+
+    fn shape() -> impl proptest::strategy::Strategy<Value = Shape> {
+        use proptest::prelude::*;
+        let sign = prop_oneof![
+            Just(Signedness::Signed),
+            Just(Signedness::Unsigned),
+            Just(Signedness::Unknown)
+        ];
+        let leaf = prop_oneof![
+            Just(Shape::Top),
+            Just(Shape::Bottom),
+            Just(Shape::Bool),
+            (prop::sample::select(vec![8u32, 16, 32, 64]), sign)
+                .prop_map(|(b, s)| Shape::Int(b, s)),
+            prop::sample::select(vec![32u32, 64]).prop_map(Shape::Float),
+        ];
+        leaf.prop_recursive(3, 12, 3, |inner| {
+            prop_oneof![
+                inner.clone().prop_map(|s| Shape::Ptr(Box::new(s))),
+                (inner.clone(), prop::option::of(1usize..3))
+                    .prop_map(|(s, len)| Shape::Array(Box::new(s), len)),
+                prop::collection::btree_map(prop::sample::select(vec![0u64, 8]), inner, 0..3)
+                    .prop_map(Shape::Struct),
+            ]
+        })
+    }
+
+    fn intern(arena: &mut TypeArena, shape: &Shape) -> TypeId {
+        match shape {
+            Shape::Top => arena.top(),
+            Shape::Bottom => arena.bottom(),
+            Shape::Bool => arena.bool_ty(),
+            Shape::Int(bits, sign) => arena.int(*bits, *sign),
+            Shape::Float(bits) => arena.float(*bits),
+            Shape::Ptr(inner) => {
+                let inner = intern(arena, inner);
+                arena.ptr(inner)
+            }
+            Shape::Array(elem, len) => {
+                let elem = intern(arena, elem);
+                arena.array(elem, *len, None)
+            }
+            Shape::Struct(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|(offset, ty)| {
+                        let ty = intern(arena, ty);
+                        (*offset, StructField { name: None, ty })
+                    })
+                    .collect();
+                arena.intern(Type::Struct(StructShape { name: None, fields }))
+            }
+        }
+    }
+
+    /// A supertype of `shape`, each choice read from `seed`: a wider integer, an unknown sign, an
+    /// unstated length, fewer fields, or `Top`.
+    fn widen(shape: &Shape, seed: &mut impl Iterator<Item = u8>) -> Shape {
+        let pick = seed.next().unwrap_or(0);
+        if pick % 7 == 0 {
+            return Shape::Top;
+        }
+        match shape {
+            Shape::Int(bits, sign) => {
+                let bits = if pick & 2 != 0 {
+                    (bits * 2).min(64)
+                } else {
+                    *bits
+                };
+                let sign = if pick & 4 != 0 {
+                    Signedness::Unknown
+                } else {
+                    *sign
+                };
+                Shape::Int(bits, sign)
+            }
+            Shape::Bool if pick & 2 != 0 => Shape::Int(8, Signedness::Unknown),
+            Shape::Float(bits) if pick & 2 != 0 => Shape::Float(64.max(*bits)),
+            Shape::Ptr(inner) => Shape::Ptr(Box::new(widen(inner, seed))),
+            Shape::Array(elem, len) => {
+                let len = if pick & 2 != 0 { None } else { *len };
+                Shape::Array(Box::new(widen(elem, seed)), len)
+            }
+            Shape::Struct(fields) => {
+                let mut kept = BTreeMap::new();
+                for (offset, ty) in fields {
+                    if seed.next().unwrap_or(0) % 3 != 0 {
+                        kept.insert(*offset, widen(ty, seed));
+                    }
+                }
+                Shape::Struct(kept)
+            }
+            Shape::Bottom => {
+                let leaves = [
+                    Shape::Bool,
+                    Shape::Int(8, Signedness::Signed),
+                    Shape::Float(32),
+                ];
+                leaves[usize::from(pick) % 3].clone()
+            }
+            other => other.clone(),
+        }
+    }
+
+    fn equivalent(arena: &TypeArena, a: TypeId, b: TypeId) -> bool {
+        TypeLattice::is_subtype(arena, a, b) && TypeLattice::is_subtype(arena, b, a)
+    }
+
+    proptest::proptest! {
+        /// `meet` is the greatest lower bound of the subtype order, so the solver's fold over a
+        /// class's bounds is one value whatever order the bounds arrive in.
+        #[test]
+        fn meet_is_the_greatest_lower_bound(a in shape(), b in shape(), c in shape()) {
+            let mut arena = TypeArena::default();
+            let (a, b, c) = (intern(&mut arena, &a), intern(&mut arena, &b), intern(&mut arena, &c));
+            let ab = TypeLattice::meet(&mut arena, a, b);
+            proptest::prop_assert!(TypeLattice::is_subtype(&arena, ab, a));
+            proptest::prop_assert!(TypeLattice::is_subtype(&arena, ab, b));
+            let ba = TypeLattice::meet(&mut arena, b, a);
+            proptest::prop_assert!(equivalent(&arena, ab, ba));
+            let aa = TypeLattice::meet(&mut arena, a, a);
+            proptest::prop_assert!(equivalent(&arena, aa, a));
+            let left = TypeLattice::meet(&mut arena, ab, c);
+            let bc = TypeLattice::meet(&mut arena, b, c);
+            let right = TypeLattice::meet(&mut arena, a, bc);
+            proptest::prop_assert!(equivalent(&arena, left, right));
+            // Below a and b, so below their meet.
+            let below = TypeLattice::meet(&mut arena, a, bc);
+            proptest::prop_assert!(TypeLattice::is_subtype(&arena, below, ab));
+        }
+
+        /// Any type below two types is below their meet: the meet is the greatest such.
+        #[test]
+        fn a_common_lower_bound_is_below_the_meet(
+            c in shape(),
+            left in proptest::collection::vec(proptest::prelude::any::<u8>(), 24),
+            right in proptest::collection::vec(proptest::prelude::any::<u8>(), 24),
+        ) {
+            let (a, b) = (widen(&c, &mut left.into_iter()), widen(&c, &mut right.into_iter()));
+            let mut arena = TypeArena::default();
+            let (a, b, c) = (intern(&mut arena, &a), intern(&mut arena, &b), intern(&mut arena, &c));
+            proptest::prop_assert!(TypeLattice::is_subtype(&arena, c, a));
+            proptest::prop_assert!(TypeLattice::is_subtype(&arena, c, b));
+            let ab = TypeLattice::meet(&mut arena, a, b);
+            proptest::prop_assert!(TypeLattice::is_subtype(&arena, c, ab), "{:?}", arena.get(ab));
+        }
+    }
+
+    #[test]
+    fn a_known_sign_meets_an_unknown_one_at_the_narrower_width() {
+        let mut arena = TypeArena::default();
+        let signed = arena.int(64, Signedness::Signed);
+        let unknown = arena.int(32, Signedness::Unknown);
+        let met = TypeLattice::meet(&mut arena, signed, unknown);
+        assert_eq!(
+            arena.get(met),
+            &Type::Int {
+                bits: 32,
+                signedness: Signedness::Signed
+            }
+        );
+    }
+
     #[test]
     fn meet_incompatible_types_goes_bottom() {
         let mut arena = TypeArena::default();
@@ -369,17 +596,22 @@ mod kani_proofs {
 
         let result = TypeLattice::meet_integer_shape(a_bits, a_sign, b_bits, b_sign);
 
-        if a_sign == b_sign {
-            match result {
-                Some((bits, signedness)) => {
-                    assert_eq!(bits, a_bits.min(b_bits));
-                    assert_eq!(signedness, a_sign);
-                    assert_eq!(signedness, b_sign);
-                }
-                None => unreachable!("equal signedness must produce an integer meet"),
+        // A common integer exists exactly when the signs agree or one is unknown, and it is the
+        // narrower width under the known sign.
+        let conflict =
+            a_sign != b_sign && a_sign != Signedness::Unknown && b_sign != Signedness::Unknown;
+        match result {
+            None => assert!(conflict),
+            Some((bits, signedness)) => {
+                assert!(!conflict);
+                assert_eq!(bits, a_bits.min(b_bits));
+                let known = if a_sign == Signedness::Unknown {
+                    b_sign
+                } else {
+                    a_sign
+                };
+                assert_eq!(signedness, known);
             }
-        } else {
-            assert!(result.is_none());
         }
     }
 }
