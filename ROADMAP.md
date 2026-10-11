@@ -221,6 +221,42 @@ maintainer accepts broken renderings on `rebuild` until it merges.
    7. `rebuild` merged to master at D's switch (#142, 2026-10-11), the
       maintainer's call, before LX's and SM's exits held; LX2, SM and T
       continue on master, stacked as before.
+   8. On master, the rewrites the 2026-10-11 measurements identified, in
+      dependency order, each its own item, its bound the model it names
+      ([next-pass](doc/adr-next-pass.md)) and its exit a number the census
+      or `census.py` checks:
+      1. **T1**, one type solve (model 5): the incremental union-find with
+         one meet per class in place of three `solve_evidence_types` runs,
+         six signedness passes and the `2A + 1` rounds that clone the arena
+         (`evidence.rs:93`); solves and signedness are 3.4 to 4.3% of a
+         large `pdd`, in every root and every callee read. Exit: one solve
+         and one signedness pass per function, counted.
+      2. **T2**, the render projection owned once: the seal reads the
+         analysis's projection instead of rebuilding it to compare
+         (`seal_with_callee_signatures`): about 4% of sort `0x3f50`, a
+         second render copy and an 18 MB clone at 0pack's seal. Blocked
+         while `populate_certified_loop_carrier_types` writes
+         `types.render_authorized_signature`; T1 may dissolve that.
+      3. **SM1**, the summary grade (model 3) over T1 and T2, measured again
+         before its design: callee reads are 47% of sort `pdd` against
+         SM's 10%, and a callee's signature reads almost every type pass.
+      4. **LX3**, `version_at` (model 2): Braun's `readVariable` memoised
+         per `(block, location)` over the locations a pass asks, a merge
+         with no phi answered by its predecessors' agreement as the
+         reaching walks answer it: 4.5% of a large `pdd` today. Exit:
+         `reaching_storage_boundaries` deleted, census byte-identical.
+      5. **LX4**, recovery's pass: interface recovery collects the full fact
+         pass on the preliminary build (17.4% of sort `pdd` across every
+         preparation) and reads its inventory, objects, boundaries, call
+         sites, loops and liveness; a cheaper recovery is a new algorithm
+         whose output is the interface, so it moves the census, every moved
+         line judged.
+      6. **F2's representations** (models 4 and 9): one function held once,
+         the graph, machine projection and term arena indexes over it, the
+         obligation dispositions (112 bytes) and `OpMetadata` (about 200
+         bytes per op, a tree per block) dense columns: about 206 MB of the
+         Gui constructor's peak against the 60 MB LX's 250 MB exit leaves.
+      7. **D26**'s purge delay, the maintainer's (PF row).
 6. **LP2 to LP4**, then **I**, **C2, C4**, **P7, P8, P9, P11**.
 7. Beside the path, as small items when a step waits on CI: **L5**, **M6**
    rest.
