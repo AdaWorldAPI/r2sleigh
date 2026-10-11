@@ -74,6 +74,30 @@ mod tests {
         .expect("two phi merge SSA")
     }
 
+    /// A phi that states no storage writes none, whatever its variable's table says.
+    #[test]
+    fn a_phi_without_storage_writes_none() {
+        let mut func = two_phi_merge();
+        let cleared = func.named_block(0x100c).expect("merge").phis()[0]
+            .dst
+            .clone();
+        let mut merge = func.edit_block(0x100c).expect("merge block");
+        merge.edit_phi(0, |phi| phi.canonical_storage = None);
+        let graph = SsaGraph::from_function(&func);
+        for inst in &graph.insts {
+            let Some(output) = inst
+                .output
+                .filter(|_| matches!(inst.payload, InstPayload::Phi { .. }))
+            else {
+                continue;
+            };
+            let is_cleared = graph
+                .value(output)
+                .is_some_and(|value| value.var == cleared);
+            assert_eq!(graph.written_storage(inst).is_none(), is_cleared);
+        }
+    }
+
     /// The arena's live count is every phi and operation the blocks hold, a removed phi gone.
     #[test]
     fn the_arena_counts_what_the_blocks_hold() {
@@ -465,6 +489,10 @@ impl SsaGraph {
                     .map(|(_, value)| numbering.intern(*value))
                     .collect::<Vec<_>>();
                 let output = numbering.intern(phi.dst);
+                // A merge's storage is the phi's to state, a cleared one included.
+                if let Some(value) = numbering.values.get_mut(output.0 as usize) {
+                    value.canonical_storage = phi.canonical_storage;
+                }
                 let inst_id = InstId(insts.len() as u32);
                 numbering.record(inst_id, &inputs, Some(output));
                 let predecessors = phi
