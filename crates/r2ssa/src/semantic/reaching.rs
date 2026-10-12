@@ -70,12 +70,7 @@ impl<'a> ReachingStorage<'a> {
         let mut pending: (Option<u64>, ReachingStorageState, Vec<InstId>) =
             (None, state, Vec::new());
         for &inst in self.graph.op_insts(block) {
-            let origin =
-                (self.graph.op_for_inst(inst)).and_then(|op| self.function.arena().origin(op));
-            let instruction = match origin {
-                Some(crate::arena::OpOrigin::Lifted { instruction, .. }) => *instruction,
-                _ => None,
-            };
+            let instruction = self.graph.instruction_for_inst(inst);
             if instruction.is_none() || instruction != pending.0 {
                 self.close(pending.2.drain(..), state);
                 pending.0 = instruction;

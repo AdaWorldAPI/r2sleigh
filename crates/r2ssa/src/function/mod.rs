@@ -2916,7 +2916,7 @@ impl SSAFunction {
     /// Which machine instruction this operation executes for; see
     /// [`OpArena::instruction`].
     pub fn instruction_of(&self, id: OpId) -> Option<u64> {
-        self.blocks.arena().instruction(id)
+        self.arena().instruction(id)
     }
 
     /// Every operation and phi this function ever held, by id.
@@ -2940,8 +2940,8 @@ impl SSAFunction {
         self.written = crate::lanes::Written::capture(self);
     }
 
-    /// Give back the room the function's growth left, once it is edited for the last time.
-    /// The seal's last step: the graph owns each operation from here (doc/adr-one-ir.md, MM.6).
+    /// The seal's last step: the graph owns each operation, its origin and each value from here
+    /// (doc/adr-one-ir.md, MM.6).
     pub(crate) fn drop_operations(&mut self) {
         debug_assert_eq!(
             self.blocks.len(),
@@ -2949,6 +2949,7 @@ impl SSAFunction {
             "one block per address"
         );
         self.blocks.drop_operations();
+        self.values = crate::value_table::ValueTable::default();
     }
 
     pub(crate) fn shrink_to_fit(&mut self) {
@@ -2962,6 +2963,10 @@ impl SSAFunction {
     }
 
     pub fn arena(&self) -> &OpArena {
+        debug_assert!(
+            !self.blocks.is_sealed(),
+            "a sealed function's origins are the graph's"
+        );
         self.blocks.arena()
     }
 
@@ -3677,11 +3682,19 @@ impl SSAFunction {
 
     /// The variable an operand id is spelled as.
     pub fn var(&self, id: VarId) -> &SSAVar {
+        debug_assert!(
+            !self.blocks.is_sealed(),
+            "a sealed function's values are the graph's"
+        );
         self.values.var(id)
     }
 
     /// The table of every operand id.
     pub const fn values(&self) -> &crate::value_table::ValueTable {
+        debug_assert!(
+            !self.blocks.is_sealed(),
+            "a sealed function's values are the graph's"
+        );
         &self.values
     }
 
@@ -3722,11 +3735,19 @@ impl SSAFunction {
     /// value table's storage column. Consumers must not reconstruct this
     /// information from `SSAVar::name`.
     pub(crate) fn canonical_storage_for_var(&self, var: &SSAVar) -> Option<CanonicalStorageId> {
+        debug_assert!(
+            !self.blocks.is_sealed(),
+            "a sealed function's values are the graph's"
+        );
         self.values.storage_of_var(var)
     }
 
     /// The lifted storage of a variable the function holds by id.
     pub(crate) fn storage_of(&self, id: VarId) -> Option<CanonicalStorageId> {
+        debug_assert!(
+            !self.blocks.is_sealed(),
+            "a sealed function's values are the graph's"
+        );
         self.values.storage(id)
     }
 
