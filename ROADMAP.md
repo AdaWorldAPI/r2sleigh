@@ -413,7 +413,19 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             instruction id the graph already implies; an obligation copies
             its instruction's graph inputs where it states none of its own.
          4. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
-            of it the type) and render's own structures (7.6 MB).
+            of it the type) and render's own structures (7.6 MB). Step 1
+            done (#185): an entity stated its output and producer beside
+            its root (48 bytes, and an index by output), both the graph's
+            and the obligations'; the projection now holds one root per
+            instruction and builds the entity on read, and validation of
+            the copies against their owners is gone with them. 0pack heap
+            peak 162.4 to 159.2 MiB, pumasim 143.8 to 141.1, session
+            unchanged (its peak is elsewhere); time unchanged; census
+            byte-identical. Left: the type interned (0pack: 99,033 nodes,
+            28 distinct types; 72 to 48 bytes a node, about 2.3 MiB, 115
+            reads to move), the value geometries (40 bytes a value, 3.3
+            MiB), and `discharges` returning instruction ids, which r2dec
+            maps back from canonical ids (MM.7).
          5. **MM.9** D26: one forced collect at each phase boundary,
             measured.
          6. **MM.3** (conditional) facts only sealing reads, measured
