@@ -117,6 +117,37 @@ impl Byte {
 /// Each byte of one operation's or phi's output, low byte first.
 pub type Bytes = Vec<Byte>;
 
+/// One output's bytes as held: data throughout, as nearly every output is (0pack's largest
+/// function, 73,988 of 74,097), or byte by byte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Record {
+    Data(u32),
+    Each(Box<[Byte]>),
+}
+
+impl Record {
+    fn of(bytes: Bytes) -> Self {
+        match bytes.iter().all(|byte| *byte == Byte::Data) {
+            true => Self::Data(u32::try_from(bytes.len()).expect("a value under 4 GiB")),
+            false => Self::Each(bytes.into_boxed_slice()),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Data(size) => *size as usize,
+            Self::Each(bytes) => bytes.len(),
+        }
+    }
+
+    fn bytes(&self) -> Bytes {
+        match self {
+            Self::Data(size) => vec![Byte::Data; *size as usize],
+            Self::Each(bytes) => bytes.to_vec(),
+        }
+    }
+}
+
 /// Two values' bytes on either of two paths, byte by byte.
 pub fn join(a: &[Byte], b: &[Byte]) -> Bytes {
     a.iter().zip(b).map(|(a, b)| a.join(b)).collect()
@@ -125,7 +156,7 @@ pub fn join(a: &[Byte], b: &[Byte]) -> Bytes {
 /// What every operation and phi of a function wrote, by id, as lifted.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Written {
-    by_op: IdMap<OpId, Bytes>,
+    by_op: IdMap<OpId, Record>,
     /// The zero extensions that are the architecture's convention rather
     /// than the program's (`by_convention`), as lifted.
     conventional: IdSet<OpId>,
@@ -133,8 +164,8 @@ pub struct Written {
 
 impl Written {
     /// What the operation or phi `id` wrote, where it was lifted.
-    pub fn of(&self, id: OpId) -> Option<&Bytes> {
-        self.by_op.get(id)
+    pub fn of(&self, id: OpId) -> Option<Bytes> {
+        self.by_op.get(id).map(Record::bytes)
     }
 
     /// Whether `id` is a zero extension the architecture performs on a write
@@ -160,12 +191,11 @@ impl Written {
 
     /// Take the record of a function before anything rewrites it.
     pub fn capture(function: &SSAFunction) -> Self {
-        let mut by_var = IdMap::<VarId, Bytes>::default();
-        let mut by_op = IdMap::<OpId, Bytes>::default();
+        let mut records = Records::default();
         let writes = Writes::of(function);
         // Until nothing changes: a loop's phi reads a value defined below it.
         while function.blocks().iter().fold(false, |changed, block| {
-            changed | capture_block(function, &writes, block, &mut by_var, &mut by_op)
+            changed | capture_block(function, &writes, block, &mut records)
         }) {}
         let conventional = function
             .blocks()
@@ -175,10 +205,18 @@ impl Written {
             .map(|(id, _)| id)
             .collect();
         Self {
-            by_op,
+            by_op: records.by_op,
             conventional,
         }
     }
+}
+
+/// The record as the pass builds it: each output's bytes by its definition, and each
+/// variable's definition, which SSA makes one.
+#[derive(Default)]
+struct Records {
+    by_op: IdMap<OpId, Record>,
+    defs: IdMap<VarId, OpId>,
 }
 
 /// One pass over a block's phis and operations; whether any record moved.
@@ -186,8 +224,7 @@ fn capture_block(
     function: &SSAFunction,
     writes: &Writes,
     block: &crate::block::SSABlock<VarId>,
-    by_var: &mut IdMap<VarId, Bytes>,
-    by_op: &mut IdMap<OpId, Bytes>,
+    records: &mut Records,
 ) -> bool {
     let mut changed = false;
     for (id, phi) in block.sited_phis() {
@@ -195,16 +232,16 @@ fn capture_block(
         let bytes = phi
             .sources
             .iter()
-            .map(|(_, source)| read(function, by_var, *source))
+            .map(|(_, source)| read(function, records, *source))
             .fold(vec![Byte::NONE; size], |held, source| join(&held, &source));
-        changed |= settle(by_var, by_op, id, phi.dst, bytes);
+        changed |= settle(records, id, phi.dst, bytes);
     }
     for (id, op) in block.sited() {
         if let Some(dst) = op.dst() {
             let convention = by_convention(function, writes, op);
             let facts = |var: &VarId| crate::op::var_facts(function.var(*var));
-            let bytes = transfer(op, convention, facts, |var| read(function, by_var, *var));
-            changed |= settle(by_var, by_op, id, *dst, bytes);
+            let bytes = transfer(op, convention, facts, |var| read(function, records, *var));
+            changed |= settle(records, id, *dst, bytes);
         }
     }
     changed
@@ -269,36 +306,38 @@ impl Writes {
 
 /// Record what `id` wrote to `dst`, joined with what it was recorded as
 /// writing before; whether that moved anything.
-fn settle(
-    by_var: &mut IdMap<VarId, Bytes>,
-    by_op: &mut IdMap<OpId, Bytes>,
-    id: OpId,
-    dst: VarId,
-    bytes: Bytes,
-) -> bool {
-    let held = by_var.get_or_insert_with(dst, Vec::new);
-    let joined = match held.len() == bytes.len() {
-        true => held.iter().zip(&bytes).map(|(a, b)| a.join(b)).collect(),
-        false => bytes,
+fn settle(records: &mut Records, id: OpId, dst: VarId, bytes: Bytes) -> bool {
+    debug_assert!(
+        records.defs.get(dst).is_none_or(|op| *op == id),
+        "one definition per variable"
+    );
+    records.defs.insert(dst, id);
+    let joined = match records.by_op.get(id) {
+        // Data joined with anything is data.
+        Some(Record::Data(size)) if *size as usize == bytes.len() => return false,
+        Some(Record::Each(held)) if held.len() == bytes.len() => {
+            held.iter().zip(&bytes).map(|(a, b)| a.join(b)).collect()
+        }
+        _ => bytes,
     };
-    if *held == joined {
-        return false;
+    let joined = Record::of(joined);
+    let unchanged = (records.by_op.get(id)).map_or(joined.len() == 0, |held| *held == joined);
+    if !unchanged {
+        records.by_op.insert(id, joined);
     }
-    held.clone_from(&joined);
-    by_op.insert(id, joined);
-    true
+    !unchanged
 }
 
 /// The bytes of a variable an operation reads: a literal's are data, an entry
 /// value's are the register bytes it was entered with, and anything else is
 /// what its definition wrote, so far as the pass has reached it.
-fn read(function: &SSAFunction, by_var: &IdMap<VarId, Bytes>, id: VarId) -> Bytes {
+fn read(function: &SSAFunction, records: &Records, id: VarId) -> Bytes {
     let var = function.var(id);
     if var.constant_bits().is_some() {
         return vec![Byte::Data; var.size as usize];
     }
-    if let Some(bytes) = by_var.get(id) {
-        return bytes.clone();
+    if let Some(record) = (records.defs.get(id)).and_then(|op| records.by_op.get(*op)) {
+        return record.bytes();
     }
     if var.version == 0 {
         return entry_bytes(function.storage_of(id), var.size);

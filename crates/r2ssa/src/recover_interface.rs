@@ -1037,7 +1037,7 @@ fn written_bytes(
         .and_then(|id| written.of(id))
         .filter(|bytes| bytes.len() == size as usize)
     {
-        return recorded.clone();
+        return recorded;
     }
     let Some(inst) = graph.inst(inst_id) else {
         return Vec::new();
