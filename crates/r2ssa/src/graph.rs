@@ -638,6 +638,26 @@ impl SsaGraph {
         self.op_by_inst.get(id.0 as usize).copied()
     }
 
+    /// The operation an instruction is; `None` for a phi.
+    pub fn op(&self, id: InstId) -> Option<&SSAOp<ValueId>> {
+        match &self.inst(id)?.payload {
+            InstPayload::Op(op) => Some(op),
+            InstPayload::Phi { .. } => None,
+        }
+    }
+
+    /// A block's operations, in order, as its instructions after its phis.
+    pub fn op_insts(&self, block: BlockId) -> &[InstId] {
+        self.block(block)
+            .map_or(&[][..], |held| &held.insts[self.phi_count(held)..])
+    }
+
+    /// A block's phis, as its first instructions.
+    pub fn phi_insts(&self, block: BlockId) -> &[InstId] {
+        self.block(block)
+            .map_or(&[][..], |held| &held.insts[..self.phi_count(held)])
+    }
+
     /// How many of a block's instructions are its phis: they stand first.
     fn phi_count(&self, block: &GraphBlock) -> usize {
         block.insts.partition_point(|inst| {

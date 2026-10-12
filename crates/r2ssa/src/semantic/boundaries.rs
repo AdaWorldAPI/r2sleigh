@@ -231,31 +231,17 @@ impl FormatForwardingLookup<'_> {
     /// `CallDefine` operations follow their call in a run, so walking back
     /// over that run reaches the call itself. An instruction that is a call
     /// answers for itself.
-    fn call_of_result(
-        &self,
-        function: &SSAFunction,
-        graph: &SsaGraph,
-        definition: InstId,
-    ) -> Option<CallSiteId> {
+    fn call_of_result(&self, graph: &SsaGraph, definition: InstId) -> Option<CallSiteId> {
         if let Some(call_site) = self.call_sites.by_inst.get(definition) {
             return Some(*call_site);
         }
         let (block_addr, op_index) = graph.walk_start(definition)?;
-        let block = function.get_block(block_addr)?;
-        if !matches!(block.ops().get(op_index)?, SSAOp::CallDefine { .. }) {
+        let block = graph.inst(definition)?.block;
+        let insts = graph.op_insts(block);
+        if !matches!(graph.op(*insts.get(op_index)?)?, SSAOp::CallDefine { .. }) {
             r2il::refusal_evidence!(
                 "variadic-format-literal",
-                "{definition:?} at {block_addr:#x}:{op_index} defines the format but the block spells it {}, while the graph spells it {}",
-                block
-                    .ops()
-                    .get(op_index)
-                    .map_or("nothing".to_string(), |op| format!(
-                        "{:?}",
-                        function.named(op)
-                    )
-                    .chars()
-                    .take(28)
-                    .collect::<String>()),
+                "{definition:?} at {block_addr:#x}:{op_index} defines the format but the graph spells it {}",
                 graph
                     .inst(definition)
                     .map_or("nothing".to_string(), |inst| format!("{:?}", inst.payload)
@@ -265,22 +251,18 @@ impl FormatForwardingLookup<'_> {
             );
             return None;
         }
-        let mut index = op_index;
-        while index > 0 {
-            index -= 1;
-            if !matches!(block.ops().get(index)?, SSAOp::CallDefine { .. }) {
-                let inst = graph.inst_for_op(block.op_id(index)?)?;
-                let site = self.call_sites.by_inst.get(inst).copied();
-                if site.is_none() {
-                    r2il::refusal_evidence!(
-                        "variadic-format-literal",
-                        "the call at {block_addr:#x}:{index} defining the format correlates to no call site"
-                    );
-                }
-                return site;
-            }
+        let call = insts[..op_index]
+            .iter()
+            .rev()
+            .find(|inst| !matches!(graph.op(**inst), Some(SSAOp::CallDefine { .. })))?;
+        let site = self.call_sites.by_inst.get(*call).copied();
+        if site.is_none() {
+            r2il::refusal_evidence!(
+                "variadic-format-literal",
+                "the call at {block_addr:#x} defining the format correlates to no call site"
+            );
         }
-        None
+        site
     }
 
     /// The msgid a translation call was handed, when `value` is its result.
@@ -300,7 +282,7 @@ impl FormatForwardingLookup<'_> {
         // A call's results are `CallDefine` operations that follow it, so the
         // value's own definition is not the call; the call is the operation
         // the run of defines began after.
-        let Some(call_site) = self.call_of_result(function, graph, definition) else {
+        let Some(call_site) = self.call_of_result(graph, definition) else {
             r2il::refusal_evidence!(
                 "variadic-format-literal",
                 "{value:?} is defined by {definition:?}, which no call of this function results in"
@@ -681,9 +663,10 @@ pub(crate) fn reaching_stack_slot_value(
     if !visited.insert(block_addr) {
         return None;
     }
-    let block = function.get_block(block_addr)?;
-    let var = |id: crate::VarId| function.var(id);
-    for op in block.ops().get(..boundary)?.iter().rev() {
+    let block = graph.block_id_for_addr(block_addr)?;
+    let var = |id: ValueId| graph.var(id);
+    let ops = graph.op_insts(block).get(..boundary)?;
+    for op in ops.iter().rev().filter_map(|inst| graph.op(*inst)) {
         match *op {
             SSAOp::Copy { dst, src } if query.promoted && var(dst).name() == query.slot_name => {
                 if var(dst).size != query.size_bytes {
@@ -696,7 +679,7 @@ pub(crate) fn reaching_stack_slot_value(
                     );
                     return None;
                 }
-                return graph.value_of(src);
+                return Some(src);
             }
             SSAOp::Call { .. } | SSAOp::CallInd { .. } | SSAOp::CallOther { .. }
                 if !query.promoted =>
@@ -713,10 +696,7 @@ pub(crate) fn reaching_stack_slot_value(
                 addr,
                 val,
             } if !query.promoted => {
-                let Some(root) = graph
-                    .value_of(addr)
-                    .and_then(|addr| resolve_entry_stack_root(prep, addr))
-                else {
+                let Some(root) = resolve_entry_stack_root(prep, addr) else {
                     r2il::refusal_evidence!(
                         "call-argument-stack-store",
                         "({block_addr:#x}) store through {} has no root (wanted {:?} {})",
@@ -739,17 +719,17 @@ pub(crate) fn reaching_stack_slot_value(
                     );
                     return None;
                 }
-                return graph.value_of(val);
+                return Some(val);
             }
             _ => {}
         }
     }
     if query.promoted
-        && let Some(phi) = block.phis().iter().find(|phi| {
-            var(phi.dst).name() == query.slot_name && var(phi.dst).size == query.size_bytes
-        })
+        && let Some(phi) = (graph.phi_insts(block).iter())
+            .filter_map(|inst| graph.inst(*inst)?.output)
+            .find(|phi| var(*phi).name() == query.slot_name && var(*phi).size == query.size_bytes)
     {
-        return graph.value_of(phi.dst);
+        return Some(phi);
     }
     let predecessors = function.predecessors(block_addr);
     if predecessors.is_empty() {
@@ -763,7 +743,7 @@ pub(crate) fn reaching_stack_slot_value(
     }
     let mut agreed = None;
     for predecessor in predecessors {
-        let boundary = function.get_block(predecessor)?.ops().len();
+        let boundary = graph.op_insts(graph.block_id_for_addr(predecessor)?).len();
         let value = reaching_stack_slot_value(
             function,
             prep,
@@ -981,7 +961,7 @@ pub(crate) fn convention_call_boundary(
         // that, an empty scan says nothing was looked at rather than that
         // nothing is there, and a call that passes arguments would be spelled
         // as one that passes none.
-        function.get_block(block_addr)?;
+        graph.block_id_for_addr(block_addr)?;
         if call_entering_stack_pointer_offset(CallPosition {
             function,
             prep,
@@ -1036,7 +1016,7 @@ pub(crate) fn convention_call_boundary(
         .result_slot()
         .and_then(|storage| {
             observed_convention_call_result_after_call(
-                function, graph, live_out, block_addr, op_index, storage,
+                graph, live_out, block_addr, op_index, storage,
             )
         })
         .into_iter()
@@ -1192,7 +1172,6 @@ pub(crate) fn collect_source_boundary_facts(
                     }
                     (CallSiteTransfer::Call, SourceCallResult::Register { storage }) => {
                         call_result_values_after_call(
-                            function,
                             graph,
                             machine_context,
                             block_addr,
@@ -1910,13 +1889,16 @@ pub(crate) fn storage_is_untouched_on_all_predecessor_paths(
         if !visited.insert(candidate_addr) {
             continue;
         }
-        let Some(block) = function.get_block(candidate_addr) else {
+        let Some(block) = graph.block_id_for_addr(candidate_addr) else {
             return false;
         };
-        let Some(ops) = block.ops().get(..end_op_index) else {
+        let Some(insts) = graph.op_insts(block).get(..end_op_index) else {
             return false;
         };
-        for (op_index, op) in ops.iter().enumerate() {
+        for &inst in insts {
+            let Some(op) = graph.op(inst) else {
+                return false;
+            };
             // A call's clobbers are the `CallDefine`s that follow it, each a
             // definition checked for overlap below; the call itself touches
             // only the carrier the transfer moves. A user operation writes only its named output.
@@ -1930,11 +1912,7 @@ pub(crate) fn storage_is_untouched_on_all_predecessor_paths(
             if op.dst().is_none() {
                 continue;
             }
-            let Some(inst) = block
-                .op_id(op_index)
-                .and_then(|id| graph.inst_for_op(id))
-                .and_then(|inst| graph.inst(inst))
-            else {
+            let Some(inst) = graph.inst(inst) else {
                 return false;
             };
             if graph
@@ -1953,9 +1931,8 @@ pub(crate) fn storage_is_untouched_on_all_predecessor_paths(
             return false;
         }
         pending.extend(predecessors.into_iter().filter_map(|predecessor| {
-            function
-                .get_block(predecessor)
-                .map(|block| (predecessor, block.ops().len()))
+            let block = graph.block_id_for_addr(predecessor)?;
+            Some((predecessor, graph.op_insts(block).len()))
         }));
     }
     reached_entry
@@ -1968,33 +1945,29 @@ pub(crate) fn storage_is_untouched_on_all_predecessor_paths(
 /// Once any result definition exists, exactly one definition of the declared
 /// carrier must be present; zero or several are an ambiguous boundary.
 pub(crate) fn call_result_values_after_call(
-    function: &SSAFunction,
     graph: &SsaGraph,
     machine_context: &SourceMachineContext,
     block_addr: u64,
     call_op_index: usize,
     storage: CanonicalStorageId,
 ) -> Option<Vec<CallBoundaryValueFact>> {
-    let block = function.get_block(block_addr)?;
-    let call_defines = block
-        .ops()
+    let block = graph.block_id_for_addr(block_addr)?;
+    let call_defines = (graph.op_insts(block))
         .get(call_op_index.checked_add(1)?..)?
         .iter()
-        .enumerate()
-        .take_while(|(_, op)| matches!(op, SSAOp::CallDefine { .. }))
+        .map_while(|&inst| match graph.op(inst)? {
+            SSAOp::CallDefine { dst } => Some((inst, *dst)),
+            _ => None,
+        })
         .collect::<Vec<_>>();
     if call_defines.is_empty() {
         return Some(Vec::new());
     }
     // A call that defines no part of the result register leaves the caller's value there, as
     // one to a body that never writes its argument-slot result does: no value, and complete.
-    let defines_storage = call_defines.iter().any(|(relative_index, _)| {
-        let at = call_op_index
-            .saturating_add(1)
-            .saturating_add(*relative_index);
-        (block.op_id(at))
-            .and_then(|op| graph.inst_for_op(op))
-            .and_then(|inst| graph.written_storage(graph.inst(inst)?))
+    let defines_storage = call_defines.iter().any(|(inst, _)| {
+        (graph.inst(*inst))
+            .and_then(|inst| graph.written_storage(inst))
             .is_some_and(|defined| register_storages_overlap(defined, storage))
     });
     if !defines_storage {
@@ -2002,24 +1975,14 @@ pub(crate) fn call_result_values_after_call(
     }
     let candidates = call_defines
         .into_iter()
-        .filter_map(|(relative_index, op)| {
-            let SSAOp::CallDefine { dst } = op else {
-                return None;
-            };
-            let inst = graph.inst_for_op(
-                block.op_id(
-                    call_op_index
-                        .saturating_add(1)
-                        .saturating_add(relative_index),
-                )?,
-            )?;
+        .filter_map(|(inst, dst)| {
             // The definition of the slot itself, or of the program root whose
             // low lane the slot is (doc/adr-byte-relation.md, B3).
             let graph_inst = graph.inst(inst)?;
             let defined = graph.written_storage(graph_inst)?;
-            let exact = defined == storage && function.var(*dst).size == storage.size;
+            let exact = defined == storage && graph.var(dst).size == storage.size;
             let rooted = defined.space == storage.space
-                && function.var(*dst).size == defined.size
+                && graph.var(dst).size == defined.size
                 && machine_context.is_low_lane_of(storage, defined);
             (exact || rooted)
                 .then_some(graph_inst.output?)

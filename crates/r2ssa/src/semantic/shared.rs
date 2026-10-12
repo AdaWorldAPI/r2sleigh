@@ -649,11 +649,11 @@ pub(crate) fn call_entering_stack_pointer_offset(
         op_index: call_op_index,
         calls_move_stack_pointer,
     } = at;
-    let block = function.get_block(block_addr)?;
-    let recorded = block
-        .ops()
+    let block = graph.block_id_for_addr(block_addr)?;
+    let recorded = (graph.op_insts(block))
         .get(call_op_index.checked_add(1)?..)?
         .iter()
+        .filter_map(|inst| graph.op(*inst))
         .take_while(|op| matches!(op, SSAOp::CallDefine { .. } | SSAOp::CallRestore { .. }))
         .find_map(|op| match op {
             SSAOp::CallRestore { src, .. } => Some(*src),
@@ -661,7 +661,7 @@ pub(crate) fn call_entering_stack_pointer_offset(
         });
     let recorded_restore = recorded.is_some();
     let entering = match recorded {
-        Some(entering) => graph.value_of(entering)?,
+        Some(entering) => entering,
         // A transfer that spends nothing on the carrier records no restore: a
         // tail call returns nowhere, so there is nothing to bring back, and
         // the pointer it found is the one reaching it.
@@ -670,7 +670,7 @@ pub(crate) fn call_entering_stack_pointer_offset(
                 r2il::refusal_evidence!(
                     "call-entering-stack-pointer",
                     "call at ({:#x}, {call_op_index}) records no carrier and the machine names no stack pointer",
-                    block.addr
+                    block_addr
                 );
                 return None;
             };
@@ -679,7 +679,7 @@ pub(crate) fn call_entering_stack_pointer_offset(
                 prep,
                 graph,
                 storage,
-                block.addr,
+                block_addr,
                 call_op_index,
                 calls_move_stack_pointer,
             ) {
@@ -697,7 +697,7 @@ pub(crate) fn call_entering_stack_pointer_offset(
                     r2il::refusal_evidence!(
                         "call-entering-stack-pointer",
                         "call at ({:#x}, {call_op_index}) records no carrier and no {storage:?} reaches it",
-                        block.addr
+                        block_addr
                     );
                     return None;
                 }
@@ -709,7 +709,7 @@ pub(crate) fn call_entering_stack_pointer_offset(
             "call-entering-stack-pointer",
             "call at ({:#x}, {call_op_index}) found {}, which has no entry-relative root; \
              it is defined by {:?}; the function has {} entry-relative and {} declared-base roots",
-            block.addr,
+            block_addr,
             graph.var(entering),
             unrooted_definition_chain(graph, prep, entering),
             prep.map_or(0, |facts| facts.entry_stack_address_roots.len()),
@@ -782,15 +782,17 @@ fn unrooted_definition_chain(
 }
 
 /// The last operation of a block past a call's boundary: its `CallDefine` and `CallRestore` run and the lanes it inserts.
-fn terminal_past_call_boundary<V: Ord>(ops: &[SSAOp<V>]) -> Option<&SSAOp<V>> {
+fn terminal_past_call_boundary<'o, V: Ord + 'o>(
+    ops: impl DoubleEndedIterator<Item = &'o SSAOp<V>> + Clone,
+) -> Option<&'o SSAOp<V>> {
     let call_defined = ops
-        .iter()
+        .clone()
         .filter_map(|op| match op {
             SSAOp::CallDefine { dst } => Some(dst),
             _ => None,
         })
         .collect::<BTreeSet<_>>();
-    ops.iter().rev().find(|op| match op {
+    ops.rev().find(|op| match op {
         SSAOp::CallDefine { .. } | SSAOp::CallRestore { .. } => false,
         SSAOp::Insert(insert) => !call_defined.contains(&insert.value),
         _ => true,
@@ -827,11 +829,15 @@ pub(crate) fn preserved_call_carriers(
         return BTreeSet::new();
     }
     let mut saw_return = false;
-    for block in function.blocks() {
+    for block in &graph.blocks {
         if !function.successors(block.addr).is_empty() {
             continue;
         }
-        match terminal_past_call_boundary(block.ops()) {
+        let ops = graph
+            .op_insts(block.id)
+            .iter()
+            .filter_map(|inst| graph.op(*inst));
+        match terminal_past_call_boundary(ops) {
             Some(SSAOp::Return { .. }) => saw_return = true,
             Some(SSAOp::Call { .. } | SSAOp::CallInd { .. }) => {}
             _ => return BTreeSet::new(),
@@ -845,11 +851,13 @@ pub(crate) fn preserved_call_carriers(
     // it does. The call defines only the registers this body touches, so the
     // rest of the universe is answered here: a register no instruction
     // writes survives an inner call only when that callee's body says so.
-    for op in function.blocks().iter().flat_map(|block| block.ops()) {
+    let ops = (graph.blocks.iter())
+        .flat_map(|block| graph.op_insts(block.id))
+        .filter_map(|inst| graph.op(*inst));
+    for op in ops {
         let inner = match op {
             SSAOp::Call { target, .. } => graph
-                .value_of(*target)
-                .and_then(|value| graph.value(value))
+                .value(*target)
                 .and_then(|value| value.canonical_storage)
                 .filter(|storage| storage.space == crate::CanonicalStorageSpace::Ram)
                 .and_then(|storage| machine_context.callee_preserved(storage.offset)),
@@ -1043,7 +1051,9 @@ pub(crate) fn reaching_abi_value_at_end(
     visited: &BTreeMap<u64, usize>,
     memo: &mut BTreeMap<u64, Option<ReachingAbiPath>>,
 ) -> Option<ReachingAbiPath> {
-    let boundary = search.function.get_block(block_addr)?.ops().len();
+    let boundary = (search.graph)
+        .op_insts(search.graph.block_id_for_addr(block_addr)?)
+        .len();
     if visited.contains_key(&block_addr) {
         return reaching_abi_value_before(search, block_addr, boundary, visited, memo);
     }
@@ -1106,8 +1116,9 @@ pub(crate) fn reaching_abi_value_before(
         storage,
         policy,
     } = search;
-    let block = function.get_block(block_addr)?;
-    let var = |id: crate::VarId| function.var(id);
+    let block = graph.block_id_for_addr(block_addr)?;
+    let insts = graph.op_insts(block);
+    let var = |id: ValueId| graph.var(id);
     // A block already on this path was scanned up to the boundary it was
     // entered at; a back edge asks about the rest of it. What that rest
     // defines reaches the boundary round the loop, and what it does not
@@ -1122,16 +1133,18 @@ pub(crate) fn reaching_abi_value_before(
     r2il::refusal_evidence!(
         "reaching-abi-value",
         "walk ({block_addr:#x}, {scan_start}..{boundary_op_index}) of {} ops for {storage:?}",
-        block.ops().len()
+        insts.len()
     );
-    for (op_index, op) in block
-        .ops()
+    for (op_index, &producer) in insts
         .get(scan_start..boundary_op_index)?
         .iter()
         .enumerate()
-        .map(|(index, op)| (scan_start + index, op))
+        .map(|(index, inst)| (scan_start + index, inst))
         .rev()
     {
+        let Some(op) = graph.op(producer) else {
+            continue;
+        };
         // A call's clobbers are the `CallDefine`s that follow it, each a
         // definition the overlap check below sees; the call itself is a
         // barrier only for the carrier the transfer moves.
@@ -1147,16 +1160,13 @@ pub(crate) fn reaching_abi_value_before(
             r2il::refusal_evidence!(
                 "reaching-abi-value",
                 "({block_addr:#x}, {op_index}) is a barrier for {storage:?}: {:?}",
-                function.named(op)
+                graph.named_op(op)
             );
             return None;
         }
         if op.dst().is_none() {
             continue;
         }
-        let Some(producer) = block.op_id(op_index).and_then(|id| graph.inst_for_op(id)) else {
-            continue;
-        };
         let Some(dst_storage) = graph
             .inst(producer)
             .and_then(|inst| graph.written_storage(inst))
@@ -1228,7 +1238,7 @@ pub(crate) fn reaching_abi_value_before(
                 "({block_addr:#x}, {op_index}) writes {:?}, a slice of the {:?} wanted: {:?}",
                 dst_storage,
                 storage,
-                function.named(op)
+                graph.named_op(op)
             );
             return None;
         }
@@ -1246,18 +1256,16 @@ pub(crate) fn reaching_abi_value_before(
         return Some(ReachingAbiPath::Cycle);
     }
     // The merge of the storage, or of the root it is the low lane of (B3).
-    let merges = |phi: &&crate::PhiNode<crate::VarId>| {
-        phi.canonical_storage.is_some_and(|merged| {
-            merged == storage
-                || machine_context.is_some_and(|context| context.is_low_lane_of(storage, merged))
-        })
+    let merges = |merged: CanonicalStorageId| {
+        merged == storage
+            || machine_context.is_some_and(|context| context.is_low_lane_of(storage, merged))
     };
-    let phi_insts = block
-        .phis()
-        .iter()
-        .filter(merges)
-        .filter_map(|phi| graph.value_of(phi.dst))
-        .filter_map(|value| graph.def_inst(value))
+    let phi_insts = (graph.phi_insts(block).iter().copied())
+        .filter(|phi| {
+            (graph.inst(*phi))
+                .and_then(|phi| graph.written_storage(phi))
+                .is_some_and(merges)
+        })
         .collect::<Vec<_>>();
     if let [phi_inst] = phi_insts.as_slice() {
         let phi = graph.inst(*phi_inst)?;
@@ -1426,27 +1434,21 @@ pub(crate) fn contained_register_storage_offset(
 /// tie at the widest observed width refuses. The scan is bounded by what the
 /// convention's call effect clobbers rather than by the function size.
 pub(crate) fn observed_convention_call_result_after_call(
-    function: &SSAFunction,
     graph: &SsaGraph,
     live_out: &crate::liveout::FunctionLiveOut,
     block_addr: u64,
     call_op_index: usize,
     convention_storage: CanonicalStorageId,
 ) -> Option<CallBoundaryValueFact> {
-    let block = function.get_block(block_addr)?;
-    let candidates = block
-        .ops()
+    let block = graph.block_id_for_addr(block_addr)?;
+    let candidates = (graph.op_insts(block))
         .get(call_op_index.checked_add(1)?..)?
         .iter()
-        .enumerate()
-        .take_while(|(_, op)| matches!(op, SSAOp::CallDefine { .. }))
-        .filter_map(|(relative_index, op)| {
-            let SSAOp::CallDefine { dst } = op else {
-                return None;
-            };
-            let inst = graph.inst_for_op(
-                block.op_id(call_op_index.checked_add(1)?.checked_add(relative_index)?)?,
-            )?;
+        .map_while(|&inst| match graph.op(inst)? {
+            SSAOp::CallDefine { dst } => Some((inst, *dst)),
+            _ => None,
+        })
+        .filter_map(|(inst, dst)| {
             let graph_inst = graph.inst(inst)?;
             let storage = graph.written_storage(graph_inst)?;
             if storage != convention_storage
@@ -1456,7 +1458,7 @@ pub(crate) fn observed_convention_call_result_after_call(
             }
             let value = graph_inst.output?;
             // The caller of this body is a reader too, and the use list alone cannot see it.
-            if function.var(*dst).size != storage.size
+            if graph.var(dst).size != storage.size
                 || !crate::liveout::is_read(graph, live_out, value)
             {
                 return None;
@@ -1515,8 +1517,11 @@ pub(crate) fn callee_write_spans(
     let mut reaching = BTreeMap::<CanonicalStorageId, ReachingStorage<'_>>::new();
     let mut spans = Vec::new();
     let mut unbounded = BTreeSet::new();
-    for block in function.blocks() {
-        for (op_id, op) in block.sited() {
+    for block in &graph.blocks {
+        for &call in graph.op_insts(block.id) {
+            let Some(op) = graph.op(call) else {
+                continue;
+            };
             let (target, instruction) = match op {
                 SSAOp::Call {
                     target,
@@ -1538,12 +1543,8 @@ pub(crate) fn callee_write_spans(
                 .raw_call_site_at(*instruction)
                 .and_then(|identity| machine_context.callee_name(identity))
                 .unwrap_or("");
-            let target = target
-                .and_then(|target| graph.value_of(*target))
-                .and_then(|target| resolve_graph_literal_value(graph, Some(facts), target));
-            let Some(call) = graph.inst_for_op(op_id) else {
-                continue;
-            };
+            let target =
+                target.and_then(|target| resolve_graph_literal_value(graph, Some(facts), *target));
             let mut argument = |index: usize| -> Option<ValueId> {
                 let storage = *registers.get(index)?;
                 let states = reaching

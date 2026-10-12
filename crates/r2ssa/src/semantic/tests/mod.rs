@@ -2725,7 +2725,7 @@ fn a_convention_result_read_only_by_the_return_is_the_call_result() {
         .position(|op| matches!(op, SSAOp::Call { .. }))
         .expect("the call survives");
     let found = super::observed_convention_call_result_after_call(
-        function, graph, &live_out, 0x1000, call_index, eax,
+        graph, &live_out, 0x1000, call_index, eax,
     )
     .expect("the returned clobber is this call's result");
     // Nothing in the body reads it, which is what the use list alone gets wrong.
