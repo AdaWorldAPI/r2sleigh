@@ -5925,7 +5925,7 @@ const GO_STACK_CHECK: &[u8] = &[
 
 /// The same prologue whose growth path runs `cpuid` before it calls: an effect no model accounts
 /// for.
-const GO_STACK_CHECK_CPUID: &[u8] = &[
+const GO_STACK_CHECK_EFFECTFUL: &[u8] = &[
     0x4c, 0x8d, 0x64, 0x24, 0xe0, // 0x00 lea r12, [rsp - 0x20]
     0x4d, 0x3b, 0x66, 0x10, // 0x05 cmp r12, [r14 + 0x10]
     0x76, 0x0e, // 0x09 jbe 0x19
@@ -6069,17 +6069,17 @@ fn a_stack_compare_without_a_bound_or_a_model_stays_a_branch() {
         unmodelled.output
     );
     assert!(!unmodelled.output.text().contains("compiler-inserted"));
-    let cpuid = GoStack {
+    let effectful = GoStack {
         fixture: Fixture {
-            bytes: GO_STACK_CHECK_CPUID.to_vec(),
+            bytes: GO_STACK_CHECK_EFFECTFUL.to_vec(),
             name: "main.main",
         },
         growth: "runtime.morestack_noctxt.abi0".to_owned(),
     };
-    let cpuid = decompile(&machine.under("golang"), &cpuid, BASE).expect("decompile");
+    let effectful = decompile(&machine.under("golang"), &effectful, BASE).expect("decompile");
     assert!(
-        !cpuid.output.text().contains("compiler-inserted"),
+        !effectful.output.text().contains("compiler-inserted"),
         "{}",
-        cpuid.output
+        effectful.output
     );
 }
