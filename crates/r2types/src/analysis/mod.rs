@@ -1326,8 +1326,12 @@ pub fn build_source_owned_type_analysis(
     let machine_profile = PreparedMachineVarProfile {
         pointer_arg_slots: collect_prepared_pointer_arg_slot_map(source.as_ref()),
     };
-    let local_structs =
-        infer_local_struct_artifacts_from_prepared_ssa(source.as_ref(), ptr_bits, &mut diagnostics);
+    let local_structs = infer_local_struct_artifacts_from_prepared_ssa(
+        source.as_ref(),
+        ssa_blocks,
+        ptr_bits,
+        &mut diagnostics,
+    );
     // The exact certificates own member naming: one name per (parameter, offset) they certify.
     let exact_source_fields = field_access_certificates_from_source_aggregate_accesses(&source);
     let source_field_names = exact_source_fields
