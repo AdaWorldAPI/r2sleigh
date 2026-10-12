@@ -43,9 +43,10 @@ pub(crate) fn import_stub(
         );
         return None;
     }
-    let Some(identity) = facts.callee_resolution().and_then(|resolution| {
-        resolution.identity_for_callsite(r2types::CallsiteKey { at: callsite.at })
-    }) else {
+    let Some(identity) = facts
+        .callee_resolution()
+        .and_then(|resolution| resolution.identity_for_callsite(callsite.at))
+    else {
         r2il::refusal_evidence!(
             "import-stub-declaration",
             "{:#x}: the transfer resolves to no callee identity",
@@ -77,11 +78,7 @@ pub(crate) fn import_stub(
     // import's declaration at the slot the stub jumps through; the identity's own is by name.
     let certified = facts
         .callsites()
-        .and_then(|callsites| {
-            callsites
-                .by_callsite
-                .get(&r2types::CallsiteKey { at: callsite.at })
-        })
+        .and_then(|callsites| callsites.by_callsite.get(callsite.at))
         .and_then(|fact| fact.callee_signature.clone());
     Some(r2types::ImportStub {
         entry: prepared.function().entry,

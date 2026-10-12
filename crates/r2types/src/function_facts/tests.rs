@@ -764,9 +764,7 @@ fn function_facts_owns_input_quality_evidence() {
 
 #[test]
 fn function_facts_owns_canonical_callee_resolution() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(3),
-    };
+    let callsite = r2ssa::InstId(3);
     let function_names = HashMap::from([(0x402000, "sym.helper".to_string())]);
     let symbols = HashMap::new();
     let known_function_signatures = HashMap::new();
@@ -797,9 +795,7 @@ fn prepared_display_name_does_not_create_a_known_signature() {
         target: Varnode::constant(0x402000, 8),
     });
     let prepared = x86_stack_home_under(&[block], None, Vec::new()).expect("prepared direct call");
-    let callsite = CallsiteKey {
-        at: inst_at(&prepared, 0x401000, 0),
-    };
+    let callsite = inst_at(&prepared, 0x401000, 0);
     let mut names = crate::DisplayNames::default();
     names.insert_function(0x402000, "sym.imp.__memcpy_chk");
     let mut facts = FunctionFacts::default();
@@ -818,12 +814,10 @@ fn prepared_display_name_does_not_create_a_known_signature() {
 
 #[test]
 fn function_facts_owns_canonical_callsite_arguments() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let value = r2ssa::ValueId(11);
     let callsites = FunctionCallsiteFacts {
-        by_callsite: BTreeMap::from([(
+        by_callsite: r2ssa::dense::IdMap::from_iter([(
             callsite,
             CallsiteArgumentFacts {
                 callsite,
@@ -1000,9 +994,7 @@ fn a_storage_width_scalar_is_not_evidence_for_replacing_another_one() {
 
 #[test]
 fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let value = r2ssa::ValueId(11);
     let signed_byte = CTypeLike::Int {
         bits: 8,
@@ -1029,7 +1021,7 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
     let resolution =
         CalleeResolutionFacts::from_direct_call_targets([(callsite, 0x402000)], &identity_ctx);
     let callsites = FunctionCallsiteFacts {
-        by_callsite: BTreeMap::from([(
+        by_callsite: r2ssa::dense::IdMap::from_iter([(
             callsite,
             CallsiteArgumentFacts {
                 callsite,
@@ -1111,13 +1103,11 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
 
 #[test]
 fn function_facts_owns_canonical_call_render_disposition() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let target = r2ssa::ValueId(10);
     let arg = r2ssa::ValueId(11);
     let render = FunctionCallRenderFacts {
-        by_callsite: BTreeMap::from([(
+        by_callsite: r2ssa::dense::IdMap::from_iter([(
             callsite,
             CallsiteRenderFact {
                 callsite,
@@ -1142,9 +1132,7 @@ fn function_facts_owns_canonical_call_render_disposition() {
 
 #[test]
 fn callsite_facts_own_canonical_argument_vector() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let register_value = r2ssa::ValueId(11);
     let stack_value = r2ssa::ValueId(12);
     let duplicate_stack_value = r2ssa::ValueId(99);
@@ -1211,9 +1199,7 @@ fn callsite_facts_own_canonical_argument_vector() {
 
 #[test]
 fn function_facts_owns_canonical_call_results() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let value = r2ssa::ValueId(21);
     let derived_value = r2ssa::ValueId(22);
     let owner = r2ssa::ValueOwner::StackSlot {
@@ -1264,7 +1250,7 @@ fn function_facts_owns_canonical_call_results() {
                 },
             ),
         ]),
-        by_callsite: BTreeMap::from([(callsite, vec![value, derived_value])]),
+        by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, vec![value, derived_value])]),
     };
 
     let facts = FunctionFacts::default().with_call_results(call_results);
@@ -1302,9 +1288,7 @@ fn function_facts_owns_canonical_call_results() {
 
 #[test]
 fn call_result_definition_is_not_replaced_by_a_later_stack_owner() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let defined = r2ssa::ValueId(20);
     let stored = r2ssa::ValueId(21);
     let storage = r2ssa::CanonicalStorageId {
@@ -1345,7 +1329,7 @@ fn call_result_definition_is_not_replaced_by_a_later_stack_owner() {
                 },
             ),
         ]),
-        by_callsite: BTreeMap::from([(callsite, vec![defined, stored])]),
+        by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, vec![defined, stored])]),
     };
 
     assert_eq!(
@@ -1517,9 +1501,7 @@ fn an_implicit_call_read_keeps_its_entry_value_as_a_certified_parameter() {
 
     let mut facts = FunctionFacts::default();
     facts.attach_prepared_decompile_evidence(&prepared);
-    let callsite = CallsiteKey {
-        at: inst_at(&prepared, 0x401000, 0),
-    };
+    let callsite = inst_at(&prepared, 0x401000, 0);
     assert_eq!(
         facts
             .callsites()
@@ -1579,9 +1561,7 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
         target: Varnode::constant(0x402000, 8),
     });
     let prepared = x86_stack_home_prepared(&[block]);
-    let callsite = CallsiteKey {
-        at: inst_at(&prepared, 0x401000, 0),
-    };
+    let callsite = inst_at(&prepared, 0x401000, 0);
     let sentinel_value = r2ssa::ValueId(0xfeed);
     let sentinel_callsite = CallsiteArgumentFacts {
         callsite,
@@ -1642,10 +1622,10 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
     };
     let mut facts = FunctionFacts::default()
         .with_callsites(FunctionCallsiteFacts {
-            by_callsite: BTreeMap::from([(callsite, sentinel_callsite.clone())]),
+            by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, sentinel_callsite.clone())]),
         })
         .with_call_render(FunctionCallRenderFacts {
-            by_callsite: BTreeMap::from([(callsite, sentinel_render.clone())]),
+            by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, sentinel_render.clone())]),
         })
         .with_render(existing_render);
 

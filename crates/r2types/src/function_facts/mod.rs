@@ -11,12 +11,14 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::callee::{CalleeIdentityContext, CalleeResolutionFacts, CallsiteKey};
+use crate::callee::{CalleeIdentityContext, CalleeResolutionFacts};
 use crate::facts::{
     CalleeFact, CalleeLinkage, FunctionTypeFacts, OutParamCertificateEvidence,
     OutParamCertificateSource, SignatureCertificateSource,
 };
 use crate::{CTypeLike, normalize_external_type_name, parse_c_type_like};
+use r2ssa::InstId;
+use r2ssa::dense::IdMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ParamSlotResolver {
@@ -36,7 +38,7 @@ impl ParamSlotResolver {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionCallsiteFacts {
-    pub by_callsite: BTreeMap<CallsiteKey, CallsiteArgumentFacts>,
+    pub by_callsite: IdMap<InstId, CallsiteArgumentFacts>,
 }
 
 impl FunctionCallsiteFacts {
@@ -44,15 +46,15 @@ impl FunctionCallsiteFacts {
         self.by_callsite.is_empty()
     }
 
-    pub fn arguments_for_site(&self, callsite: CallsiteKey) -> Option<&CallsiteArgumentFacts> {
-        self.by_callsite.get(&callsite)
+    pub fn arguments_for_site(&self, callsite: InstId) -> Option<&CallsiteArgumentFacts> {
+        self.by_callsite.get(callsite)
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionCallResultFacts {
     pub by_value: r2ssa::dense::IdMap<r2ssa::ValueId, CallResultFact>,
-    pub by_callsite: BTreeMap<CallsiteKey, Vec<r2ssa::ValueId>>,
+    pub by_callsite: IdMap<InstId, Vec<r2ssa::ValueId>>,
 }
 
 impl FunctionCallResultFacts {
@@ -64,9 +66,9 @@ impl FunctionCallResultFacts {
         self.by_value.get(value)
     }
 
-    pub fn results_for_site(&self, callsite: CallsiteKey) -> impl Iterator<Item = &CallResultFact> {
+    pub fn results_for_site(&self, callsite: InstId) -> impl Iterator<Item = &CallResultFact> {
         self.by_callsite
-            .get(&callsite)
+            .get(callsite)
             .into_iter()
             .flatten()
             .filter_map(|value| self.by_value.get(*value))
@@ -79,7 +81,7 @@ impl FunctionCallResultFacts {
     /// whose definition the call statement renders. The boundary definition is
     /// the earliest identity result carried in a register; propagated identity
     /// results occur later. A tie is ambiguous and therefore remains unowned.
-    pub fn definition_for_site(&self, callsite: CallsiteKey) -> Option<&CallResultFact> {
+    pub fn definition_for_site(&self, callsite: InstId) -> Option<&CallResultFact> {
         let is_boundary_definition = |result: &CallResultFact| {
             result.relation.is_identity()
                 && matches!(result.carrier, r2ssa::ReturnCarrier::Register { .. })
@@ -96,7 +98,7 @@ impl FunctionCallResultFacts {
         definitions.next().is_none().then_some(definition)
     }
 
-    pub fn owner_for_site(&self, callsite: CallsiteKey) -> Option<&r2ssa::ValueOwner> {
+    pub fn owner_for_site(&self, callsite: InstId) -> Option<&r2ssa::ValueOwner> {
         let direct_stack_owner = self.unique_owner_for_site_matching(callsite, |result, owner| {
             result.relation.is_identity()
                 && matches!(&result.carrier, r2ssa::ReturnCarrier::Register { .. })
@@ -154,7 +156,7 @@ impl FunctionCallResultFacts {
 
     fn unique_owner_for_site_matching(
         &self,
-        callsite: CallsiteKey,
+        callsite: InstId,
         accept: impl Fn(&CallResultFact, &r2ssa::ValueOwner) -> bool,
     ) -> Result<Option<&r2ssa::ValueOwner>, ()> {
         let mut selected = None;
@@ -173,7 +175,7 @@ impl FunctionCallResultFacts {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionCallRenderFacts {
-    pub by_callsite: BTreeMap<CallsiteKey, CallsiteRenderFact>,
+    pub by_callsite: IdMap<InstId, CallsiteRenderFact>,
 }
 
 impl FunctionCallRenderFacts {
@@ -181,8 +183,8 @@ impl FunctionCallRenderFacts {
         self.by_callsite.is_empty()
     }
 
-    pub fn fact_for_site(&self, callsite: CallsiteKey) -> Option<&CallsiteRenderFact> {
-        self.by_callsite.get(&callsite)
+    pub fn fact_for_site(&self, callsite: InstId) -> Option<&CallsiteRenderFact> {
+        self.by_callsite.get(callsite)
     }
 }
 
@@ -2453,7 +2455,7 @@ impl FunctionFacts {
         let mut constraints = BTreeMap::<usize, CTypeLike>::new();
         let mut conflicted = BTreeSet::new();
         for (callsite, arguments) in &self.callsites.by_callsite {
-            let identity = self.callee_resolution.identity_for_callsite(*callsite);
+            let identity = self.callee_resolution.identity_for_callsite(callsite);
             let signature = arguments
                 .callee_signature
                 .as_ref()
@@ -2757,7 +2759,7 @@ impl FunctionFacts {
         for (callsite, arguments) in &self.callsites.by_callsite {
             let Some(signature) = arguments.callee_signature.as_ref().or_else(|| {
                 self.callee_resolution
-                    .identity_for_callsite(*callsite)
+                    .identity_for_callsite(callsite)
                     .and_then(crate::CalleeIdentity::known_signature)
             }) else {
                 continue;

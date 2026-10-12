@@ -36,7 +36,7 @@ pub(crate) use facts::{
 
 pub use callee::{
     CalleeClass, CalleeIdentity, CalleeIdentityContext, CalleeIdentityKey, CalleeResolutionFacts,
-    CalleeTargetIdentityRequest, CalleeTargetResolutionRequest, CallsiteKey, ResolvedCalleeTarget,
+    CalleeTargetIdentityRequest, CalleeTargetResolutionRequest, ResolvedCalleeTarget,
     normalize_callee_name,
 };
 pub use constraint::{Constraint, ConstraintSource, SolverNode};

@@ -8,7 +8,7 @@ pub type MemoryEffectKey = (r2ssa::InstId, bool);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallsiteRenderFact {
-    pub callsite: CallsiteKey,
+    pub callsite: InstId,
     pub target: Option<r2ssa::ValueId>,
     pub disposition: CallsiteRenderDisposition,
     pub proof_values: Vec<r2ssa::ValueId>,
@@ -582,7 +582,7 @@ pub struct SwitchSelectorFact {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallResultFact {
-    pub callsite: CallsiteKey,
+    pub callsite: InstId,
     pub call_site_id: r2ssa::CallSiteId,
     pub at: r2ssa::InstId,
     pub value: r2ssa::ValueId,
@@ -594,7 +594,7 @@ pub struct CallResultFact {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallsiteArgumentFacts {
-    pub callsite: CallsiteKey,
+    pub callsite: InstId,
     pub call_site_id: r2ssa::CallSiteId,
     pub at: r2ssa::InstId,
     pub target: r2ssa::ValueId,
@@ -1174,7 +1174,7 @@ pub(crate) fn prepared_callee_resolution_facts(
             .values()
             .filter_map(|call_site| {
                 let direct_target = prepared.resolved_call_target(call_site)?;
-                Some((CallsiteKey { at: call_site.at }, direct_target))
+                Some((call_site.at, direct_target))
             }),
         &ctx,
     )
@@ -1188,7 +1188,7 @@ pub(crate) fn prepared_callsite_argument_facts(
         .callsites
         .values()
         .map(|cert| {
-            let callsite = CallsiteKey { at: cert.at };
+            let callsite = cert.at;
             let argument_values = cert
                 .argument_values
                 .iter()
@@ -1265,15 +1265,15 @@ pub(crate) fn prepared_callsite_argument_facts(
 
 pub(crate) fn prepared_call_result_facts(prepared: &r2ssa::SsaArtifact) -> FunctionCallResultFacts {
     let mut by_value = r2ssa::dense::IdMap::default();
-    let mut by_callsite = BTreeMap::<CallsiteKey, Vec<r2ssa::ValueId>>::new();
+    let mut by_callsite = IdMap::<InstId, Vec<r2ssa::ValueId>>::default();
     for cert in prepared.certificates().call_results.values() {
         let Some(callsite_cert) = prepared.certificates().callsites.get(&cert.call_site) else {
             continue;
         };
-        let callsite = CallsiteKey {
-            at: callsite_cert.at,
-        };
-        by_callsite.entry(callsite).or_default().push(cert.value);
+        let callsite = callsite_cert.at;
+        by_callsite
+            .get_or_insert_with(callsite, Vec::new)
+            .push(cert.value);
         by_value.insert(
             cert.value,
             CallResultFact {
@@ -1300,7 +1300,7 @@ pub(crate) fn prepared_call_render_facts(prepared: &r2ssa::SsaArtifact) -> Funct
         .callsites
         .values()
         .map(|cert| {
-            let callsite = CallsiteKey { at: cert.at };
+            let callsite = cert.at;
             // This fact says how control leaves the site, not what the
             // statement assigns; the plan owns that, from the value it defines.
             let count_refusal = if cert.variadic {

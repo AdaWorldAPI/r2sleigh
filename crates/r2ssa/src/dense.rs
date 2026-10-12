@@ -215,6 +215,12 @@ impl<I: DenseId, T> IdMap<I, T> {
     }
 
     /// The values, in id order.
+    /// Each value, to update in place, in the order entries were made: the updates must not
+    /// depend on one another.
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.entries.iter_mut().map(|(_, value)| value)
+    }
+
     pub fn values(&self) -> impl Iterator<Item = &T> {
         self.iter().map(|(_, value)| value)
     }
