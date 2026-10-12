@@ -86,6 +86,25 @@ fn a_data_symbol_or_an_import_s_symbol_states_no_function() {
     }
 }
 
+/// A frame the call-frame information states begins a function, which survives a strip; a frame
+/// holding a linkage stub is the stub table's and begins none (ROADMAP I).
+#[test]
+fn a_stated_frame_begins_a_function_and_the_stub_table_s_does_not() {
+    let stripped = || Literal::new().stripped_of("stepped");
+    let unstated = believed(&mut OpenProgram::of(stripped()));
+    assert!(!unstated.iter().any(|(address, _)| *address == STEPPED));
+    let framed = believed(&mut OpenProgram::of(
+        stripped().unwinding(STEPPED..STEPPED + 0xc),
+    ));
+    assert!(framed.contains(&(STEPPED, Basis::Stated)), "{framed:x?}");
+
+    let plt = believed(&mut OpenProgram::of(Literal::plt()));
+    let framed_plt = believed(&mut OpenProgram::of(
+        Literal::plt().unwinding(BASE..BASE + 0x20),
+    ));
+    assert_eq!(framed_plt, plt);
+}
+
 #[test]
 fn every_reference_every_believed_body_makes_is_indexed_once_in_order() {
     // `one` and `two` each read a word the program's `.text` holds, and

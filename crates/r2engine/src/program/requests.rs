@@ -848,6 +848,17 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Modes {
 /// Where the program states a function begins, and whether it states the code there is Thumb.
 fn stated_functions<S: Source + 'static>(view: &View<'_, S>) -> Vec<(u64, Confidence, bool)> {
     let container = view.source().container();
+    let imports = view.imports();
+    // Each frame the call-frame information states begins a function, which survives a strip
+    // (ROADMAP I); one holding a linkage stub is the stub table's.
+    let frames = (container.unwind.frames())
+        .filter(|frame| {
+            imports
+                .range(frame.start..frame.end.max(frame.start + 1))
+                .next()
+                .is_none()
+        })
+        .map(|frame| (frame.start, view.thumb_at(frame.start)));
     container
         .entries
         .iter()
@@ -859,7 +870,8 @@ fn stated_functions<S: Source + 'static>(view: &View<'_, S>) -> Vec<(u64, Confid
                 .filter(|symbol| symbol.defined && symbol.kind == SymbolKind::Function)
                 .map(|symbol| (symbol.vaddr, symbol.thumb)),
         )
-        .chain(view.imports().keys().map(|vaddr| (*vaddr, false)))
+        .chain(imports.keys().map(|vaddr| (*vaddr, false)))
+        .chain(frames)
         .map(|(vaddr, thumb)| (vaddr, Confidence::of(Basis::Stated), thumb))
         .collect()
 }

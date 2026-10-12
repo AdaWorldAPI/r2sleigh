@@ -642,6 +642,16 @@ impl Literal {
         self
     }
 
+    /// The same program with one more frame its call-frame information states, covering `range`.
+    pub fn unwinding(mut self, range: Range<u64>) -> Self {
+        self.container.unwind.insert(r2abi::frames::UnwindFrame {
+            start: range.start,
+            end: range.end,
+            saves: BTreeMap::new(),
+        });
+        self
+    }
+
     /// The same program with one more entry point in the container.
     pub fn entering(mut self, vaddr: u64, kind: EntryKind) -> Self {
         self.container.entries.push(Entry {
