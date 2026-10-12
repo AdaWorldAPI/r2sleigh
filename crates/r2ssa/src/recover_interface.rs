@@ -1092,8 +1092,10 @@ fn written_bytes(
 /// unused parameter is the safe direction.
 ///
 /// Returns `None` when the convention offers no candidates, which leaves the
-/// caller to refuse rather than assume a convention.
-pub fn recover_interface(
+/// caller to refuse rather than assume a convention. Production recovers on the
+/// preliminary build, before the seal drops the lane record it reads.
+#[cfg(test)]
+pub(crate) fn recover_interface(
     func: &SSAFunction,
     slots: &SourceConventionSlots,
     loader_role: Option<r2source::SourceLoaderRole>,

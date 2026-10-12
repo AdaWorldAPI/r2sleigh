@@ -86,8 +86,8 @@ pub use r2source::DisplayNames;
 pub use r2ssa::AssumptionUsageReport;
 
 pub use analysis::{
-    DecompileFinalization, TypeAnalysis, TypeAnalysisError, TypeAnalysisRequest,
-    build_source_owned_type_analysis, source_type_like,
+    DecompileFinalization, FinalizationRefused, TypeAnalysis, TypeAnalysisError,
+    TypeAnalysisRequest, build_source_owned_type_analysis, source_type_like,
 };
 
 #[cfg(test)]

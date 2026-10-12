@@ -274,10 +274,8 @@ impl Demand<'_> {
     }
 
     fn discharge(&mut self, value: ValueId) {
-        let Some(canonical) = self.roots.value(value) else {
-            return;
-        };
-        for inst in discharged_insts(self.graph, canonical.discharges.iter()) {
+        let discharges = self.roots.discharges(self.projection, value);
+        for inst in discharged_insts(self.graph, discharges.iter()) {
             self.discharged[inst.0 as usize] = true;
         }
     }
@@ -970,10 +968,9 @@ impl<'a> Values<'a> {
     }
 
     fn mark_discharged(&self, value: ValueId) {
-        if let Some(canonical) = self.roots.value(value) {
-            for inst in discharged_insts(self.graph, canonical.discharges.iter()) {
-                self.mark(inst);
-            }
+        let discharges = self.roots.discharges(&self.projection, value);
+        for inst in discharged_insts(self.graph, discharges.iter()) {
+            self.mark(inst);
         }
     }
 
@@ -1695,7 +1692,8 @@ impl<'a> Values<'a> {
             return None;
         }
         let arena = self.roots.arena();
-        let (address, cell) = match self.roots.access(store_access(self.inventory, inst)) {
+        let access_id = store_access(self.inventory, inst);
+        let (address, cell) = match self.roots.access(access_id) {
             Some(access) => {
                 let cell = arena.term(access.canonical);
                 let bytes = cell.ty.width_bits() / 8;
@@ -1708,7 +1706,8 @@ impl<'a> Values<'a> {
                     }
                     _ => return None,
                 };
-                for discharged in discharged_insts(self.graph, access.discharges.iter()) {
+                let discharges = self.roots.access_discharges(&self.projection, access_id);
+                for discharged in discharged_insts(self.graph, discharges.iter()) {
                     self.mark(discharged);
                 }
                 (address, cell.ty)

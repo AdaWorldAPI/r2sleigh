@@ -504,6 +504,15 @@ pub struct TrustedSsaArtifact {
     arch: crate::Arch,
 }
 
+/// A trusted lift built and prepared, before the seal.
+struct Constructed {
+    function: Prepared,
+    machine_context: SourceMachineContext,
+    finish: Finish,
+    source_block_count: usize,
+    arch: crate::Arch,
+}
+
 /// See [`SsaArtifact::register_identity_census`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RegisterIdentityCensus {
@@ -2276,6 +2285,49 @@ impl TrustedSsaArtifact {
         evidence: &CalleeEvidence,
         premises: &BTreeSet<r2source::Premise>,
     ) -> Result<Self, SsaPrepareError> {
+        let Constructed {
+            function,
+            machine_context,
+            finish,
+            source_block_count,
+            arch,
+        } = Self::construct(lifted, arch, control, evidence, premises)?;
+        let artifact = SsaArtifact::seal_finished(function, machine_context, finish, control)?;
+        Ok(Self {
+            artifact: Arc::new(artifact),
+            source_block_count,
+            arch,
+        })
+    }
+
+    /// Where each dispatch reads its table, off the sealed function before any fact is collected:
+    /// the values are those the artifact's facts would solve from the same function.
+    pub fn dispatch_table_reads_with_callee_interfaces<C: SsaWorkControl + ?Sized>(
+        lifted: TrustedLiftedFunction,
+        arch: Option<&crate::Arch>,
+        control: &C,
+        evidence: &CalleeEvidence,
+        premises: &BTreeSet<r2source::Premise>,
+    ) -> Result<Vec<crate::indirect::DispatchTableRead>, SsaPrepareError> {
+        let constructed = Self::construct(lifted, arch, control, evidence, premises)?;
+        control.poll()?;
+        let sealed = (constructed.function)
+            .seal(&constructed.machine_context)
+            .map_err(integrity_refusal)?;
+        control.poll()?;
+        let reads = crate::indirect::sealed_dispatch_table_reads(&sealed);
+        control.poll()?;
+        Ok(reads)
+    }
+
+    /// The function built against its interface, stated or recovered, and the context it is sealed in.
+    fn construct<C: SsaWorkControl + ?Sized>(
+        lifted: TrustedLiftedFunction,
+        arch: Option<&crate::Arch>,
+        control: &C,
+        evidence: &CalleeEvidence,
+        premises: &BTreeSet<r2source::Premise>,
+    ) -> Result<Constructed, SsaPrepareError> {
         let CalleeEvidence {
             interfaces: callee_interfaces,
             preserved: callee_preserved_carriers,
@@ -2583,10 +2635,10 @@ impl TrustedSsaArtifact {
             return Err(malformed_ssa_input());
         }
         control.poll()?;
-        let artifact = SsaArtifact::seal_finished(
+        Ok(Constructed {
             function,
             machine_context,
-            Finish {
+            finish: Finish {
                 provenance: SsaArtifactProvenance::TrustedSource(source),
                 spellings: ArtifactSpellings {
                     display_names,
@@ -2594,10 +2646,6 @@ impl TrustedSsaArtifact {
                 },
                 native_spans: Some(native_spans),
             },
-            control,
-        )?;
-        Ok(Self {
-            artifact: Arc::new(artifact),
             source_block_count: blocks.len(),
             arch,
         })
@@ -2957,6 +3005,11 @@ impl SSAFunction {
     /// Record what each operation writes, before anything rewrites one.
     pub(crate) fn capture_written(&mut self) {
         self.written = crate::lanes::Written::capture(self);
+    }
+
+    /// Keep of the record only what the sealed function's readers ask.
+    pub(crate) fn seal_written(&mut self) {
+        self.written = std::mem::take(&mut self.written).sealed();
     }
 
     pub fn arena(&self) -> &OpArena {

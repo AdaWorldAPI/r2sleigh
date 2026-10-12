@@ -1652,9 +1652,12 @@ fn fold_condition_codes(op: &Op, facts: &FlagFacts<'_>) -> Option<Op> {
     }
 }
 
-/// The constant a value is, computed through its definitions: the decompile
-/// pipeline runs no constant propagation, so `x9 = 4; (x9 == 0)` is decided
-/// here where the operation that reads the result is simplified.
+/// How deep one operand's fold reads, so a combine round stays linear; deeper, the operand stays a
+/// variable, the evidence says so, and the next round's propagation carries the rest.
+const FOLD_DEPTH: u32 = 8;
+
+/// The constant a value is, computed through its definitions, so `x9 = 4; (x9 == 0)` is decided
+/// where the operation that reads the result is simplified, in the same round.
 fn constant_through_definitions(
     var: VarId,
     defs: &IdMap<VarId, Op>,
@@ -1664,10 +1667,14 @@ fn constant_through_definitions(
     if let Some(value) = const_value(values, var) {
         return Some(value);
     }
-    if depth > 8 {
+    let op = defs.get(var)?;
+    if depth > FOLD_DEPTH {
+        r2il::refusal_evidence!(
+            "fold-depth",
+            "a definition {FOLD_DEPTH} deep folds no further this round"
+        );
         return None;
     }
-    let op = defs.get(var)?;
     let mut known = Vec::new();
     for source in op.sources() {
         known.push((

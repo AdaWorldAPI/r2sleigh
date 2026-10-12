@@ -313,10 +313,9 @@ impl<S: Source + 'static> OpenProgram<S> {
             .iter()
             .find(|entry| entry.kind == EntryKind::Main)
             .or_else(|| entries.first());
-        // `entry0` names an entry the container states, never a stub, so no decoder is loaded to start.
-        let stated = self.db.get::<StatedNames>(&());
-        stated
-            .expect("the stated names ask for nothing")
+        // `entry0` names an entry the container states, so the stated names answer with no decoder,
+        // built and dropped here: `Names` holds the one table.
+        naming::of(self.source())
             .address_of("entry0")
             .or_else(|| declared.map(|entry| entry.vaddr))
             .or_else(|| {
@@ -751,19 +750,6 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Imports {
     }
 }
 
-/// What the container names: its sections, symbols and entries, read with no decoder.
-struct StatedNames;
-
-impl<S: Source + 'static> Query<ProgramInputs<S>> for StatedNames {
-    type Key = ();
-    type Value = NameDb;
-    const NAME: &'static str = "stated-names";
-
-    fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
-        naming::of(&Recorded { db })
-    }
-}
-
 /// What this binary calls each address it names.
 struct Names;
 
@@ -775,10 +761,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Names {
     fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
         let source = Recorded { db };
         let imports = db.get::<Imports>(&()).expect("the imports ask for nothing");
-        let stated = db
-            .get::<StatedNames>(&())
-            .expect("the stated names ask for nothing");
-        let mut names = NameDb::clone(&stated);
+        let mut names = naming::of(&source);
         naming::name_strings(&mut names, &source);
         naming::name_imports(&mut names, &imports);
         naming::name_slots(

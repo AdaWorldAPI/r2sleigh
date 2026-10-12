@@ -242,21 +242,27 @@ impl TypeAnalysis {
     pub fn finalize_for_decompile(
         mut self,
         finalization: DecompileFinalization,
-    ) -> Result<SourceOwnedFunctionFacts, TypeAnalysisError> {
+    ) -> Result<SourceOwnedFunctionFacts, FinalizationRefused> {
         if !SourceOwnedFunctionFacts::stamp_report_decompile_route(
             &mut self.function_facts,
             finalization.kind,
             finalization.reason,
             finalization.fallback_comment,
         ) {
-            return Err(TypeAnalysisError::IncompatibleDecompileRoute);
+            return Err(FinalizationRefused {
+                error: TypeAnalysisError::IncompatibleDecompileRoute,
+                facts: Box::new(self.function_facts),
+            });
         }
         SourceOwnedFunctionFacts::seal_with_callee_signatures(
             self.source,
             self.function_facts,
             self.callee_signatures,
         )
-        .ok_or(TypeAnalysisError::FunctionFactsSourceMismatch)
+        .map_err(|facts| FinalizationRefused {
+            error: TypeAnalysisError::FunctionFactsSourceMismatch,
+            facts,
+        })
     }
 
     /// Project the enriched signature into the type plan.
@@ -407,6 +413,13 @@ fn exact_source_argument_slot_for_register(source: &SsaArtifact, register: &str)
         return None;
     }
     usize::try_from(parameter.index()).ok()
+}
+
+/// Why finalization refused, and the facts it was handed, which the refusal carries.
+#[derive(Debug)]
+pub struct FinalizationRefused {
+    pub error: TypeAnalysisError,
+    pub facts: Box<crate::FunctionFacts>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

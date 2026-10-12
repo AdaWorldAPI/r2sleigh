@@ -308,6 +308,13 @@ pub(crate) fn collect_renderable_expression_values(
             })
         })
         .collect::<Vec<_>>();
+    let reads_memory = values_reading_memory(graph, !loop_phis.is_empty());
+    let env = ExpressionRenderEnv {
+        prep,
+        graph,
+        certified_memory_read_insts: &certified_memory_read_insts,
+        reads_memory: &reads_memory,
+    };
     loop {
         while let Some(value) = ready.pop_front() {
             for use_site in graph.use_sites(value) {
@@ -339,14 +346,8 @@ pub(crate) fn collect_renderable_expression_values(
             if renderable.contains(output) {
                 continue;
             }
-            if expression_loop_phi_is_renderable(
-                prep,
-                graph,
-                structured,
-                inst,
-                &renderable,
-                &certified_memory_read_insts,
-            ) && renderable.insert(output)
+            if expression_loop_phi_is_renderable(&env, structured, inst, &renderable)
+                && renderable.insert(output)
             {
                 ready.push_back(output);
                 added_loop_phi = true;
@@ -388,31 +389,30 @@ pub(crate) fn expression_inst_is_renderable(
     }
 }
 
-pub(crate) fn expression_phi_is_identity_renderable(
-    graph: &SsaGraph,
+fn expression_phi_is_identity_renderable(
+    env: &ExpressionRenderEnv<'_>,
     inst: &crate::graph::GraphInst,
 ) -> bool {
     let Some(first) = inst.inputs.first() else {
         return false;
     };
-    expression_phi_is_identity(inst) && !expression_value_depends_on_memory_read(graph, *first)
+    expression_phi_is_identity(inst) && !env.reads_memory.contains(*first)
 }
 
-pub(crate) fn expression_phi_is_renderable(
-    prep: Option<&crate::DecompilePrepFacts>,
-    graph: &SsaGraph,
+fn expression_phi_is_renderable(
+    env: &ExpressionRenderEnv<'_>,
     inst: &crate::graph::GraphInst,
 ) -> bool {
-    expression_phi_is_identity_renderable(graph, inst)
-        || expression_phi_has_single_canonical_root(prep, graph, inst)
+    expression_phi_is_identity_renderable(env, inst)
+        || expression_phi_has_single_canonical_root(env, inst)
 }
 
-pub(crate) fn expression_phi_has_single_canonical_root(
-    prep: Option<&crate::DecompilePrepFacts>,
-    graph: &SsaGraph,
+fn expression_phi_has_single_canonical_root(
+    env: &ExpressionRenderEnv<'_>,
     inst: &crate::graph::GraphInst,
 ) -> bool {
-    let Some(prep_facts) = prep else {
+    let graph = env.graph;
+    let Some(prep_facts) = env.prep else {
         return false;
     };
     // The inputs are one value when they name one representative: the same
@@ -433,56 +433,40 @@ pub(crate) fn expression_phi_has_single_canonical_root(
         return false;
     };
     let first = crate::view::class_value(graph, Some(&prep_facts.views), first_input);
-    if expression_value_depends_on_memory_read(graph, first) {
+    if env.reads_memory.contains(first) {
         return false;
     }
     roots.all(|(root, _)| root == first_root)
 }
 
-/// Whether any value this one is computed from reads memory.
-///
-/// The visited set is the termination argument: the def-use graph is finite
-/// and each value is expanded once, so the walk is linear in it. A depth bound
-/// here would answer "no memory read" for a dependence it declined to look
-/// at, which is the one answer that must never be guessed.
-#[cfg_attr(
-    dylint_lib = "r2sleigh_lints",
-    allow(
-        entity_keyed_map,
-        reason = "a walk guard of one query: the few ids one walk visits, where a bitset would cost O(values) per query"
-    )
-)]
-pub(crate) fn expression_value_depends_on_memory_read(graph: &SsaGraph, value: ValueId) -> bool {
-    let mut stack = vec![value];
-    let mut visited = BTreeSet::new();
-
-    while let Some(current) = stack.pop() {
-        if !visited.insert(current) {
-            continue;
-        }
-        let Some(inst) = graph
-            .def_inst(current)
-            .and_then(|inst_id| graph.inst(inst_id))
-        else {
-            continue;
-        };
-        if matches!(&inst.payload, InstPayload::Op(op) if op.is_memory_read()) {
-            return true;
-        }
-        stack.extend(inst.inputs.iter().copied());
+/// Every value computed, through any chain of definitions, from a memory read, where `asked`: one
+/// pass from the reads along their uses, `O(V + E)`, where asking per value was a walk each.
+fn values_reading_memory(graph: &SsaGraph, asked: bool) -> crate::dense::IdSet<ValueId> {
+    let mut reads = crate::dense::IdSet::default();
+    if !asked {
+        return reads;
     }
-
-    false
+    let mut work = (graph.insts.iter())
+        .filter(|inst| matches!(&inst.payload, InstPayload::Op(op) if op.is_memory_read()))
+        .filter_map(|inst| inst.output)
+        .filter(|value| reads.insert(*value))
+        .collect::<Vec<_>>();
+    while let Some(value) = work.pop() {
+        for site in graph.use_sites(value) {
+            let output = graph.inst(site.inst).and_then(|inst| inst.output);
+            work.extend(output.filter(|output| reads.insert(*output)));
+        }
+    }
+    reads
 }
 
-pub(crate) fn expression_loop_phi_is_renderable(
-    prep: Option<&crate::DecompilePrepFacts>,
-    graph: &SsaGraph,
+fn expression_loop_phi_is_renderable(
+    env: &ExpressionRenderEnv<'_>,
     structured: &StructuredDataflowFacts,
     inst: &crate::graph::GraphInst,
     renderable: &crate::dense::IdSet<ValueId>,
-    certified_memory_read_insts: &crate::dense::IdSet<InstId>,
 ) -> bool {
+    let graph = env.graph;
     let InstPayload::Phi { predecessors } = &inst.payload else {
         return false;
     };
@@ -500,11 +484,6 @@ pub(crate) fn expression_loop_phi_is_renderable(
     }
 
     let latches = loop_fact.latches.iter().copied().collect::<BTreeSet<_>>();
-    let env = ExpressionRenderEnv {
-        prep,
-        graph,
-        certified_memory_read_insts,
-    };
     let mut saw_entry = false;
     let mut saw_backedge = false;
     for (pred_id, input) in predecessors.iter().zip(inst.inputs.iter().copied()) {
@@ -513,8 +492,7 @@ pub(crate) fn expression_loop_phi_is_renderable(
         };
         if latches.contains(&pred_addr) {
             saw_backedge = true;
-            let mut visited = crate::dense::IdSet::default();
-            if !value_renderable_modulo_loop_phi(&env, input, output, renderable, &mut visited, 0) {
+            if !value_renderable_modulo_loop_phi(env, input, output, renderable) {
                 return false;
             }
         } else {
@@ -532,51 +510,59 @@ pub(crate) struct ExpressionRenderEnv<'a> {
     pub(crate) prep: Option<&'a crate::DecompilePrepFacts>,
     pub(crate) graph: &'a SsaGraph,
     pub(crate) certified_memory_read_insts: &'a crate::dense::IdSet<InstId>,
+    /// The values a memory read reaches (`values_reading_memory`).
+    pub(crate) reads_memory: &'a crate::dense::IdSet<ValueId>,
 }
 
+/// Whether `value` is an expression over renderable values and `loop_phi`: each value decided once,
+/// `O(V + E)`; one met while its inputs are open is on a cycle no expression spells.
 pub(crate) fn value_renderable_modulo_loop_phi(
     env: &ExpressionRenderEnv<'_>,
     value: ValueId,
     loop_phi: ValueId,
     renderable: &crate::dense::IdSet<ValueId>,
-    visited: &mut crate::dense::IdSet<ValueId>,
-    depth: usize,
 ) -> bool {
-    if value == loop_phi || renderable.contains(value) {
-        return true;
+    let mut decided = crate::dense::IdMap::<ValueId, bool>::default();
+    let mut open = crate::dense::IdSet::<ValueId>::default();
+    let mut stack = vec![(value, false)];
+    while let Some((at, inputs_done)) = stack.pop() {
+        if at == loop_phi || renderable.contains(at) {
+            decided.insert(at, true);
+            continue;
+        }
+        let inst = env.graph.def_inst(at).and_then(|id| env.graph.inst(id));
+        if inputs_done {
+            let inputs = inst.map_or(&[][..], |inst| inst.inputs.as_slice());
+            let all = inputs
+                .iter()
+                .all(|input| decided.get(*input).copied().unwrap_or(false));
+            decided.insert(at, all);
+            open.remove(at);
+            continue;
+        }
+        if decided.contains(at) || !open.insert(at) {
+            continue;
+        }
+        let Some(inst) = inst.filter(|inst| expression_eligible(env, inst)) else {
+            decided.insert(at, false);
+            open.remove(at);
+            continue;
+        };
+        stack.push((at, true));
+        stack.extend(inst.inputs.iter().map(|input| (*input, false)));
     }
-    if depth >= 32 || !visited.insert(value) {
-        return false;
+    decided.get(value).copied().unwrap_or(false)
+}
+
+/// Whether one definition may stand inside a rendered expression.
+fn expression_eligible(env: &ExpressionRenderEnv<'_>, inst: &crate::graph::GraphInst) -> bool {
+    match &inst.payload {
+        InstPayload::Phi { .. } => expression_phi_is_renderable(env, inst),
+        InstPayload::Op(op) => {
+            expression_op_is_pure(op)
+                || (op.is_memory_read() && env.certified_memory_read_insts.contains(inst.id))
+        }
     }
-
-    let result = env
-        .graph
-        .def_inst(value)
-        .and_then(|inst_id| env.graph.inst(inst_id))
-        .is_some_and(|inst| {
-            let eligible = match &inst.payload {
-                InstPayload::Phi { .. } => expression_phi_is_renderable(env.prep, env.graph, inst),
-                InstPayload::Op(op) => {
-                    expression_op_is_pure(op)
-                        || (op.is_memory_read()
-                            && env.certified_memory_read_insts.contains(inst.id))
-                }
-            };
-            eligible
-                && inst.inputs.iter().all(|input| {
-                    value_renderable_modulo_loop_phi(
-                        env,
-                        *input,
-                        loop_phi,
-                        renderable,
-                        visited,
-                        depth + 1,
-                    )
-                })
-        });
-
-    visited.remove(value);
-    result
 }
 
 pub(crate) fn expression_op_is_pure<V>(op: &SSAOp<V>) -> bool {

@@ -66,7 +66,7 @@ fn and_of_one_value_reads_two_occurrences_of_one_leaf() {
     let and = roots
         .value(and_value)
         .expect("the and has a canonical term");
-    assert!(and.discharges.is_empty());
+    assert!(roots.discharges(&projection, and.value).is_empty());
     assert_eq!(
         and.multiplicity,
         Multiplicity::Any,
@@ -107,7 +107,11 @@ fn copy_is_elided_and_its_single_use_source_expanded() {
         .expect("entity")
         .producer();
     assert_eq!(
-        rax.discharges.iter().copied().collect::<Vec<_>>(),
+        roots
+            .discharges(&projection, rax.value)
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![and_producer],
         "rendering the copy's term renders the and"
     );
@@ -153,7 +157,11 @@ fn a_value_read_twice_stays_a_leaf_unless_duplicable() {
         .entity_for_output(value_named(&artifact, "tmp:100_1"))
         .expect("entity")
         .producer();
-    assert!(product.discharges.contains(&sum_producer));
+    assert!(
+        roots
+            .discharges(&projection, product.value)
+            .contains(&sum_producer)
+    );
 }
 
 #[test]
@@ -203,7 +211,7 @@ fn a_constant_operand_is_a_literal_and_a_division_is_opaque() {
         roots.arena().term(rax.canonical).kind,
         TermKind::Leaf(_)
     ));
-    assert!(rax.discharges.is_empty());
+    assert!(roots.discharges(&projection, rax.value).is_empty());
 }
 
 #[test]
@@ -237,7 +245,7 @@ fn a_definitionless_constant_has_a_canonical_value_term() {
     };
     assert_eq!(bits.bits(), 0xfeed);
     assert_eq!(canonical.multiplicity, Multiplicity::Any);
-    assert!(canonical.discharges.is_empty());
+    assert!(roots.discharges(&projection, canonical.value).is_empty());
 }
 
 #[test]

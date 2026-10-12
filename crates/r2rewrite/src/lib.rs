@@ -18,7 +18,7 @@ pub mod term;
 
 pub use driver::{
     BudgetFailure, CanonicalAccess, CanonicalRoots, CanonicalValue, Multiplicity, Rewrite,
-    RewriteError, canonicalize, canonicalize_with, discharged_origins, renders_inline,
+    RewriteError, canonicalize, canonicalize_with, renders_inline,
 };
 pub use eval::{LeafRef, eval, mask, signed};
 pub use import::{

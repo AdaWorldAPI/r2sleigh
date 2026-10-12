@@ -189,6 +189,7 @@ impl Prepared {
     )]
     pub fn seal(self, machine_context: &SourceMachineContext) -> Result<Sealed, SsaIntegrityError> {
         let mut ir = self.ir;
+        ir.seal_written();
         ir.apply_boundary_constants(machine_context);
         ir.mint_entry_lane_projections(machine_context);
         // Before the graph, so every fact built from it counts readers of a
