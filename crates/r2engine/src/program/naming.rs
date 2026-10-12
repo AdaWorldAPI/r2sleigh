@@ -276,6 +276,26 @@ pub struct Stub {
     pub size: u64,
 }
 
+/// The program's linkage code: which stub stands for which import, and every section that holds
+/// only linkage code, named stubs or not (x86's `.plt` with its resolver and lazy entries).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Linkage {
+    pub stubs: BTreeMap<u64, Stub>,
+    /// Each section of linkage code, as `(start, end)`, in address order.
+    pub sections: Vec<(u64, u64)>,
+}
+
+impl Linkage {
+    /// Whether `address` lies in a section of linkage code.
+    pub fn holds(&self, address: u64) -> bool {
+        let at = self
+            .sections
+            .partition_point(|(start, _)| *start <= address);
+        at.checked_sub(1)
+            .is_some_and(|at| address < self.sections[at].1)
+    }
+}
+
 /// Which stub stands for which import, by its own name, and how large each is.
 ///
 /// A call to an import reaches a stub, and the stub reads the slot the loader
@@ -287,11 +307,7 @@ pub struct Stub {
 /// they are called: a Mach-O section of type `S_SYMBOL_STUBS` says so itself,
 /// and any other section the container states holds code is read as stubs
 /// only while every instruction in it is part of one -- see `section_stubs`.
-pub fn imports(
-    source: &impl Source,
-    decoder: &Disassembler,
-    alignment: u32,
-) -> BTreeMap<u64, Stub> {
+pub fn imports(source: &impl Source, decoder: &Disassembler, alignment: u32) -> Linkage {
     let image = source.container();
     // The format's own statement first: a Mach-O section of stubs says which
     // import each of its stubs stands for, and how large each is, with nothing to decode.
@@ -306,9 +322,19 @@ pub fn imports(
             (stub.vaddr, stated)
         })
         .collect();
+    let declared_sections = image
+        .sections
+        .iter()
+        .map(Section::range)
+        .filter(|(start, end)| named.range(*start..*end).next().is_some());
+    let mut sections = declared_sections.collect::<Vec<_>>();
     let slots: BTreeMap<u64, &str> = image.import_slots().collect();
     if slots.is_empty() {
-        return named;
+        sections.sort_unstable();
+        return Linkage {
+            stubs: named,
+            sections,
+        };
     }
     let declared = |section: &Section| {
         let (start, end) = section.range();
@@ -321,12 +347,19 @@ pub fn imports(
         .filter(|section| !declared(section))
         .collect();
     for section in decoded {
-        for (start, stub) in section_stubs(source, decoder, section, &slots, alignment) {
+        let Some(stubs) = section_stubs(source, decoder, section, &slots, alignment) else {
+            continue;
+        };
+        sections.push(section.range());
+        for (start, stub) in stubs {
             named.entry(start).or_insert(stub);
         }
     }
-
-    named
+    sections.sort_unstable();
+    Linkage {
+        stubs: named,
+        sections,
+    }
 }
 
 /// Where each stub in one section begins, and which import it stands for.
@@ -352,7 +385,7 @@ fn section_stubs(
     section: &Section,
     slots: &BTreeMap<u64, &str>,
     alignment: u32,
-) -> Vec<(u64, Stub)> {
+) -> Option<Vec<(u64, Stub)>> {
     let container = source.container();
     // Where each stub reads the slot the loader fills. A stub is a run of
     // instructions ending in its transfer, and which slot that transfer reads
@@ -363,6 +396,8 @@ fn section_stubs(
     let mut readers: Vec<(u64, u64, String)> = Vec::new();
     // Where every stub transfers through a slot the container states, named or not: the cells' measure.
     let mut transfers: Vec<u64> = Vec::new();
+    // Whether any run left as linkage code leaves: through a loader word or within the section.
+    let mut left = false;
     let mut run = fresh_run(section.vaddr);
     // Where each instruction of the run begins, and its first operation.
     let mut starts: Vec<(u64, usize)> = Vec::new();
@@ -395,7 +430,7 @@ fn section_stubs(
             }
         };
         if chooses(&lifted.ops, section.vaddr..end, pc + u64::from(lifted.size)) {
-            return Vec::new();
+            return None;
         }
         let leaves = lifted
             .ops
@@ -413,6 +448,7 @@ fn section_stubs(
         if !leaves {
             continue;
         }
+        left = true;
         let terminal = run.ops.len().saturating_sub(1);
         let slot = indirect
             .then(|| r2ssa::terminal_indirect_loaded_slot(&run, terminal))
@@ -423,7 +459,7 @@ fn section_stubs(
         // place -- ARM's PLT0 adds a literal it loads from memory -- the jump
         // says nothing either way, and names nothing.
         if slot.is_some_and(|slot| container.loader_write_at(slot).is_none()) {
-            return Vec::new();
+            return None;
         }
         // A stub's slot is a word the container states the loader fills with an address or a
         // symbol; the header's reserved resolver word states nothing and lies at another phase.
@@ -446,7 +482,8 @@ fn section_stubs(
         run = fresh_run(pc);
         starts.clear();
     }
-    cells(readers, &transfers, end)
+    // A section that is all linkage code holds no function, whether or not it names a stub.
+    left.then(|| cells(readers, &transfers, end))
 }
 
 /// Whether one instruction's operations make a choice no stub makes.

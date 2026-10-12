@@ -850,8 +850,10 @@ fn stated_functions<S: Source + 'static>(view: &View<'_, S>) -> Vec<(u64, Confid
     let container = view.source().container();
     let imports = view.imports();
     // Each frame the call-frame information states begins a function, which survives a strip
-    // (ROADMAP I); one holding a linkage stub is the stub table's.
+    // (ROADMAP I); one in a section of linkage code, or holding a stub, is the stub table's.
+    let linkage = view.linkage();
     let frames = (container.unwind.frames())
+        .filter(|frame| !linkage.holds(frame.start))
         .filter(|frame| {
             imports
                 .range(frame.start..frame.end.max(frame.start + 1))

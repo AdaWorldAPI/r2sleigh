@@ -344,7 +344,7 @@ impl<S: Source + 'static> OpenProgram<S> {
     }
 
     /// Which stub stands for which import.
-    pub fn imports(&self) -> Rc<BTreeMap<u64, naming::Stub>> {
+    pub fn imports(&self) -> Rc<naming::Linkage> {
         self.db
             .get::<Imports>(&())
             .expect("the imports ask for nothing")
@@ -732,13 +732,13 @@ struct Imports;
 
 impl<S: Source + 'static> Query<ProgramInputs<S>> for Imports {
     type Key = ();
-    type Value = BTreeMap<u64, naming::Stub>;
+    type Value = naming::Linkage;
     const NAME: &'static str = "imports";
 
     fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
         // A stub is named by decoding it, so without a decoder there is none.
         let Ok(machines) = db.inputs().machines() else {
-            return BTreeMap::new();
+            return naming::Linkage::default();
         };
         let machine = &machines.machine;
         naming::imports(&Recorded { db }, &machine.disasm, machine.arch.alignment)
@@ -758,11 +758,11 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Names {
         let imports = db.get::<Imports>(&()).expect("the imports ask for nothing");
         let mut names = naming::of(&source);
         naming::name_strings(&mut names, &source);
-        naming::name_imports(&mut names, &imports);
+        naming::name_imports(&mut names, &imports.stubs);
         naming::name_slots(
             &mut names,
             &db.inputs().slots,
-            &imports,
+            &imports.stubs,
             &source.container().loader_writes,
         );
         names

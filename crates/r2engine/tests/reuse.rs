@@ -122,6 +122,7 @@ fn a_patch_that_moves_an_import_stub_makes_every_held_analysis_stale() {
     assert_eq!(
         program
             .imports()
+            .stubs
             .get(&STUB)
             .map(|stub| stub.symbol.as_str()),
         Some("puts")
@@ -129,7 +130,7 @@ fn a_patch_that_moves_an_import_stub_makes_every_held_analysis_stale() {
     // `jmp [rip + 2]` becomes `jmp [rip + 0x10]`, which reads no slot.
     program.source_mut().write(STUB + 2, &[0x10]);
     program.prepared(ONE).expect("it prepares");
-    assert!(program.imports().is_empty());
+    assert!(program.imports().stubs.is_empty());
     let stats = program.analysis_stats();
     assert_eq!(
         (

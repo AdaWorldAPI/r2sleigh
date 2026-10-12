@@ -28,7 +28,7 @@ pub(super) fn endian<S: Source>(source: &S) -> r2il::Endianness {
 pub(crate) struct View<'a, S: Source + 'static> {
     pub(super) db: &'a Db<ProgramInputs<S>>,
     names: Rc<NameDb>,
-    imports: Rc<BTreeMap<u64, naming::Stub>>,
+    imports: Rc<naming::Linkage>,
     /// Whether each function discovery found is Thumb; empty for discovery itself, which decides it.
     modes: Rc<BTreeMap<u64, bool>>,
 }
@@ -62,7 +62,7 @@ impl<'a, S: Source + 'static> View<'a, S> {
     pub(super) const fn with(
         db: &'a Db<ProgramInputs<S>>,
         names: Rc<NameDb>,
-        imports: Rc<BTreeMap<u64, naming::Stub>>,
+        imports: Rc<naming::Linkage>,
         modes: Rc<BTreeMap<u64, bool>>,
     ) -> Self {
         Self {
@@ -74,6 +74,11 @@ impl<'a, S: Source + 'static> View<'a, S> {
     }
 
     pub(super) fn imports(&self) -> &BTreeMap<u64, naming::Stub> {
+        &self.imports.stubs
+    }
+
+    /// The program's linkage code: its stubs and the sections that hold only linkage code.
+    pub(super) fn linkage(&self) -> &naming::Linkage {
         &self.imports
     }
 
@@ -186,7 +191,7 @@ impl<S: Source + 'static> crate::body::Program for View<'_, S> {
 
     fn is_entry(&self, vaddr: u64) -> bool {
         // A stub is a function of the program's as much as a body is.
-        self.imports.contains_key(&vaddr)
+        self.imports.stubs.contains_key(&vaddr)
             || self
                 .db
                 .inputs()
@@ -290,6 +295,7 @@ impl<S: Source + 'static> crate::native::Program for View<'_, S> {
 
     fn import_at(&self, vaddr: u64) -> Option<String> {
         self.imports
+            .stubs
             .get(&vaddr)
             .map(|stub| &stub.symbol)
             .or_else(|| self.db.inputs().slots.get(&vaddr))
