@@ -1459,7 +1459,7 @@ impl SsaArtifact {
         )
     }
 
-    /// Whether every access to this object is one a decided stack-protector check inserted: the canary.
+    /// Whether every access to this object is one a decided compiler-inserted check made: the canary.
     pub fn compiler_inserted_stack_object(&self, object: crate::ObjectId) -> bool {
         self.object_accessed_only_by(object, &self.certificates().compiler_inserted, false)
     }
@@ -2817,9 +2817,10 @@ pub struct SSAFunction {
     /// operations, so it is no longer one of the function's memory
     /// operations, and every layer that counts those has to agree.
     promoted_slots: crate::dense::IdSet<crate::arena::OpId>,
-    /// The operations a stack-protector check inserted, decided under `Premise::UbFreeSource`.
+    /// The operations a decided compiler-inserted check is: a canary (under `Premise::UbFreeSource`)
+    /// or a runtime's stack bound (by its model).
     compiler_inserted: crate::dense::IdSet<crate::arena::OpId>,
-    /// The failure blocks a decided stack-protector check removed, whose instructions stay owed.
+    /// The failure blocks a decided compiler-inserted check removed, whose instructions stay owed.
     compiler_inserted_blocks: BTreeSet<u64>,
     /// The premises a rewrite of this function relied on, whatever later became of what it rewrote.
     premises: BTreeSet<r2source::Premise>,
@@ -3699,7 +3700,8 @@ impl SSAFunction {
         self.promoted_slots = ops;
     }
 
-    /// The operations a decided stack-protector check inserted (`crate::stack_protector`).
+    /// The operations a decided compiler-inserted check is (`crate::stack_protector`,
+    /// `crate::stack_bound`).
     pub fn compiler_inserted(&self) -> &crate::dense::IdSet<crate::arena::OpId> {
         &self.compiler_inserted
     }
@@ -3723,7 +3725,7 @@ impl SSAFunction {
         &self.premises
     }
 
-    /// The failure blocks a decided stack-protector check removed.
+    /// The failure blocks a decided compiler-inserted check removed.
     pub fn compiler_inserted_blocks(&self) -> &BTreeSet<u64> {
         &self.compiler_inserted_blocks
     }
