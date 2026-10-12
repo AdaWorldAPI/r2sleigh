@@ -403,9 +403,19 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             tests read the graph (`SsaArtifact::named_block(s)`). Heap peak
             0pack `0x58e3d0` 167.3 to 162.4 MiB, pumasim 147.6 to 143.8,
             the session 191.4 to 187.5; time 2 to 4% lower; census
-            byte-identical. Left: the value table once no `VarId` outlives
-            the seal (the `formal_*` maps have graph twins), a compile-time
-            type for the sealed function in place of the debug assertion.
+            byte-identical. Step 3 done (#186): the seal drops the value
+            table and the operation origins too. Their one post-seal reader,
+            the reaching scan's instruction grouping, asks the graph's
+            instruction column (`instruction_for_inst`), and slot promotion
+            records its lifted sites while the origins exist. A read of
+            either is a debug assertion: the suite's six test readers now
+            read the graph. Heap peak 0pack 159.1 to 158.3 MiB, pumasim
+            141.1 to 139.9, the 50-function session 187.5 to 179.6 (each
+            held function keeps neither); census byte-identical. 0pack's
+            peak moved to interface recovery's preparation. Left: a
+            compile-time type for the sealed function in place of the debug
+            assertions, and the `formal_*` maps keyed by `VarId`, which no
+            post-seal reader can reach.
          2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
             symbols 7.6, names 4.2), PF's.
          3. **MM.7** compact identities: a disposition (48 B per
