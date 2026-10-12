@@ -226,6 +226,7 @@ fn sanitized(name: &str) -> String {
 
 /// Demand: which values are bound, found from the statements the obligations owe.
 struct Demand<'d> {
+    artifact: &'d SsaArtifact,
     graph: &'d SsaGraph,
     readers: &'d Readers<'d>,
     projection: &'d MachineProjection,
@@ -274,7 +275,7 @@ impl Demand<'_> {
     }
 
     fn discharge(&mut self, value: ValueId) {
-        let discharges = self.roots.discharges(self.projection, value);
+        let discharges = (self.roots).discharges(self.artifact, self.projection, value);
         for inst in discharged_insts(self.graph, discharges.iter()) {
             self.discharged[inst.0 as usize] = true;
         }
@@ -752,6 +753,7 @@ impl<'a> Values<'a> {
             }
         }
         let bound = Demand {
+            artifact,
             graph,
             readers: &readers,
             projection: &projection,
@@ -964,7 +966,7 @@ impl<'a> Values<'a> {
     }
 
     fn mark_discharged(&self, value: ValueId) {
-        let discharges = self.roots.discharges(&self.projection, value);
+        let discharges = (self.roots).discharges(self.artifact, &self.projection, value);
         for inst in discharged_insts(self.graph, discharges.iter()) {
             self.mark(inst);
         }
@@ -1702,7 +1704,8 @@ impl<'a> Values<'a> {
                     }
                     _ => return None,
                 };
-                let discharges = self.roots.access_discharges(&self.projection, access_id);
+                let discharges =
+                    (self.roots).access_discharges(self.artifact, &self.projection, access_id);
                 for discharged in discharged_insts(self.graph, discharges.iter()) {
                     self.mark(discharged);
                 }

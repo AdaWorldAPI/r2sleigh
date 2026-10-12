@@ -132,26 +132,30 @@ impl CanonicalRoots {
     /// demand: held per value, a substitution chain's sets grow with its square.
     pub fn discharges(
         &self,
+        artifact: &SsaArtifact,
         projection: &MachineProjection,
         value: ValueId,
     ) -> DischargedInstructions {
         self.value(value)
             .map_or_else(Default::default, |canonical| {
                 let substituted = self.import.substituted(value);
-                discharged_from(substituted, projection, &self.arena, canonical.canonical)
+                let over = (artifact, projection);
+                discharged_from(substituted, over, &self.arena, canonical.canonical)
             })
     }
 
     /// The instructions rendering an access's canonical cell renders, walked on demand.
     pub fn access_discharges(
         &self,
+        artifact: &SsaArtifact,
         projection: &MachineProjection,
         access: StructuredAccessId,
     ) -> DischargedInstructions {
         self.access(access)
             .map_or_else(Default::default, |canonical| {
                 let substituted = self.import.access_substituted(access);
-                discharged_from(substituted, projection, &self.arena, canonical.canonical)
+                let over = (artifact, projection);
+                discharged_from(substituted, over, &self.arena, canonical.canonical)
             })
     }
 
@@ -207,16 +211,19 @@ pub fn renders_inline(arena: &TermArena, id: TermId) -> bool {
 /// reads.
 fn discharged_from(
     mut discharged: BTreeSet<CanonicalInstructionId>,
-    projection: &MachineProjection,
+    (artifact, projection): (&SsaArtifact, &MachineProjection),
     arena: &TermArena,
     canonical: TermId,
 ) -> DischargedInstructions {
+    let graph = artifact.graph();
     for leaf in arena.leaves(canonical) {
         if let Some(MachineExprKind::Source { binding, .. }) =
             projection.expr(leaf).map(|expr| expr.kind())
-            && let Some(entity) = projection.entity_for_output(binding.value())
+            && let Some(inst) = graph.def_inst(binding.value())
+            && projection.root_of(inst).is_some()
+            && let Some(read) = artifact.obligations().instruction_for_inst(inst)
         {
-            discharged.remove(&entity.producer());
+            discharged.remove(&read.id);
         }
     }
     DischargedInstructions(discharged.into_iter().collect())
@@ -362,12 +369,6 @@ pub fn canonicalize_with(
     declared_pointers: &crate::import::DeclaredPointers<'_>,
 ) -> Result<CanonicalRoots, RewriteError> {
     let graph = artifact.graph();
-    for entity in projection.entities() {
-        let value = entity.output().value();
-        if graph.value(value).is_none() {
-            return Err(RewriteError::ValueOutOfRange(value));
-        }
-    }
     let mut arena = TermArena::new();
     let import = import_with(artifact, projection, &mut arena, policy, declared_pointers);
     // Definitionless constants have no machine entity and therefore no

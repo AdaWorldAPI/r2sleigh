@@ -66,7 +66,11 @@ fn and_of_one_value_reads_two_occurrences_of_one_leaf() {
     let and = roots
         .value(and_value)
         .expect("the and has a canonical term");
-    assert!(roots.discharges(&projection, and.value).is_empty());
+    assert!(
+        roots
+            .discharges(&artifact, &projection, and.value)
+            .is_empty()
+    );
     assert_eq!(
         and.multiplicity,
         Multiplicity::Any,
@@ -102,13 +106,17 @@ fn copy_is_elided_and_its_single_use_source_expanded() {
     assert_eq!(trace.len(), 1);
     assert_eq!(trace[0].rule, COPY_ELIDE);
     assert_eq!(trace[0].to, and.canonical);
-    let and_producer = projection
-        .entity_for_output(and_value)
-        .expect("entity")
-        .producer();
+    let and_producer_entity = projection
+        .entity_for_output(artifact.graph(), and_value)
+        .expect("entity");
+    let and_producer = artifact
+        .obligations()
+        .instruction_for_inst(and_producer_entity.inst())
+        .expect("its producer")
+        .id;
     assert_eq!(
         roots
-            .discharges(&projection, rax.value)
+            .discharges(&artifact, &projection, rax.value)
             .iter()
             .copied()
             .collect::<Vec<_>>(),
@@ -153,13 +161,17 @@ fn a_value_read_twice_stays_a_leaf_unless_duplicable() {
     // duplicable and both reads of it expand.
     assert_eq!(left, sum.canonical);
     assert_eq!(sum.multiplicity, Multiplicity::Any);
-    let sum_producer = projection
-        .entity_for_output(value_named(&artifact, "tmp:100_1"))
-        .expect("entity")
-        .producer();
+    let sum_producer_entity = projection
+        .entity_for_output(artifact.graph(), value_named(&artifact, "tmp:100_1"))
+        .expect("entity");
+    let sum_producer = artifact
+        .obligations()
+        .instruction_for_inst(sum_producer_entity.inst())
+        .expect("its producer")
+        .id;
     assert!(
         roots
-            .discharges(&projection, product.value)
+            .discharges(&artifact, &projection, product.value)
             .contains(&sum_producer)
     );
 }
@@ -211,7 +223,11 @@ fn a_constant_operand_is_a_literal_and_a_division_is_opaque() {
         roots.arena().term(rax.canonical).kind,
         TermKind::Leaf(_)
     ));
-    assert!(roots.discharges(&projection, rax.value).is_empty());
+    assert!(
+        roots
+            .discharges(&artifact, &projection, rax.value)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -244,7 +260,11 @@ fn a_definitionless_constant_has_a_canonical_value_term() {
     };
     assert_eq!(bits.bits(), 0xfeed);
     assert_eq!(canonical.multiplicity, Multiplicity::Any);
-    assert!(roots.discharges(&projection, canonical.value).is_empty());
+    assert!(
+        roots
+            .discharges(&artifact, &projection, canonical.value)
+            .is_empty()
+    );
 }
 
 #[test]

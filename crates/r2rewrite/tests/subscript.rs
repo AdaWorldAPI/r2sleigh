@@ -75,7 +75,7 @@ fn a_load_through_a_parameter_plus_a_scaled_index_is_an_element() {
     );
     // The multiply and the add were absorbed into the load's term, so
     // rendering the subscript renders them: both are discharged.
-    let discharges = roots.discharges(&projection, load.value);
+    let discharges = roots.discharges(&artifact, &projection, load.value);
     assert_eq!(discharges.len(), 2, "{discharges:?}");
     let inst = artifact.graph().def_inst(loaded).expect("load instruction");
     let access = roots
@@ -122,7 +122,7 @@ fn a_store_through_the_same_address_writes_the_same_element() {
             .collect::<Vec<_>>(),
         vec!["subscript.constant_stride"]
     );
-    let discharges = roots.access_discharges(&projection, store.id);
+    let discharges = roots.access_discharges(&artifact, &projection, store.id);
     assert_eq!(discharges.len(), 2, "{discharges:?}");
 }
 
@@ -164,7 +164,11 @@ fn a_dereference_stays_a_load_and_a_load_stays_out_of_its_reader() {
         "the reader names the loaded value rather than absorbing the read: {:?}",
         arena.term(left)
     );
-    assert!(roots.discharges(&projection, sum.value).is_empty());
+    assert!(
+        roots
+            .discharges(&artifact, &projection, sum.value)
+            .is_empty()
+    );
 }
 
 /// The shape every `-O0` build makes of a parameter: home it to the stack,

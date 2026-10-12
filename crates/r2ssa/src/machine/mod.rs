@@ -1156,12 +1156,13 @@ impl MachineExprArena {
     }
 }
 
-/// Proof-bearing semantic root for one source instruction output.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// One instruction's projected output: the graph's value, its expression's root and the
+/// instruction, whose obligations state its producer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct MachineEntity {
     output: MachineValueBinding,
     root: MachineExprId,
-    producer: CanonicalInstructionId,
+    inst: InstId,
 }
 
 impl MachineEntity {
@@ -1173,8 +1174,8 @@ impl MachineEntity {
         self.root
     }
 
-    pub const fn producer(&self) -> CanonicalInstructionId {
-        self.producer
+    pub const fn inst(&self) -> InstId {
+        self.inst
     }
 }
 
@@ -1308,7 +1309,6 @@ impl MachineProjection {
         let graph = artifact.graph();
         let value_geometries = canonical_machine_value_geometries(artifact)?;
         let mut builder = MachineBuilder::for_graph(graph);
-        let mut entities = Vec::new();
         let mut failures = Vec::new();
         let mut write_dispositions = Vec::with_capacity(graph.insts.len());
         let mut pending_roots = vec![None; graph.insts.len()];
@@ -1338,11 +1338,6 @@ impl MachineProjection {
                     // every instruction has been lowered.
                     pending_roots[inst_index] = Some(root);
                     write_dispositions.push(None);
-                    entities.push(MachineEntity {
-                        output,
-                        root,
-                        producer: disposition.id,
-                    });
                 }
                 Err(error) if is_local_projection_failure(&error, inst.id) => {
                     r2il::refusal_evidence!(
@@ -1385,8 +1380,9 @@ impl MachineProjection {
                 arena: MachineExprArena {
                     nodes: builder.nodes.into_boxed_slice(),
                 },
-                entity_index_by_output: entity_index_by_output(&entities, graph.values.len()),
-                entities: entities.into_boxed_slice(),
+                roots: (pending_roots.into_iter())
+                    .map(|root| root.unwrap_or(NO_ROOT))
+                    .collect(),
                 store_addresses: builder.store_addresses.into_iter().collect(),
             },
             failures: failures.into_boxed_slice(),
@@ -1406,8 +1402,14 @@ impl MachineProjection {
         self.machine.arena()
     }
 
-    pub const fn entities(&self) -> &[MachineEntity] {
-        self.machine.entities()
+    /// Each projected output, in instruction order.
+    pub fn entities<'a>(&'a self, graph: &'a SsaGraph) -> impl Iterator<Item = MachineEntity> + 'a {
+        self.machine.entities(graph)
+    }
+
+    /// The root of `inst`'s projected output, if it was projected.
+    pub fn root_of(&self, inst: InstId) -> Option<MachineExprId> {
+        self.machine.root_of(inst)
     }
 
     /// The typed address leaf of the store performing `access`, if the store
@@ -1454,16 +1456,12 @@ impl MachineProjection {
             else {
                 continue;
             };
-            if inst
-                .output
-                .is_some_and(|output| self.failures.iter().any(|failure| failure.output == output))
-            {
+            let root = self.machine.root_of(inst.id);
+            // An output with no root failed to project, and states nothing.
+            if inst.output.is_some() && root.is_none() {
                 continue;
             }
-            let root = inst
-                .output
-                .and_then(|output| self.machine.entity_for_output(output))
-                .and_then(|entity| self.machine.expr(entity.root()));
+            let root = root.and_then(|root| self.machine.expr(root));
             let children = root.map(|root| root.kind.children());
             for (input_idx, input) in graph.inputs(inst.id).iter().enumerate() {
                 let Some(source) = graph
@@ -1563,12 +1561,8 @@ impl MachineProjection {
         self.machine.expr(id)
     }
 
-    pub fn entity_for_output(&self, value: ValueId) -> Option<&MachineEntity> {
-        self.machine.entity_for_output(value)
-    }
-
-    pub fn entity_for_producer(&self, producer: CanonicalInstructionId) -> Option<&MachineEntity> {
-        self.machine.entity_for_producer(producer)
+    pub fn entity_for_output(&self, graph: &SsaGraph, value: ValueId) -> Option<MachineEntity> {
+        self.machine.entity_for_output(graph, value)
     }
 
     pub fn failure_for_output(&self, value: ValueId) -> Option<&MachineProjectionFailure> {
@@ -1576,18 +1570,18 @@ impl MachineProjection {
     }
 
     pub fn validate_against(&self, artifact: &SsaArtifact) -> Result<(), MachineBuildError> {
-        let entities = self.machine.validate_entities_against(artifact)?;
+        self.machine.validate_entities_against(artifact)?;
         let graph = artifact.graph();
         let mut failed_outputs = ByValue::over(graph.values.len());
         for failure in &self.failures {
-            if !failed_outputs.put(failure.output, failure)
-                || entities.get(failure.output).is_some()
-            {
-                return Err(MachineBuildError::DuplicateEntity(failure.output));
-            }
             let inst_id = graph
                 .def_inst(failure.output)
                 .ok_or(MachineBuildError::EntityMismatch(InstId(u32::MAX)))?;
+            if !failed_outputs.put(failure.output, failure)
+                || self.machine.root_of(inst_id).is_some()
+            {
+                return Err(MachineBuildError::DuplicateEntity(failure.output));
+            }
             let disposition = artifact
                 .obligations()
                 .instruction_for_inst(inst_id)
@@ -1600,7 +1594,7 @@ impl MachineProjection {
             let Some(output) = inst.output else {
                 continue;
             };
-            let projected = entities.get(output).is_some();
+            let projected = self.machine.root_of(inst.id).is_some();
             if projected == failed_outputs.get(output).is_some() {
                 r2il::refusal_evidence!(
                     "machine-entity",
@@ -1616,8 +1610,8 @@ impl MachineProjection {
             }
         }
         self.validate_value_geometries(artifact)?;
-        self.validate_use_dispositions(artifact, &entities, &failed_outputs)?;
-        self.validate_write_dispositions(artifact, &entities, &failed_outputs)?;
+        self.validate_use_dispositions(artifact, &failed_outputs)?;
+        self.validate_write_dispositions(artifact, &failed_outputs)?;
         Ok(())
     }
 
@@ -1632,7 +1626,6 @@ impl MachineProjection {
     fn validate_use_dispositions(
         &self,
         artifact: &SsaArtifact,
-        entities: &ByValue<&MachineEntity>,
         failures: &ByValue<&MachineProjectionFailure>,
     ) -> Result<(), MachineBuildError> {
         let graph = artifact.graph();
@@ -1669,10 +1662,7 @@ impl MachineProjection {
                 .output
                 .and_then(|output| failures.get(output))
                 .map(|failure| use_refusal_for_error(failure.error()));
-            let root = inst
-                .output
-                .and_then(|output| entities.get(output))
-                .and_then(|entity| self.machine.expr(entity.root()));
+            let root = (self.machine.root_of(inst.id)).and_then(|root| self.machine.expr(root));
             let root_children = root.map(|root| root.kind.children());
 
             for (input_idx, disposition) in row.iter().enumerate() {
@@ -1730,7 +1720,6 @@ impl MachineProjection {
     fn validate_write_dispositions(
         &self,
         artifact: &SsaArtifact,
-        entities: &ByValue<&MachineEntity>,
         failures: &ByValue<&MachineProjectionFailure>,
     ) -> Result<(), MachineBuildError> {
         let graph = artifact.graph();
@@ -1751,10 +1740,10 @@ impl MachineProjection {
                 }
                 continue;
             };
-            let expected = if let Some(entity) = entities.get(output) {
+            let expected = if let Some(root) = self.machine.root_of(inst.id) {
                 let root = self
                     .machine
-                    .expr(entity.root())
+                    .expr(root)
                     .ok_or(MachineBuildError::WriteDispositionMismatch(inst.id))?;
                 machine_write_disposition(artifact, inst, root)
             } else if let Some(failure) = failures.get(output) {
@@ -2479,7 +2468,9 @@ fn machine_use_slice_for_input(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MachineFunction {
     arena: MachineExprArena,
-    entities: Box<[MachineEntity]>,
+    /// Dense by `InstId`: the root of the instruction's projected output, or `NO_ROOT`. The
+    /// output is the graph's and the producer the obligations' (doc/adr-one-ir.md, F2.5).
+    roots: Box<[MachineExprId]>,
     /// The typed address leaf of every store, keyed by the access it writes,
     /// in access order.
     ///
@@ -2490,26 +2481,10 @@ pub struct MachineFunction {
     /// -- had nothing to start from. Interned under the same key as a load's
     /// address, so a value both read and written through is one leaf.
     store_addresses: Box<[(StructuredAccessId, MachineExprId)]>,
-    /// Dense by `ValueId`: the position in `entities` of the entity whose
-    /// output is that value, or `NO_ENTITY`. Derived from `entities`, so it is
-    /// not serialised and not part of what two functions are compared on.
-    #[serde(skip)]
-    entity_index_by_output: Box<[u32]>,
 }
 
-/// Cell value in `MachineFunction::entity_index_by_output` for a value no
-/// entity produces.
-const NO_ENTITY: u32 = u32::MAX;
-
-fn entity_index_by_output(entities: &[MachineEntity], value_count: usize) -> Box<[u32]> {
-    let mut index = vec![NO_ENTITY; value_count];
-    for (position, entity) in entities.iter().enumerate() {
-        if let Some(cell) = index.get_mut(entity.output.value.0 as usize) {
-            *cell = position as u32;
-        }
-    }
-    index.into_boxed_slice()
-}
+/// Cell value in `MachineFunction::roots` for an instruction with no projected output.
+const NO_ROOT: MachineExprId = MachineExprId(u32::MAX);
 
 impl MachineFunction {
     /// Construct machine expressions only from prepared, name-independent facts.
@@ -2531,8 +2506,28 @@ impl MachineFunction {
         &self.arena
     }
 
-    pub const fn entities(&self) -> &[MachineEntity] {
-        &self.entities
+    /// The root of `inst`'s projected output, if it was projected.
+    pub fn root_of(&self, inst: InstId) -> Option<MachineExprId> {
+        (self.roots.get(inst.0 as usize).copied()).filter(|root| *root != NO_ROOT)
+    }
+
+    /// Each projected output, in instruction order.
+    pub fn entities<'a>(&'a self, graph: &'a SsaGraph) -> impl Iterator<Item = MachineEntity> + 'a {
+        (graph.insts.iter()).filter_map(|inst| self.entity_of(graph, inst))
+    }
+
+    pub fn entity_for_output(&self, graph: &SsaGraph, value: ValueId) -> Option<MachineEntity> {
+        self.entity_of(graph, graph.inst(graph.def_inst(value)?)?)
+    }
+
+    fn entity_of(&self, graph: &SsaGraph, inst: &GraphInst) -> Option<MachineEntity> {
+        let root = self.root_of(inst.id)?;
+        let output = binding_for_value(graph.value(inst.output?)?).ok()?;
+        Some(MachineEntity {
+            output,
+            root,
+            inst: inst.id,
+        })
     }
 
     /// The typed address leaf of the store performing `access`, if the store
@@ -2548,89 +2543,54 @@ impl MachineFunction {
         self.arena.get(id)
     }
 
-    pub fn entity_for_output(&self, value: ValueId) -> Option<&MachineEntity> {
-        let position = *self.entity_index_by_output.get(value.0 as usize)?;
-        if position == NO_ENTITY {
-            return None;
-        }
-        self.entities.get(position as usize)
-    }
-
-    pub fn entity_for_producer(&self, producer: CanonicalInstructionId) -> Option<&MachineEntity> {
-        self.entities
-            .iter()
-            .find(|entity| entity.producer == producer)
-    }
-
     /// Recheck all arena and source-identity invariants against the owning artifact.
     pub fn validate_against(&self, artifact: &SsaArtifact) -> Result<(), MachineBuildError> {
-        let by_output = self.validate_entities_against(artifact)?;
+        self.validate_entities_against(artifact)?;
         for inst in &artifact.graph().insts {
-            let Some(output) = inst.output else {
-                continue;
-            };
-            if by_output.get(output).is_none() {
+            if inst.output.is_some() && self.root_of(inst.id).is_none() {
                 return Err(MachineBuildError::EntityMismatch(inst.id));
             }
         }
         Ok(())
     }
 
-    fn validate_entities_against<'a>(
-        &'a self,
-        artifact: &SsaArtifact,
-    ) -> Result<ByValue<&'a MachineEntity>, MachineBuildError> {
+    /// One root per instruction, each over an output the obligations account for, shaped as
+    /// its operation; the output and producer are read, never stated, so cannot disagree.
+    fn validate_entities_against(&self, artifact: &SsaArtifact) -> Result<(), MachineBuildError> {
         if !artifact.obligations().is_complete() {
             return Err(MachineBuildError::IncompleteObligationInventory);
         }
         self.validate_arena(artifact)?;
-
         let graph = artifact.graph();
-        let mut by_output = ByValue::over(graph.values.len());
-        for entity in &self.entities {
-            let value = graph
-                .value(entity.output.value)
-                .ok_or(MachineBuildError::MissingGraphValue(entity.output.value))?;
-            if !by_output.put(entity.output.value, entity) {
-                return Err(MachineBuildError::DuplicateEntity(entity.output.value));
-            }
-            if binding_for_value(value)? != entity.output {
-                r2il::refusal_evidence!(
-                    "machine-entity",
-                    "{:?}: the value binds {:?} and the entity states {:?}",
-                    entity.output.value,
-                    binding_for_value(value)?,
-                    entity.output
-                );
-                return Err(MachineBuildError::EntityMismatch(
-                    graph
-                        .def_inst(entity.output.value)
-                        .ok_or(MachineBuildError::EntityMismatch(InstId(u32::MAX)))?,
-                ));
-            }
-            let inst_id = graph
-                .def_inst(entity.output.value)
-                .ok_or(MachineBuildError::EntityMismatch(InstId(u32::MAX)))?;
-            let disposition = artifact
-                .obligations()
-                .instruction_for_inst(inst_id)
-                .ok_or(MachineBuildError::MissingInstructionDisposition(inst_id))?;
-            if disposition.id != entity.producer || self.arena.get(entity.root).is_none() {
-                r2il::refusal_evidence!(
-                    "machine-entity",
-                    "{inst_id:?}: the disposition names {:?}, the entity names {:?}, its root {:?}",
-                    disposition.id,
-                    entity.producer,
-                    entity.root
-                );
-                return Err(MachineBuildError::EntityMismatch(inst_id));
-            }
-            let inst = graph
-                .inst(inst_id)
-                .ok_or(MachineBuildError::MissingInstruction(inst_id))?;
-            self.validate_entity_shape(artifact, inst, entity)?;
+        if self.roots.len() != graph.insts.len() {
+            return Err(MachineBuildError::TopologyMismatch);
         }
-        Ok(by_output)
+        for inst in &graph.insts {
+            let Some(root) = self.root_of(inst.id) else {
+                continue;
+            };
+            let output = inst
+                .output
+                .ok_or(MachineBuildError::EntityMismatch(inst.id))?;
+            let value = graph
+                .value(output)
+                .ok_or(MachineBuildError::MissingGraphValue(output))?;
+            artifact
+                .obligations()
+                .instruction_for_inst(inst.id)
+                .ok_or(MachineBuildError::MissingInstructionDisposition(inst.id))?;
+            if self.arena.get(root).is_none() {
+                r2il::refusal_evidence!("machine-entity", "{:?}: no node at {root:?}", inst.id);
+                return Err(MachineBuildError::EntityMismatch(inst.id));
+            }
+            let entity = MachineEntity {
+                output: binding_for_value(value)?,
+                root,
+                inst: inst.id,
+            };
+            self.validate_entity_shape(artifact, inst, &entity)?;
+        }
+        Ok(())
     }
 
     /// Every store address leaf names the address of exactly the store it is
@@ -3119,13 +3079,6 @@ impl MachineFunction {
         }
         if let MachineExprKind::MemoryRead { .. } = &root.kind {
             self.validate_memory_read(artifact, inst, entity, root)?;
-        }
-        let disposition = artifact
-            .obligations()
-            .instruction_for_inst(inst.id)
-            .ok_or(MachineBuildError::MissingInstructionDisposition(inst.id))?;
-        if disposition.id != entity.producer {
-            return Err(MachineBuildError::ObligationMismatch(inst.id));
         }
         Ok(())
     }
