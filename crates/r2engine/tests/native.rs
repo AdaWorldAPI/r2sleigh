@@ -6022,6 +6022,10 @@ fn a_go_stack_check_is_compiler_inserted_by_the_runtime_model() {
     let text = response.output.text();
     assert!(!text.contains("morestack"), "{text}");
     assert!(
+        !text.contains("if ("),
+        "the body runs unconditionally:\n{text}"
+    );
+    assert!(
         text.contains("compiler-inserted (by the callee's runtime model)"),
         "{text}"
     );

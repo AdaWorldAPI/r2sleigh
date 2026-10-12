@@ -114,9 +114,9 @@ const AARCH64_DARWIN: [PlatformRegister; 1] = [PlatformRegister {
                register x18. Don't use this register.\"",
 }];
 
-/// A word a compiler-inserted stack check reads at a constant offset from a reserved register:
-/// a platform's canary for a stack protector, or a runtime's lowest stack pointer (Go's
-/// `g.stackguard0`).
+/// A word a compiler-inserted stack check reads at a constant offset from a register no call
+/// changes: a platform's canary beside a reserved register, or a runtime's lowest stack pointer
+/// beside the register its convention fixes (Go's `g.stackguard0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StackGuard {
     /// The reserved register, spelled as radare2 spells it.
