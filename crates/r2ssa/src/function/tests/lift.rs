@@ -262,7 +262,6 @@ fn call_result_certificates_require_a_complete_machine_boundary() {
     // The call defines the root once; the lane the program reads is a
     // `Subpiece` of it, certified as that result sliced.
     let eax = prepared
-        .function()
         .named_block(0x16c0)
         .into_iter()
         .flat_map(|block| block.ops().to_vec())
@@ -412,7 +411,6 @@ fn a_callee_proven_to_preserve_a_register_leaves_it_undefined_by_the_call() {
         .expect("artifact without callee facts");
     let call_defines = |artifact: &SsaArtifact, name: &str| {
         artifact
-            .function()
             .named_block(0x1000)
             .expect("entry block")
             .ops()
@@ -429,7 +427,6 @@ fn a_callee_proven_to_preserve_a_register_leaves_it_undefined_by_the_call() {
     assert_eq!(call_defines(&with, "rax"), 1);
     // The store reads the value rdi held on entry, not a clobber.
     let stored = with
-        .function()
         .named_block(0x1000)
         .expect("entry block")
         .ops()
@@ -491,7 +488,6 @@ fn a_callee_that_returns_an_unaffected_register_defines_it_at_the_call() {
     .expect("artifact without callee facts");
     let call_defines = |artifact: &SsaArtifact| {
         artifact
-            .function()
             .named_block(0x1000)
             .expect("entry block")
             .ops()
@@ -505,7 +501,6 @@ fn a_callee_that_returns_an_unaffected_register_defines_it_at_the_call() {
     assert_eq!(call_defines(&with), 1);
     let stored = |artifact: &SsaArtifact| {
         artifact
-            .function()
             .named_block(0x1000)
             .expect("entry block")
             .ops()

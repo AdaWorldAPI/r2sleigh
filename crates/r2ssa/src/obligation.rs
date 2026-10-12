@@ -2043,7 +2043,6 @@ mod tests {
             block_addr,
             site: super::CanonicalInstructionSite::Op(
                 artifact
-                    .function()
                     .named_block(block_addr)
                     .and_then(|block| block.op_id(index))
                     .expect("the fixture's operation"),
@@ -3039,7 +3038,6 @@ mod tests {
         // incomplete makes it an unknown effect: the value is one this
         // function computes and can spell.
         let (block_addr, op_index) = artifact
-            .function()
             .named_block(0x3180)
             .expect("loop block")
             .ops()

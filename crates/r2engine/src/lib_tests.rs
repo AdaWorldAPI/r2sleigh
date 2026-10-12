@@ -1191,8 +1191,7 @@ fn ledger_test_obligation(
     index: usize,
 ) -> r2ssa::SemanticObligationId {
     let op = artifact
-        .function()
-        .get_block(0x401000)
+        .named_block(0x401000)
         .and_then(|block| block.op_id(index))
         .expect("the test operation");
     r2ssa::SemanticObligationId {

@@ -55,10 +55,9 @@ fn unchecked_and_controlled_decompile_builders_produce_identical_artifacts() {
         controlled.function().block_addrs()
     );
     for (lhs, rhs) in unchecked
-        .function()
         .named_blocks()
         .iter()
-        .zip(controlled.function().named_blocks())
+        .zip(controlled.named_blocks())
     {
         assert_eq!(lhs.addr, rhs.addr);
         assert_eq!(lhs.size, rhs.size);
@@ -103,8 +102,8 @@ fn prepared_function_ssa_tracks_mode_and_keeps_named_blocks() {
 
     assert_eq!(prepared.name.as_deref(), Some("prepared_demo"));
 
-    assert_eq!(prepared.function().named_blocks().len(), 1);
-    assert_eq!(prepared.function().named_blocks()[0].addr, 0x1000);
+    assert_eq!(prepared.named_blocks().len(), 1);
+    assert_eq!(prepared.named_blocks()[0].addr, 0x1000);
 
     // Every artifact is sealed, so the symbolic one carries prep facts too:
     // the type says so, where a test used to.
@@ -1463,10 +1462,10 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
     );
 }
 
-/// The graph spells a sealed function's blocks exactly as the function does: each operation and
-/// phi under its own id, a merge with its sources and storage.
+/// The graph spells a function's blocks exactly as the function does: each operation and phi
+/// under its own id, a merge with its sources and storage.
 #[test]
-fn the_graph_spells_the_sealed_blocks_as_the_function_does() {
+fn the_graph_spells_the_blocks_as_the_function_does() {
     let arch = make_x86_64_prep_arch();
     let arm = |addr: u64, value: u64| R2ILBlock {
         addr,
@@ -1503,7 +1502,8 @@ fn the_graph_spells_the_sealed_blocks_as_the_function_does() {
             ..Default::default()
         },
     ];
-    let prepared = SsaArtifact::for_decompile(&blocks, Some(&arch)).expect("prepared SSA");
+    let function = SSAFunction::from_blocks_raw(&blocks, Some(&arch)).expect("renamed SSA");
+    let graph = crate::SsaGraph::from_function_with_storage(&function);
     let spelled = |blocks: Vec<crate::SSABlock>| {
         (blocks.iter())
             .map(|block| {
@@ -1517,11 +1517,11 @@ fn the_graph_spells_the_sealed_blocks_as_the_function_does() {
             })
             .collect::<Vec<_>>()
     };
-    let from_graph = spelled(prepared.graph().named_blocks());
+    let from_graph = spelled(graph.named_blocks());
     assert!(
         from_graph
             .iter()
             .any(|(_, _, _, phis)| phis.contains("canonical_storage"))
     );
-    assert_eq!(from_graph, spelled(prepared.function().named_blocks()));
+    assert_eq!(from_graph, spelled(function.named_blocks()));
 }

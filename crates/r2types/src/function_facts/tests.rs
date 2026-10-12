@@ -17,7 +17,6 @@ fn inst_at(prepared: &r2ssa::SsaArtifact, block_addr: u64, index: usize) -> r2ss
 /// The operation a fixture names by its block and its place in the block.
 fn op_at(prepared: &r2ssa::SsaArtifact, block_addr: u64, index: usize) -> r2ssa::OpId {
     prepared
-        .function()
         .named_block(block_addr)
         .and_then(|block| block.op_id(index))
         .expect("the fixture's operation")
@@ -1390,7 +1389,6 @@ fn prepared_call_results_bind_certified_exprs_to_stable_call_ids() {
     facts.attach_prepared_decompile_evidence(&prepared);
 
     let store_value = prepared
-        .function()
         .named_block(0x401000)
         .expect("entry block")
         .ops()
@@ -2237,7 +2235,6 @@ fn prepared_render_facts_certify_branch_guarded_phi() {
     )
     .expect("prepared");
     let phi = prepared
-        .function()
         .named_block(0x40100c)
         .and_then(|block| {
             block
@@ -2544,7 +2541,6 @@ fn scalar_array_candidates_populate_indexed_member_render_facts() {
     });
     let prepared = x86_stack_home_prepared(&[block]);
     let load_index = prepared
-        .function()
         .named_block(0x401000)
         .expect("block")
         .ops()

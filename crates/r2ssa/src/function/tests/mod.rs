@@ -71,7 +71,7 @@ fn tail_jump_is_a_terminal_callsite_without_call_clobbers() {
     let function = SSAFunction::from_blocks_for_decompile(&[block], None).expect("tail branch SSA");
     let artifact = SsaArtifact::new_with_context(function, context);
 
-    let prepared_block = artifact.function().named_block(0x1000).expect("tail block");
+    let prepared_block = artifact.named_block(0x1000).expect("tail block");
     assert!(matches!(prepared_block.ops(), [SSAOp::Branch { .. }]));
     assert!(
         !prepared_block
@@ -2249,7 +2249,6 @@ fn prepared_ssa_preserves_exact_widths_when_unique_offsets_are_reused() {
 
     let artifact = SsaArtifact::raw(&blocks, None).expect("width-coherent prepared SSA");
     let ops = &artifact
-        .function()
         .named_block(0x1000)
         .expect("entry block")
         .ops()
@@ -2429,10 +2428,7 @@ fn a_call_that_never_returns_ends_its_block_past_the_lanes_it_writes() {
         ],
         callee,
     );
-    let ends = artifact
-        .function()
-        .named_block(0x1020)
-        .expect("calling block");
+    let ends = artifact.named_block(0x1020).expect("calling block");
     assert!(
         matches!(ends.ops().last(), Some(SSAOp::Insert(_))),
         "{:?}",
@@ -2476,8 +2472,7 @@ fn a_call_keeps_the_merged_half_of_a_register_it_writes_part_of() {
         ],
         BTreeMap::new(),
     );
-    let function = artifact.function();
-    let named = function.named_blocks();
+    let named = artifact.named_blocks();
     let ops = || named.iter().flat_map(|block| block.ops());
     let merged = |value: &SSAVar| {
         let mut phis = named.iter().flat_map(|block| block.phis());
@@ -2627,7 +2622,6 @@ fn building_a_function_twice_mints_the_same_ids() {
     let (first, second) = (build(), build());
     let sited = |artifact: &SsaArtifact| {
         artifact
-            .function()
             .named_blocks()
             .iter()
             .flat_map(|block| {
@@ -2714,13 +2708,10 @@ fn an_operation_keeps_its_id_and_instruction_while_the_block_around_it_changes()
     assert_eq!(graph.inst_for_op(before[1].0), None);
 }
 
-/// A sealed function's prep facts describe the blocks it keeps: sealing
-/// rewrites the blocks and collects the facts once, after the last rewrite,
-/// and nothing changes the blocks after. Collecting again from the sealed
-/// blocks gives the same identity facts, and the copy forwarding sealing ran
-/// is in the blocks those facts were read from.
+/// After the seal the graph owns each operation and the function keeps none (doc/adr-one-ir.md,
+/// MM.6): the copy forwarding sealing ran is in the graph's operations.
 #[test]
-fn a_sealed_function_s_prep_facts_describe_its_own_blocks() {
+fn a_sealed_function_s_operations_are_its_graph_s() {
     let mut block = R2ILBlock::new(0x1000, 4);
     block.push(R2ILOp::Copy {
         dst: Varnode::register(0, 8),
@@ -2735,17 +2726,26 @@ fn a_sealed_function_s_prep_facts_describe_its_own_blocks() {
         .expect("a raw function validates")
         .seal(&SourceMachineContext::from_blocks(&[block], None))
         .expect("the sealed function validates");
-    let again = sealed.function().prep_facts_for_test();
-    assert_eq!(sealed.decompile_prep_facts().views, again.views);
-    assert_eq!(
-        sealed.decompile_prep_facts().stack_address_roots,
-        again.stack_address_roots
-    );
-    assert_eq!(
-        sealed.graph(),
-        &SsaGraph::from_function_with_storage(sealed.function()),
-        "the graph was built from the sealed blocks"
-    );
+    let ops = sealed.graph().named_blocks()[0].ops().to_vec();
+    assert!(matches!(ops.as_slice(), [SSAOp::Copy { .. }, SSAOp::Return { .. }]), "{ops:?}");
+}
+
+/// Reading a sealed function's operations is a defect the debug build names.
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "a sealed function's operations are the graph's")]
+fn a_sealed_function_refuses_to_read_its_operations() {
+    let mut block = R2ILBlock::new(0x1000, 4);
+    block.push(R2ILOp::Return {
+        target: Varnode::register(16, 8),
+    });
+    let func = SSAFunction::from_blocks_raw(&[block.clone()], None).expect("a function");
+    let sealed = Lifted::new(func)
+        .validate()
+        .expect("a raw function validates")
+        .seal(&SourceMachineContext::from_blocks(&[block], None))
+        .expect("the sealed function validates");
+    let _ = sealed.function().blocks().len();
 }
 
 /// A register the convention's list never names is still one a call may

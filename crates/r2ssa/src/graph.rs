@@ -642,43 +642,47 @@ impl SsaGraph {
     /// and phi under its own `OpId`. For readers still keyed by name (F2.3's transitional
     /// readers, which P9 moves to values).
     pub fn named_blocks(&self) -> Vec<crate::SSABlock> {
-        let spelled = |id: &ValueId| self.var(*id).clone();
-        self.blocks
-            .iter()
-            .map(|block| {
-                let insts = self.op_insts(block.id);
-                let ops = (insts.iter())
-                    .filter_map(|inst| Some(self.op(*inst)?.map(&mut |id| spelled(id))))
-                    .collect();
-                let ids = (insts.iter())
-                    .filter_map(|inst| self.op_for_inst(*inst))
-                    .collect();
-                let phi_insts = self.phi_insts(block.id);
-                let phis = (phi_insts.iter())
-                    .filter_map(|inst| {
-                        let phi = self.inst(*inst)?;
-                        let InstPayload::Phi { predecessors } = &phi.payload else {
-                            return None;
-                        };
-                        let output = phi.output?;
-                        let sources = (predecessors.iter().zip(self.inputs(*inst)))
-                            .filter_map(|(from, value)| {
-                                Some((self.block(*from)?.addr, spelled(value)))
-                            })
-                            .collect();
-                        Some(crate::PhiNode {
-                            dst: spelled(&output),
-                            sources,
-                            canonical_storage: self.value(output)?.canonical_storage,
-                        })
-                    })
-                    .collect();
-                let phi_ids = (phi_insts.iter())
-                    .filter_map(|inst| self.op_for_inst(*inst))
-                    .collect();
-                crate::SSABlock::with_ids(block.addr, block.size, (ops, ids), (phis, phi_ids))
-            })
+        (self.blocks.iter())
+            .map(|block| self.spelled_block(block))
             .collect()
+    }
+
+    /// One block spelled by name; see [`Self::named_blocks`].
+    pub fn named_block(&self, addr: u64) -> Option<crate::SSABlock> {
+        Some(self.spelled_block(self.block(self.block_id_for_addr(addr)?)?))
+    }
+
+    fn spelled_block(&self, block: &GraphBlock) -> crate::SSABlock {
+        let spelled = |id: &ValueId| self.var(*id).clone();
+        let insts = self.op_insts(block.id);
+        let ops = (insts.iter())
+            .filter_map(|inst| Some(self.op(*inst)?.map(&mut |id| spelled(id))))
+            .collect();
+        let ids = (insts.iter())
+            .filter_map(|inst| self.op_for_inst(*inst))
+            .collect();
+        let phi_insts = self.phi_insts(block.id);
+        let phis = (phi_insts.iter())
+            .filter_map(|inst| {
+                let phi = self.inst(*inst)?;
+                let InstPayload::Phi { predecessors } = &phi.payload else {
+                    return None;
+                };
+                let output = phi.output?;
+                let sources = (predecessors.iter().zip(self.inputs(*inst)))
+                    .filter_map(|(from, value)| Some((self.block(*from)?.addr, spelled(value))))
+                    .collect();
+                Some(crate::PhiNode {
+                    dst: spelled(&output),
+                    sources,
+                    canonical_storage: self.value(output)?.canonical_storage,
+                })
+            })
+            .collect();
+        let phi_ids = (phi_insts.iter())
+            .filter_map(|inst| self.op_for_inst(*inst))
+            .collect();
+        crate::SSABlock::with_ids(block.addr, block.size, (ops, ids), (phis, phi_ids))
     }
 
     /// The operation an instruction is; `None` for a phi.

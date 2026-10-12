@@ -2717,7 +2717,7 @@ fn a_convention_result_read_only_by_the_return_is_the_call_result() {
     };
     let (function, graph) = (artifact.function(), artifact.graph());
     let live_out = crate::liveout::FunctionLiveOut::compute(function, graph, &[eax]);
-    let call_index = function
+    let call_index = artifact
         .named_block(0x1000)
         .expect("entry block")
         .ops()

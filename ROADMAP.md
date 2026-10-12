@@ -395,9 +395,17 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             `SsaGraph::named_blocks`, r2dec and r2engine) reads the graph;
             the named copies those passes built per call are gone. `pdd` 2
             to 6% faster, the 50-function session 3%, allocations 1% fewer,
-            heap peaks unchanged, census byte-identical. Step 2, next: drop
-            the function's blocks at the seal behind a type, the tests that
-            read a sealed function's blocks moved to the graph.
+            heap peaks unchanged, census byte-identical. Step 2 done
+            (#183): the seal drops the function's blocks of operations once
+            the graph is built and the function validated, keeping its CFG,
+            arena and records; a read of them is a debug assertion
+            (`a_sealed_function_refuses_to_read_its_operations`), and the
+            tests read the graph (`SsaArtifact::named_block(s)`). Heap peak
+            0pack `0x58e3d0` 167.3 to 162.4 MiB, pumasim 147.6 to 143.8,
+            the session 191.4 to 187.5; time 2 to 4% lower; census
+            byte-identical. Left: the value table once no `VarId` outlives
+            the seal (the `formal_*` maps have graph twins), a compile-time
+            type for the sealed function in place of the debug assertion.
          2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
             symbols 7.6, names 4.2), PF's.
          3. **MM.7** compact identities: a disposition (48 B per

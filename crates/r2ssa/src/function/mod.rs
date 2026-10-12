@@ -1635,12 +1635,21 @@ impl SsaArtifact {
             })
     }
 
+    /// Every block spelled by name, off the graph that owns each operation after the seal.
+    pub fn named_blocks(&self) -> Vec<SSABlock> {
+        self.graph().named_blocks()
+    }
+
+    /// One block spelled by name, off the graph; see [`Self::named_blocks`].
+    pub fn named_block(&self, addr: u64) -> Option<SSABlock> {
+        self.graph().named_block(addr)
+    }
+
     /// The instruction a test names by its block and its place among the
     /// block's operations.
     #[cfg(test)]
     pub(crate) fn inst_at(&self, block_addr: u64, index: usize) -> Option<crate::graph::InstId> {
-        let op = self.function().get_block(block_addr)?.op_id(index)?;
-        self.graph().inst_for_op(op)
+        self.graph().inst_spelled_at(block_addr, index)
     }
 
     pub fn object_for_var(&self, var: &SSAVar, space: r2il::SpaceId) -> Option<ObjectId> {
@@ -2920,6 +2929,16 @@ impl SSAFunction {
     }
 
     /// Give back the room the function's growth left, once it is edited for the last time.
+    /// The seal's last step: the graph owns each operation from here (doc/adr-one-ir.md, MM.6).
+    pub(crate) fn drop_operations(&mut self) {
+        debug_assert_eq!(
+            self.blocks.len(),
+            self.block_order.len(),
+            "one block per address"
+        );
+        self.blocks.drop_operations();
+    }
+
     pub(crate) fn shrink_to_fit(&mut self) {
         self.blocks.shrink_to_fit();
         self.values.shrink_to_fit();
@@ -3701,7 +3720,7 @@ impl SSAFunction {
 
     /// Get the number of blocks.
     pub fn num_blocks(&self) -> usize {
-        self.blocks.len()
+        self.block_order.len()
     }
 
     /// Get the CFG.

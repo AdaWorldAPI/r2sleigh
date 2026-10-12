@@ -464,7 +464,6 @@ fn prepared_call_result_refuses_display_named_stack_store_reload_owner() {
     let prepared = prepared_preserving(&blocks, &arch, &["rbx", "rsp", "rbp"])
         .expect("prepared SSA should build");
     let alias_var = prepared
-        .function()
         .named_block(0x1780)
         .and_then(|block| {
             block.ops().iter().find_map(|op| match op {
@@ -483,7 +482,6 @@ fn prepared_call_result_refuses_display_named_stack_store_reload_owner() {
             .is_none()
     );
     let truncated_var = prepared
-        .function()
         .named_block(0x1780)
         .and_then(|block| {
             block.ops().iter().find_map(|op| match op {

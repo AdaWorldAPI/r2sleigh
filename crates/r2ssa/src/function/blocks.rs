@@ -25,6 +25,8 @@ use super::edit::EditPlan;
 pub(crate) struct Blocks<V = crate::value_table::VarId> {
     items: Vec<SSABlock<V>>,
     arena: OpArena,
+    /// The operations went at the seal: the graph holds them (doc/adr-one-ir.md, MM.6).
+    sealed: bool,
 }
 
 impl<V> Default for Blocks<V> {
@@ -32,13 +34,25 @@ impl<V> Default for Blocks<V> {
         Self {
             items: Vec::new(),
             arena: OpArena::default(),
+            sealed: false,
         }
     }
 }
 
 impl<V> Blocks<V> {
     pub(crate) fn new(items: Vec<SSABlock<V>>, arena: OpArena) -> Self {
-        Self { items, arena }
+        Self {
+            items,
+            arena,
+            sealed: false,
+        }
+    }
+
+    /// Give the operations up once the graph is built and the function validated: after the seal
+    /// the graph owns each operation, and reading them here is a defect.
+    pub(crate) fn drop_operations(&mut self) {
+        self.items = Vec::new();
+        self.sealed = true;
     }
 
     /// Blocks no function has numbered yet: each is adopted into a fresh
@@ -135,6 +149,10 @@ impl<V> Deref for Blocks<V> {
     type Target = [SSABlock<V>];
 
     fn deref(&self) -> &[SSABlock<V>] {
+        debug_assert!(
+            !self.sealed,
+            "a sealed function's operations are the graph's"
+        );
         &self.items
     }
 }

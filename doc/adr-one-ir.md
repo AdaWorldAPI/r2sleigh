@@ -113,7 +113,9 @@ stack pointer.
 
 Step 1 is done (#182): the post-seal readers read the graph, and r2types'
 named copy is spelled from it (`SsaGraph::named_blocks`, checked equal to the
-function's by `the_graph_spells_the_sealed_blocks_as_the_function_does`).
+function's by `the_graph_spells_the_blocks_as_the_function_does`). Step 2 is
+done (#183): the seal drops the blocks of operations after validation, and a
+read of them is a debug assertion; a type in its place is left.
 
 Exit: one encoding of each operation live after the seal, the census
 byte-identical at each step, about 10 to 14 MB of 0pack's peak (5 to 8%).
