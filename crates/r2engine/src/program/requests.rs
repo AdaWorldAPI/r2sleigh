@@ -142,10 +142,30 @@ pub struct AnalysisRefused {
     pub unresolved: Vec<u64>,
 }
 
+/// What a held rendering keeps of the response it was drawn from: the text, the ledger and the
+/// premises its readers ask for. The facts behind them stay with the analysis, which a session
+/// drops by its own budget (doc/adr-memory-model.md).
+#[derive(Clone)]
+pub struct RenderedResponse {
+    pub output: crate::EngineRendering,
+    pub obligation_ledger: Option<r2dec::ledger::ObligationLedger>,
+    pub premises: std::collections::BTreeSet<r2source::Premise>,
+}
+
+impl From<EngineDecompileResponse> for RenderedResponse {
+    fn from(response: EngineDecompileResponse) -> Self {
+        Self {
+            output: response.output,
+            obligation_ledger: response.obligation_ledger,
+            premises: response.premises,
+        }
+    }
+}
+
 /// A function rendered, with what of its analysis the rendering is shown with.
 #[derive(Clone)]
 pub struct Rendering {
-    pub response: EngineDecompileResponse,
+    pub response: RenderedResponse,
     /// The name the C defines the function under.
     pub definition: String,
     /// The callees the analysis could not read.

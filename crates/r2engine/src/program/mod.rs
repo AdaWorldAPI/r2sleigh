@@ -20,8 +20,8 @@ mod view;
 use view::View;
 
 pub use requests::{
-    AnalysisRefused, EdgeKind, FunctionGraph, FunctionListing, GraphBlock, GraphEdge, Rendering,
-    Syscall,
+    AnalysisRefused, EdgeKind, FunctionGraph, FunctionListing, GraphBlock, GraphEdge,
+    RenderedResponse, Rendering, Syscall,
 };
 
 pub use source::*;

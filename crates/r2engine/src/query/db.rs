@@ -183,7 +183,7 @@ struct Entry<V> {
     deps: Rc<[Dep]>,
     verified_at: u64,
     changed_at: u64,
-    /// When it was computed, so a table at capacity drops its oldest.
+    /// When it was computed or last read, so a table at capacity drops the least recently used.
     stamp: u64,
 }
 
@@ -462,9 +462,12 @@ impl<Q: Query<I>, I: Inputs + 'static> Table<Q, I> {
             {
                 return Ok(None);
             }
-            if let Some(entry) = self.entries.borrow_mut().get_mut(key) {
-                entry.verified_at = now;
-            }
+        }
+        let stamp = self.tick();
+        if let Some(entry) = self.entries.borrow_mut().get_mut(key) {
+            entry.verified_at = now;
+            // A value just read is the last a bound drops: the least recently used goes first.
+            entry.stamp = stamp;
         }
         self.count(|stats| stats.reused += 1);
         db.stats.borrow_mut().reused += 1;
@@ -483,7 +486,8 @@ impl<Q: Query<I>, I: Inputs + 'static> Table<Q, I> {
         stamp
     }
 
-    /// Drop the oldest values past the query's capacity, keeping what each read; a dropped value is recomputed when asked.
+    /// Drop the least recently used values past the query's capacity, keeping what each read; a
+    /// dropped value is recomputed when asked.
     fn bound(entries: &mut BTreeMap<Q::Key, Entry<Q::Value>>) {
         let Some(capacity) = Q::CAPACITY else {
             return;

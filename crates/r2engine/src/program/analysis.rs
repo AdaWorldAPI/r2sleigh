@@ -11,8 +11,9 @@ use crate::{EngineDecompileResponse, EngineSession, SealedFunctionAnalysis};
 /// A shared answer compared by identity: a recomputed analysis is a new one, never backdated.
 pub(super) struct Shared<T>(pub(super) Arc<T>);
 
-/// SSA operations the analyses, and apart the sealings, hold at once (doc/adr-next-pass.md, PF3).
-const OPERATIONS_HELD: usize = 200_000;
+/// SSA operations the analyses, and apart the sealings, hold at once: about 80 MB each at 1.6 KB
+/// per operation, the newest kept past it (doc/adr-memory-model.md, decision 2).
+const OPERATIONS_HELD: usize = 50_000;
 
 impl<T> Clone for Shared<T> {
     fn clone(&self) -> Self {
@@ -313,7 +314,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Rendered {
             }
         };
         let rendering = super::Rendering {
-            response,
+            response: response.into(),
             definition,
             unread,
             // A fact the container states, fixed for the program's life: no read to record.
