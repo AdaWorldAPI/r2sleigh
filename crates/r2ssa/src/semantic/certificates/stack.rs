@@ -408,7 +408,7 @@ pub(crate) fn exact_copy_chain_to_storage(
         };
         let output = definition.output?;
         if site.input_idx != 0
-            || definition.inputs.as_slice() != [current]
+            || graph.inputs(definition.id) != [current]
             || *src != current
             || *dst != output
             || graph.var(*src).size != storage.size
@@ -547,11 +547,11 @@ pub(crate) fn collect_stack_frame_round_trip_certificates(
             r2il::refusal_evidence!("frame-round-trip", "{object:?}: store carries no value");
             continue;
         };
-        if store_inst.inputs.as_slice() != [store.address, stored_value] {
+        if graph.inputs(store_inst.id) != [store.address, stored_value] {
             r2il::refusal_evidence!(
                 "frame-round-trip",
                 "{object:?}: store reads {:?}, fact says address {:?} value {stored_value:?}",
-                store_inst.inputs,
+                graph.inputs(store_inst.id),
                 store.address
             );
             continue;
@@ -629,7 +629,7 @@ pub(crate) fn collect_stack_frame_round_trip_certificates(
                 complete = false;
                 break;
             };
-            if load_inst.inputs.as_slice() != [load.address]
+            if graph.inputs(load_inst.id) != [load.address]
                 || load_inst.output != Some(loaded_value)
             {
                 complete = false;
@@ -787,8 +787,8 @@ pub(crate) fn collect_stack_geometry_certificate(
                 return false;
             };
             match &definition.payload {
-                InstPayload::Op(SSAOp::Copy { .. }) if definition.inputs.len() == 1 => {
-                    current = definition.inputs[0];
+                InstPayload::Op(SSAOp::Copy { .. }) if graph.inputs(definition.id).len() == 1 => {
+                    current = graph.inputs(definition.id)[0];
                 }
                 _ => return false,
             }
@@ -839,9 +839,9 @@ pub(crate) fn collect_stack_geometry_certificate(
         let exact = match &inst.payload {
             InstPayload::Phi { predecessors } => {
                 !predecessors.is_empty()
-                    && inst.inputs.len() == predecessors.len()
-                    && inst
-                        .inputs
+                    && graph.inputs(inst.id).len() == predecessors.len()
+                    && graph
+                        .inputs(inst.id)
                         .iter()
                         .all(|input| stack_root(*input) == output_root)
             }
@@ -849,24 +849,26 @@ pub(crate) fn collect_stack_geometry_certificate(
             // it only for the carrier the callee brings back (rename.rs), so
             // its output is exactly its input's geometry.
             InstPayload::Op(SSAOp::Copy { .. } | SSAOp::CallRestore { .. }) => {
-                inst.inputs.len() == 1 && stack_root(inst.inputs[0]).is_some()
+                graph.inputs(inst.id).len() == 1 && stack_root(graph.inputs(inst.id)[0]).is_some()
             }
             InstPayload::Op(SSAOp::IntAdd { .. }) => {
-                inst.inputs.len() == 2
-                    && ((stack_root(inst.inputs[0]).is_some() && is_constant(inst.inputs[1]))
-                        || (is_constant(inst.inputs[0]) && stack_root(inst.inputs[1]).is_some()))
+                graph.inputs(inst.id).len() == 2
+                    && ((stack_root(graph.inputs(inst.id)[0]).is_some()
+                        && is_constant(graph.inputs(inst.id)[1]))
+                        || (is_constant(graph.inputs(inst.id)[0])
+                            && stack_root(graph.inputs(inst.id)[1]).is_some()))
                     && !addresses_declared_array(output)
             }
             InstPayload::Op(SSAOp::IntSub { .. }) => {
-                inst.inputs.len() == 2
-                    && stack_root(inst.inputs[0]).is_some()
-                    && is_constant(inst.inputs[1])
+                graph.inputs(inst.id).len() == 2
+                    && stack_root(graph.inputs(inst.id)[0]).is_some()
+                    && is_constant(graph.inputs(inst.id)[1])
             }
             _ => false,
         };
         if exact {
             geometry_outputs.insert(inst.id, output);
-            geometry_inputs.extend(inst.inputs.iter().copied());
+            geometry_inputs.extend(graph.inputs(inst.id).iter().copied());
         }
     }
 
@@ -890,7 +892,10 @@ pub(crate) fn collect_stack_geometry_certificate(
             inst.payload,
             InstPayload::Op(SSAOp::Load { .. } | SSAOp::Store { .. })
         );
-        if exact_stack_object && spelled_as_access && inst.inputs.first() == Some(&access.address) {
+        if exact_stack_object
+            && spelled_as_access
+            && graph.inputs(inst.id).first() == Some(&access.address)
+        {
             stack_address_uses.insert(UseSite {
                 inst: access.id.inst,
                 input_idx: 0,
@@ -902,7 +907,7 @@ pub(crate) fn collect_stack_geometry_certificate(
         .flat_map(|certificate| certificate.insts.iter())
         .flat_map(|inst| {
             graph.inst(*inst).into_iter().flat_map(move |definition| {
-                (0..definition.inputs.len()).map(move |input_idx| UseSite {
+                (0..graph.inputs(definition.id).len()).map(move |input_idx| UseSite {
                     inst: *inst,
                     input_idx,
                 })
@@ -1014,7 +1019,9 @@ pub(crate) fn collect_stack_geometry_certificate(
         let Some(definition) = graph.inst(inst) else {
             continue;
         };
-        uses.extend((0..definition.inputs.len()).map(|input_idx| UseSite { inst, input_idx }));
+        uses.extend(
+            (0..graph.inputs(definition.id).len()).map(|input_idx| UseSite { inst, input_idx }),
+        );
     }
     StackGeometryCertificate {
         insts,
@@ -1057,8 +1064,8 @@ fn greatest_closed(
         values.remove(value);
         if let Some(definition) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) {
             pending.extend(
-                definition
-                    .inputs
+                graph
+                    .inputs(definition.id)
                     .iter()
                     .copied()
                     .filter(|input| values.contains(*input)),
@@ -1321,7 +1328,7 @@ pub(crate) fn collect_stack_reload_source_certificates(
             let Some(inst) = graph.inst(use_site.inst) else {
                 continue;
             };
-            let Some(output) = stack_reload_propagation_output(inst, value) else {
+            let Some(output) = stack_reload_propagation_output(graph, inst, value) else {
                 continue;
             };
             if certificates.contains(output) {
@@ -1404,6 +1411,7 @@ pub(crate) fn insert_stack_reload_source_certificate(
 }
 
 pub(crate) fn stack_reload_propagation_output(
+    graph: &SsaGraph,
     inst: &crate::graph::GraphInst,
     source: ValueId,
 ) -> Option<ValueId> {
@@ -1416,9 +1424,13 @@ pub(crate) fn stack_reload_propagation_output(
             | SSAOp::Trunc { .. }
             | SSAOp::Cast { .. }
             | SSAOp::Subpiece { .. },
-        ) if inst.inputs.len() == 1 && inst.inputs.first().copied() == Some(source) => Some(output),
-        InstPayload::Phi { .. } if expression_phi_is_identity(inst) => {
-            (inst.inputs.first().copied() == Some(source)).then_some(output)
+        ) if graph.inputs(inst.id).len() == 1
+            && graph.inputs(inst.id).first().copied() == Some(source) =>
+        {
+            Some(output)
+        }
+        InstPayload::Phi { .. } if expression_phi_is_identity(graph, inst) => {
+            (graph.inputs(inst.id).first().copied() == Some(source)).then_some(output)
         }
         _ => None,
     }

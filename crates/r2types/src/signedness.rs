@@ -205,7 +205,12 @@ pub(crate) fn scalar_signedness_of(
             r2ssa::InstPayload::Phi { .. } => inst.output.map(|output| (inst, output)),
             r2ssa::InstPayload::Op(_) => None,
         })
-        .flat_map(|(inst, output)| inst.inputs.iter().map(move |input| (*input, output)));
+        .flat_map(|(inst, output)| {
+            graph
+                .inputs(inst.id)
+                .iter()
+                .map(move |input| (*input, output))
+        });
     infer_scalar_signedness(operations, merge_links.chain(aliases), |value| {
         graph.value(value).map_or((0, false), |value| {
             (value.var.size, value.var.constant_bits().is_some())

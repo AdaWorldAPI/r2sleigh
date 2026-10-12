@@ -707,7 +707,7 @@ fn unread_phis(graph: &SsaGraph, live_out: &FunctionLiveOut) -> Vec<bool> {
         let Some(inst) = graph.inst(inst) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             let count = &mut readers[input.0 as usize];
             *count = count.saturating_sub(1);
             pending.extend(unread_phi(*input, &readers));

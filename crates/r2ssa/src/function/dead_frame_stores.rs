@@ -87,7 +87,7 @@ fn dead_store_values(artifact: &SsaArtifact, stores: &IdSet<InstId>) -> IdSet<In
     let stored = |inst: InstId| {
         graph
             .inst(inst)
-            .and_then(|inst| inst.inputs.get(1).copied())
+            .and_then(|inst| graph.inputs(inst.id).get(1).copied())
     };
     for value in stores.iter().filter_map(stored) {
         if remaining.get(value).is_none() {
@@ -107,7 +107,7 @@ fn dead_store_values(artifact: &SsaArtifact, stores: &IdSet<InstId>) -> IdSet<In
         if !pure || live_out.contains(value) || !values.insert(def.id) {
             continue;
         }
-        for input in &def.inputs {
+        for input in graph.inputs(def.id) {
             let left = remaining
                 .get(*input)
                 .copied()

@@ -561,7 +561,7 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
         producer.payload,
         crate::graph::InstPayload::Op(SSAOp::Copy { .. })
     ));
-    let [input] = producer.inputs.as_slice() else {
+    let [input] = prepared.graph().inputs(producer.id) else {
         panic!("register argument copy must have one exact input");
     };
     assert!(

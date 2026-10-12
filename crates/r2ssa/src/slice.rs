@@ -197,7 +197,12 @@ pub fn backward_slice(artifact: &SsaArtifact, seed: SliceSeed) -> Slice {
                         slice.error = Some(SliceError::InvalidInstruction(id));
                         break;
                     };
-                    dependencies.extend(inst.inputs.iter().map(|value| value_node(graph, *value)));
+                    dependencies.extend(
+                        graph
+                            .inputs(inst.id)
+                            .iter()
+                            .map(|value| value_node(graph, *value)),
+                    );
                     if let Some(uses) = facts.memory.uses_by_inst.get(id) {
                         dependencies.extend(uses.iter().map(|use_fact| {
                             Node::Memory(use_fact.version, use_fact.location.clone())
@@ -377,8 +382,8 @@ fn render_instruction(artifact: &SsaArtifact, id: InstId) -> String {
         .output
         .map(|value| value_label(graph, value))
         .unwrap_or_else(|| "-".into());
-    let inputs = inst
-        .inputs
+    let inputs = graph
+        .inputs(inst.id)
         .iter()
         .map(|value| value_label(graph, *value))
         .collect::<Vec<_>>()
@@ -572,14 +577,14 @@ mod tests {
             .iter()
             .find(|inst| matches!(inst.payload, InstPayload::Phi { .. }))
             .ok_or("fixture needs a phi")?;
-        assert_eq!(phi.inputs.len(), 2);
+        assert_eq!(artifact.graph().inputs(phi.id).len(), 2);
         let slice = backward_slice(&artifact, SliceSeed::Instruction(phi.id));
         let text = slice.to_string();
         assert!(slice.error.is_none());
         assert_eq!(text.matches("op=[PHI]").count(), 1);
         assert!(text.contains("depth=1 0x3000:0"));
         assert!(text.contains("depth=1 0x3020:0"));
-        for input in &phi.inputs {
+        for input in artifact.graph().inputs(phi.id) {
             assert!(text.contains(&format!("output={}", value_label(artifact.graph(), *input))));
         }
         assert!(!text.contains("budget-exhausted"));

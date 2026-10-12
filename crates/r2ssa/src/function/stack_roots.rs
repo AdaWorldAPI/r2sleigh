@@ -106,7 +106,7 @@ impl Flow {
                 continue;
             };
             let rule = match &inst.payload {
-                InstPayload::Phi { .. } => Rule::Merge(inst.inputs.clone()),
+                InstPayload::Phi { .. } => Rule::Merge(graph.inputs(inst.id).to_vec()),
                 InstPayload::Op(op) => match *op {
                     SSAOp::Copy { dst, src }
                     | SSAOp::Cast { dst, src }

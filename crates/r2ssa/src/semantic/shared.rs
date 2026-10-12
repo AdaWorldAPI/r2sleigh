@@ -25,7 +25,7 @@ pub(crate) fn loop_carrier_phi_input_matches(
         return false;
     };
 
-    inst.inputs.get(site.input_idx) == Some(&value)
+    graph.inputs(inst.id).get(site.input_idx) == Some(&value)
         && predecessors
             .get(site.input_idx)
             .and_then(|predecessor| graph.block(*predecessor))
@@ -55,7 +55,7 @@ pub(crate) fn code_pointer_run_bytes(
     if entry_bytes == 0 || !size.is_multiple_of(entry_bytes) {
         return None;
     }
-    let address = crate::constant::folded_value(graph, *inst.inputs.first()?)?;
+    let address = crate::constant::folded_value(graph, *graph.inputs(inst.id).first()?)?;
     let mut bytes = Vec::with_capacity(size as usize);
     for entry in 0..size / entry_bytes {
         let at = address.checked_add(u64::from(entry) * u64::from(entry_bytes))?;
@@ -104,30 +104,34 @@ pub(crate) fn value_byte_sources(
             return leaf();
         };
         match &inst.payload {
-            InstPayload::Op(SSAOp::Copy { .. }) => current = *inst.inputs.first()?,
+            InstPayload::Op(SSAOp::Copy { .. }) => current = *graph.inputs(inst.id).first()?,
             InstPayload::Op(SSAOp::Load { space, .. }) => {
                 return code_pointer_run_bytes(graph, machine_context, inst, *space, size)
                     .or_else(leaf);
             }
             InstPayload::Op(SSAOp::IntZExt { .. }) => {
-                let mut bytes = value_byte_sources(graph, machine_context, *inst.inputs.first()?)?;
+                let mut bytes =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).first()?)?;
                 bytes.resize(size as usize, ByteSource::Constant(0));
                 return Some(bytes);
             }
             InstPayload::Op(SSAOp::Piece { .. }) => {
-                let mut bytes = value_byte_sources(graph, machine_context, *inst.inputs.get(1)?)?;
+                let mut bytes =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).get(1)?)?;
                 bytes.extend(value_byte_sources(
                     graph,
                     machine_context,
-                    *inst.inputs.first()?,
+                    *graph.inputs(inst.id).first()?,
                 )?);
                 (bytes.len() == size as usize).then_some(())?;
                 return Some(bytes);
             }
             InstPayload::Op(SSAOp::Insert { .. }) => {
-                let mut bytes = value_byte_sources(graph, machine_context, *inst.inputs.first()?)?;
-                let lane = value_byte_sources(graph, machine_context, *inst.inputs.get(1)?)?;
-                let position = crate::constant::value_of(graph, *inst.inputs.get(2)?)?;
+                let mut bytes =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).first()?)?;
+                let lane =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).get(1)?)?;
+                let position = crate::constant::value_of(graph, *graph.inputs(inst.id).get(2)?)?;
                 if position % 8 != 0 {
                     return None;
                 }
@@ -501,7 +505,7 @@ pub(crate) fn induction_affine_parts_of_definition(
         return None;
     };
     let mask = induction_mask(width_bits);
-    let operand = |index: usize| inst.inputs.get(index).copied();
+    let operand = |index: usize| graph.inputs(inst.id).get(index).copied();
     let mut visited = BTreeSet::from([value]);
     let mut parts_of = |value: ValueId| {
         induction_affine_parts(graph, phi, value, width_bits, depth - 1, &mut visited)
@@ -740,15 +744,16 @@ fn unrooted_definition_chain(
         let text = match &inst.payload {
             InstPayload::Phi { .. } => format!(
                 "Phi{:?}",
-                inst.inputs
+                graph
+                    .inputs(inst.id)
                     .iter()
                     .map(|input| graph.var(*input).to_string())
                     .collect::<Vec<_>>()
             ),
             InstPayload::Op(op) => format!("{}", graph.named_op(op).map(&mut |var| (*var).clone())),
         };
-        let same_register = inst
-            .inputs
+        let same_register = graph
+            .inputs(inst.id)
             .iter()
             .copied()
             .filter(|source| graph.var(*source).name() == var.name())
@@ -1201,7 +1206,7 @@ pub(crate) fn reaching_abi_value_before(
                     );
                     return graph
                         .inst(producer)
-                        .and_then(|inst| inst.inputs.get(1).copied())
+                        .and_then(|inst| graph.inputs(inst.id).get(1).copied())
                         .map(|value| ReachingAbiPath::Reaches(ReachingAbiState::Value(value)));
                 }
                 if lsb_bits % 8 == 0 && !register_storages_overlap(lane, storage) {
@@ -1261,7 +1266,7 @@ pub(crate) fn reaching_abi_value_before(
                 .output
                 .map(|value| ReachingAbiPath::Reaches(ReachingAbiState::Value(value)));
         }
-        let [first, rest @ ..] = phi.inputs.as_slice() else {
+        let [first, rest @ ..] = graph.inputs(phi.id) else {
             return None;
         };
         if rest.iter().all(|input| input == first) {
@@ -1271,8 +1276,8 @@ pub(crate) fn reaching_abi_value_before(
         // own stack pointer is that pointer: an early return that never
         // built the frame meets the epilogue that has unwound it.
         if policy.stack_pointer == Some(storage)
-            && phi
-                .inputs
+            && graph
+                .inputs(phi.id)
                 .iter()
                 .all(|input| value_is_entry_stack_pointer(prep, graph, *input, storage))
         {
@@ -1281,7 +1286,7 @@ pub(crate) fn reaching_abi_value_before(
         r2il::refusal_evidence!(
             "reaching-abi-value",
             "{block_addr:#x} merges {storage:?} from inputs that disagree: {:?}",
-            phi.inputs
+            graph.inputs(phi.id)
         );
         return None;
     }
@@ -2226,7 +2231,8 @@ pub(crate) fn loop_carrier_peer_candidates(
             };
             let phi = inst.output?;
             let width = graph.value(phi)?.var.size;
-            if predecessors.len() != inst.inputs.len() || inst.inputs.is_empty() {
+            if predecessors.len() != graph.inputs(inst.id).len() || graph.inputs(inst.id).is_empty()
+            {
                 return None;
             }
             let mut entries = Vec::new();
@@ -2234,7 +2240,7 @@ pub(crate) fn loop_carrier_peer_candidates(
             for (input_idx, (predecessor, value)) in predecessors
                 .iter()
                 .copied()
-                .zip(inst.inputs.iter().copied())
+                .zip(graph.inputs(inst.id).iter().copied())
                 .enumerate()
             {
                 let predecessor = graph.block(predecessor)?.addr;
@@ -2545,7 +2551,10 @@ pub(crate) fn loop_carrier_member_rows(
             let Some(block) = graph.block(inst.block) else {
                 continue;
             };
-            if block.addr == header || loop_body.contains(&block.addr) || inst.inputs.len() < 2 {
+            if block.addr == header
+                || loop_body.contains(&block.addr)
+                || graph.inputs(inst.id).len() < 2
+            {
                 continue;
             }
             pending.insert(inst.id);
@@ -2558,7 +2567,10 @@ pub(crate) fn loop_carrier_member_rows(
         };
         let output = inst.output?;
         let block_addr = graph.block(inst.block)?.addr;
-        if block_addr == header || loop_body.contains(&block_addr) || inst.inputs.len() < 2 {
+        if block_addr == header
+            || loop_body.contains(&block_addr)
+            || graph.inputs(inst.id).len() < 2
+        {
             continue;
         }
         let output_span = storage_spans.span_of(output)?;
@@ -2570,7 +2582,7 @@ pub(crate) fn loop_carrier_member_rows(
             let row = &rows[*root];
             // One pass over the inputs, stopping at the first the row does not own.
             let (mut has_carried_state, mut has_other_state) = (false, false);
-            for input in &inst.inputs {
+            for input in graph.inputs(inst.id) {
                 let Some(roles) = row.get(input) else {
                     return false;
                 };
@@ -2706,7 +2718,7 @@ pub(crate) fn dependence_cone(graph: &SsaGraph, value: ValueId) -> BTreeSet<Valu
         let Some(inst) = graph.def_inst(current).and_then(|inst| graph.inst(inst)) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             if cone.insert(*input) {
                 pending.push(*input);
             }

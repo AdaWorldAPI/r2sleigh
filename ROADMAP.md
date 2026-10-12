@@ -318,10 +318,15 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          names no span, the sealed function and graph shrink once edited,
          and certified expressions are a dense index. pumasim `pdd @
          0x23fdf0` heap peak (dhat) 236.9 MB to 199.4 MB; release `pdd`
-         peak RSS 16 to 19% under master at #153 (exit bar). Left, per
-         `doc/adr-one-ir.md` ("The op after the seal"): the graph indexing
-         the function's renumbered operations, its inputs a `Csr`, the
-         machine projection and term arena as indexes (F2.5).
+         peak RSS 16 to 19% under master at #153 (exit bar). Then: the
+         struct inference shares the type analysis's named blocks and
+         borrows its definitions (about 38 MB off its hump), and the
+         graph's inputs are one `Csr` read through `SsaGraph::inputs`
+         (graph build 10.9 to 8.4 MB); heap peak 197.0 to 194.7 MB, the
+         render phase's now. Left, per `doc/adr-one-ir.md` ("The op after
+         the seal"): the graph indexing the function's renumbered
+         operations, the machine projection and term arena as indexes
+         (F2.5).
       7. **LX2**, D27's adapter deleted: D0 reads T's and F2's dense
          indexes.
       8. **D26**'s purge delay, the maintainer's (PF row).

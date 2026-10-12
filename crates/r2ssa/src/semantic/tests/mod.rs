@@ -2636,7 +2636,7 @@ fn byte_sources_follow_zero_extension_insertion_and_copies() {
         .iter()
         .find(|inst| matches!(inst.payload, InstPayload::Op(SSAOp::Store { .. })))
         .expect("the store");
-    let bytes = value_byte_sources(graph, None, store.inputs[1]).expect("byte sources");
+    let bytes = value_byte_sources(graph, None, graph.inputs(store.id)[1]).expect("byte sources");
     assert_eq!(bytes.len(), 16);
     let first = graph
         .insts

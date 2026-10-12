@@ -315,21 +315,27 @@ pub(crate) fn loop_carrier_facts(
             continue;
         };
         if owners_by_value.contains(output)
-            || predecessors.len() != inst.inputs.len()
-            || inst.inputs.is_empty()
-            || inst.inputs.iter().copied().collect::<BTreeSet<_>>().len() != inst.inputs.len()
+            || predecessors.len() != graph.inputs(inst.id).len()
+            || graph.inputs(inst.id).is_empty()
+            || graph
+                .inputs(inst.id)
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                .len()
+                != graph.inputs(inst.id).len()
         {
             continue;
         }
-        let Some(mut candidate_owners) = inst
-            .inputs
+        let Some(mut candidate_owners) = graph
+            .inputs(inst.id)
             .first()
             .and_then(|input| owners_by_value.get(*input))
             .cloned()
         else {
             continue;
         };
-        for input in inst.inputs.iter().skip(1) {
+        for input in graph.inputs(inst.id).iter().skip(1) {
             let Some(input_owners) = owners_by_value.get(*input) else {
                 candidate_owners.clear();
                 break;
@@ -337,7 +343,7 @@ pub(crate) fn loop_carrier_facts(
             candidate_owners.retain(|owner| input_owners.contains(owner));
         }
         candidate_owners.retain(|owner| {
-            inst.inputs.iter().any(|input| {
+            graph.inputs(inst.id).iter().any(|input| {
                 continuing_owners_by_value
                     .get(*input)
                     .is_some_and(|owners| owners.contains(owner))
@@ -352,7 +358,7 @@ pub(crate) fn loop_carrier_facts(
         let source_edges = predecessors
             .iter()
             .copied()
-            .zip(inst.inputs.iter().copied())
+            .zip(graph.inputs(inst.id).iter().copied())
             .enumerate()
             .filter_map(|(input_idx, (predecessor, value))| {
                 let edge = LoopCarrierEdgeValue {
@@ -366,7 +372,7 @@ pub(crate) fn loop_carrier_facts(
                 edge.validate(graph).then_some(edge)
             })
             .collect::<Vec<_>>();
-        if source_edges.len() != inst.inputs.len()
+        if source_edges.len() != graph.inputs(inst.id).len()
             || !carriers[carrier_index].identity_values.insert(output)
         {
             continue;

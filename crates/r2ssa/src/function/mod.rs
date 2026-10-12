@@ -2200,7 +2200,7 @@ fn forwarded_parameter_index(
     };
     match &definition.payload {
         InstPayload::Phi { .. } | InstPayload::Op(SSAOp::Copy { .. }) => {
-            return agreeing(&definition.inputs, shared, seen);
+            return agreeing(graph.inputs(definition.id), shared, seen);
         }
         InstPayload::Op(SSAOp::Load { .. }) => {}
         InstPayload::Op(op) => {
@@ -2986,7 +2986,8 @@ pub(crate) fn uncertified_call_reads(
             )
         })
         .flat_map(|inst| {
-            inst.inputs
+            graph
+                .inputs(inst.id)
                 .iter()
                 .enumerate()
                 .filter(|(_, input)| !passed.contains(&class_of(**input).unwrap_or(**input)))

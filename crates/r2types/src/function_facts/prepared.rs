@@ -1550,7 +1550,9 @@ impl<'a> AddressBases<'a> {
             return AddressStep::Settled(Some((value, 0)));
         };
         let op = match &inst.payload {
-            r2ssa::InstPayload::Phi { .. } => return AddressStep::Merge(inst.inputs.clone()),
+            r2ssa::InstPayload::Phi { .. } => {
+                return AddressStep::Merge(graph.inputs(inst.id).to_vec());
+            }
             r2ssa::InstPayload::Op(op) => op,
         };
         let displaced = |base: &r2ssa::ValueId, delta: Option<i64>| match delta {
@@ -1654,13 +1656,16 @@ pub(crate) fn prepared_guarded_phi_render_fact(
     let r2ssa::InstPayload::Phi { predecessors } = &inst.payload else {
         return None;
     };
-    if predecessors.len() < 2 || predecessors.len() != inst.inputs.len() {
+    if predecessors.len() < 2 || predecessors.len() != graph.inputs(inst.id).len() {
         return None;
     }
     let merge_block = graph.block(inst.block)?.addr;
     let predicates = prepared.predicates();
     let mut arms = Vec::with_capacity(predecessors.len());
-    for (predecessor, source) in predecessors.iter().zip(inst.inputs.iter().copied()) {
+    for (predecessor, source) in predecessors
+        .iter()
+        .zip(graph.inputs(inst.id).iter().copied())
+    {
         let predecessor = graph.block(*predecessor)?.addr;
         let domain = prepared.control_domains().for_block(predecessor)?;
         if !domain.complete {
@@ -2002,7 +2007,7 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
         else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in prepared.graph().inputs(inst.id) {
             if observable_values.insert(*input) {
                 pending.push(*input);
             }
@@ -2165,7 +2170,7 @@ pub(crate) fn expression_inline_multiplicity(
         let Some(inst) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             if carrier_identities.contains(*input) {
                 continue;
             }

@@ -1138,7 +1138,7 @@ fn artifact_projects_typed_stack_roots_by_value_id_without_register_aliases() {
         .inst_spelled_at(0x3400, 0)
         .and_then(|inst| artifact.graph().inst(inst))
         .expect("frame setup graph instruction");
-    let entry_sp = frame_setup.inputs[0];
+    let entry_sp = artifact.graph().inputs(frame_setup.id)[0];
     let local_address = artifact
         .graph()
         .inst_spelled_at(0x3400, 1)

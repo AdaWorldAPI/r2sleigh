@@ -2283,10 +2283,7 @@ fn an_entry_with_two_latches_merges_the_caller_and_both_latches() {
     let merges_the_caller = header.insts.iter().any(|inst| {
         let inst = graph.inst(*inst).expect("an instruction of the block");
         matches!(&inst.payload, InstPayload::Phi { predecessors } if predecessors.len() == 3)
-            && inst
-                .inputs
-                .iter()
-                .any(|input| graph.caller_supplied(*input))
+            && (graph.inputs(inst.id).iter()).any(|input| graph.caller_supplied(*input))
     });
     assert!(
         merges_the_caller,
@@ -4556,7 +4553,7 @@ fn a_branch_whose_arms_meet_leaves_its_condition_unobserved() {
         owed,
         [(r2ssa::SemanticObligationKind::ControlTransfer, Vec::new())]
     );
-    let condition = *branch.inputs.last().expect("the condition");
+    let condition = *graph.inputs(branch.id).last().expect("the condition");
     assert!(
         artifact.unobserved_values().contains(condition),
         "{condition:?}"

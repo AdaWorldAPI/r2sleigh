@@ -847,7 +847,7 @@ fn returns_the_callers_value(
             continue;
         };
         if matches!(inst.payload, crate::graph::InstPayload::Phi { .. }) {
-            pending.extend(inst.inputs.iter().copied());
+            pending.extend(graph.inputs(inst.id).iter().copied());
         }
     }
     false
@@ -890,7 +890,9 @@ fn float_result_written(
             continue;
         };
         match &inst.payload {
-            crate::graph::InstPayload::Phi { .. } => pending.extend(inst.inputs.iter().copied()),
+            crate::graph::InstPayload::Phi { .. } => {
+                pending.extend(graph.inputs(inst.id).iter().copied())
+            }
             crate::graph::InstPayload::Op(crate::op::SSAOp::CallDefine { .. }) => {}
             crate::graph::InstPayload::Op(_) => return Some((float, live_out)),
         }
@@ -1046,7 +1048,7 @@ fn written_bytes(
     let bytes = match &inst.payload {
         crate::graph::InstPayload::Phi { .. } => {
             let mut joined: Option<crate::lanes::Bytes> = None;
-            for source in inst.inputs.clone() {
+            for source in graph.inputs(inst.id).to_vec() {
                 let source = written_bytes(written, graph, source, visiting);
                 joined = Some(match joined {
                     None => source,

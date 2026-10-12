@@ -80,7 +80,7 @@ pub fn carrier_mirrors_memory(
         let Some(inst) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             if seen.insert(*input) {
                 pending.push(*input);
             }

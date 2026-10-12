@@ -170,7 +170,7 @@ impl DemandedBytes {
                         input_idx: *input_idx,
                     })
                 };
-                (inst.inputs.iter().enumerate())
+                (graph.inputs(inst.id).iter().enumerate())
                     .filter(read)
                     .map(|(_, input)| (*input, ByteMask::All))
             });

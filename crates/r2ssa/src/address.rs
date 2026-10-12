@@ -385,7 +385,7 @@ impl<'a> AddressCollector<'a> {
         let mut slots = 0usize;
         for (index, &addr) in order.iter().enumerate() {
             for inst in self.block_insts(addr) {
-                for input in &inst.inputs {
+                for input in self.graph.inputs(inst.id) {
                     for value in [*input, self.same_integer_root(*input)] {
                         readers
                             .get_or_insert_with(value, BTreeSet::new)
@@ -537,8 +537,9 @@ impl<'a> AddressCollector<'a> {
             };
             let derived = match &inst.payload {
                 // What the sources known so far agree on.
-                InstPayload::Phi { .. } => inst
-                    .inputs
+                InstPayload::Phi { .. } => self
+                    .graph
+                    .inputs(inst.id)
                     .iter()
                     .map(|source| self.cell(*source))
                     .fold(Derived::Pending, |held, source| match (held, source) {

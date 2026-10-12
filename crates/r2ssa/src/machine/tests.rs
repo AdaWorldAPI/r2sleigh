@@ -438,11 +438,7 @@ fn shifts_require_exact_value_width_and_keep_the_count_width() {
         assert_eq!(
             *binding,
             MachineValueBinding {
-                value: artifact
-                    .graph()
-                    .inst(inst)
-                    .expect("shift instruction")
-                    .inputs[0],
+                value: artifact.graph().inputs(inst)[0],
                 width_bits: 32,
             }
         );
@@ -500,7 +496,6 @@ fn malformed_shift_graph_reports_instruction_width_mismatch() {
         id: InstId(0),
         block: BlockId(0),
         ordinal: 0,
-        inputs: vec![value.id, count.id],
         output: None,
         payload: InstPayload::Op(SSAOp::IntRight {
             dst: result.id,
@@ -523,6 +518,10 @@ fn malformed_shift_graph_reports_instruction_width_mismatch() {
         insts: vec![inst],
         values: values.clone(),
         def_of: vec![None, None, None],
+        inputs: crate::dense::Csr::from_pairs(
+            1,
+            [(InstId(0), ValueId(0)), (InstId(0), ValueId(1))],
+        ),
         use_offsets: vec![0, 1, 2, 2],
         value_of_var: Vec::new(),
         use_sites: vec![
@@ -957,7 +956,7 @@ fn divide_negate_and_piece_have_exact_machine_vocabulary() {
                     binding_for_value(
                         artifact
                             .graph()
-                            .value(artifact.graph().inst(inst).unwrap().inputs[input_idx])
+                            .value(artifact.graph().inputs(inst)[input_idx])
                             .unwrap()
                     )
                     .unwrap()
@@ -1040,19 +1039,23 @@ fn divide_negate_and_piece_reject_wrong_arity_and_width() {
         )
         .expect("test output binding");
 
-        let mut wrong_arity = inst.clone();
-        wrong_arity.inputs.pop();
+        // The operation lowered over another arity's instruction: its inputs are the graph's.
+        let wrong_arity = artifact
+            .graph()
+            .inst_spelled_at(0x1000, [1, 0, 1][op_index])
+            .and_then(|inst| artifact.graph().inst(inst))
+            .expect("an instruction of another arity");
         assert_eq!(
             MachineBuilder::for_graph(artifact.graph()).lower_op(
                 &artifact,
-                &wrong_arity,
+                wrong_arity,
                 op,
                 output,
             ),
             Err(MachineBuildError::WrongOperandCount {
-                inst: inst.id,
+                inst: wrong_arity.id,
                 expected: expected_arity,
-                actual: expected_arity - 1,
+                actual: artifact.graph().inputs(wrong_arity.id).len(),
             })
         );
 
@@ -1108,11 +1111,11 @@ fn unsigned_remainder_has_exact_machine_vocabulary() {
     assert_eq!(*zero_divisor, MachineZeroDivisorBehavior::Undefined);
     assert_eq!(
         operand_leaf_binding(projection.arena(), *dividend).map(|binding| binding.value()),
-        Some(graph_inst.inputs[0])
+        Some(artifact.graph().inputs(graph_inst.id)[0])
     );
     assert_eq!(
         operand_leaf_binding(projection.arena(), *divisor).map(|binding| binding.value()),
-        Some(graph_inst.inputs[1])
+        Some(artifact.graph().inputs(graph_inst.id)[1])
     );
     for input_idx in 0..2 {
         assert_eq!(
@@ -1121,7 +1124,7 @@ fn unsigned_remainder_has_exact_machine_vocabulary() {
                 binding_for_value(
                     artifact
                         .graph()
-                        .value(graph_inst.inputs[input_idx])
+                        .value(artifact.graph().inputs(graph_inst.id)[input_idx])
                         .expect("remainder input"),
                 )
                 .expect("remainder input binding"),
@@ -1196,11 +1199,11 @@ fn signed_division_and_remainder_read_their_operands_signed() {
         assert_eq!(*zero_divisor, MachineZeroDivisorBehavior::Undefined);
         assert_eq!(
             operand_leaf_binding(projection.arena(), *dividend).map(|binding| binding.value()),
-            Some(graph_inst.inputs[0])
+            Some(artifact.graph().inputs(graph_inst.id)[0])
         );
         assert_eq!(
             operand_leaf_binding(projection.arena(), *divisor).map(|binding| binding.value()),
-            Some(graph_inst.inputs[1])
+            Some(artifact.graph().inputs(graph_inst.id)[1])
         );
         // The operands the renderer spells are the ones the projection
         // certified, which is what a refused use used to deny.
@@ -1211,7 +1214,7 @@ fn signed_division_and_remainder_read_their_operands_signed() {
                     binding_for_value(
                         artifact
                             .graph()
-                            .value(graph_inst.inputs[input_idx])
+                            .value(artifact.graph().inputs(graph_inst.id)[input_idx])
                             .expect("signed input"),
                     )
                     .expect("signed input binding"),
@@ -1232,11 +1235,17 @@ fn signed_division_and_remainder_read_their_operands_signed() {
 
 #[test]
 fn unsigned_remainder_rejects_wrong_arity_and_width() {
-    let artifact = artifact_with_ops([R2ILOp::IntRem {
-        dst: Varnode::unique(0x10, 8),
-        a: Varnode::register(0, 8),
-        b: Varnode::register(8, 8),
-    }]);
+    let artifact = artifact_with_ops([
+        R2ILOp::IntRem {
+            dst: Varnode::unique(0x10, 8),
+            a: Varnode::register(0, 8),
+            b: Varnode::register(8, 8),
+        },
+        R2ILOp::IntNegate {
+            dst: Varnode::unique(0x18, 8),
+            src: Varnode::register(16, 8),
+        },
+    ]);
     let inst = artifact
         .graph()
         .inst_spelled_at(0x1000, 0)
@@ -1253,12 +1262,16 @@ fn unsigned_remainder_rejects_wrong_arity_and_width() {
     )
     .expect("remainder output binding");
 
-    let mut wrong_arity = inst.clone();
-    wrong_arity.inputs.pop();
+    // The remainder lowered over the negation's one input.
+    let wrong_arity = artifact
+        .graph()
+        .inst_spelled_at(0x1000, 1)
+        .and_then(|inst| artifact.graph().inst(inst))
+        .expect("negation instruction");
     assert_eq!(
-        MachineBuilder::for_graph(artifact.graph()).lower_op(&artifact, &wrong_arity, op, output,),
+        MachineBuilder::for_graph(artifact.graph()).lower_op(&artifact, wrong_arity, op, output),
         Err(MachineBuildError::WrongOperandCount {
-            inst: inst.id,
+            inst: wrong_arity.id,
             expected: 2,
             actual: 1,
         })
@@ -1339,11 +1352,7 @@ fn plain_load_requires_and_retains_an_explicit_memory_model() {
         .expect("load input zero is the address use");
     assert_eq!(
         projected.binding().value(),
-        artifact
-            .graph()
-            .inst(load_inst)
-            .expect("load graph instruction")
-            .inputs[0]
+        artifact.graph().inputs(load_inst)[0]
     );
     assert_eq!(projected.memory_access(), Some(*access));
     assert!(matches!(
@@ -1559,7 +1568,7 @@ fn an_unmodelled_user_operation_is_refused_by_its_index() {
         })
         .expect("the value-producing user operation");
     let refused = MachineUseRefusal::UnmodelledUserOperation { userop: 204 };
-    for input_idx in 0..producer.inputs.len() {
+    for input_idx in 0..graph.inputs(producer.id).len() {
         assert_eq!(
             projection.use_disposition(UseSite {
                 inst: producer.id,
@@ -1736,7 +1745,7 @@ fn outputless_constant_operand_has_exact_use_and_canonical_arena_leaf() {
         .inst(inst)
         .expect("return graph instruction");
     assert_eq!(graph_inst.output, None);
-    let [constant_value] = graph_inst.inputs.as_slice() else {
+    let [constant_value] = artifact.graph().inputs(graph_inst.id) else {
         panic!("return must retain its single constant operand");
     };
     let site = UseSite { inst, input_idx: 0 };
@@ -1922,11 +1931,14 @@ fn dense_use_slices_cover_whole_subpiece_narrow_bitwise_casts_and_effects() {
             .graph()
             .insts
             .iter()
-            .map(|inst| inst.inputs.len())
+            .map(|inst| artifact.graph().inputs(inst.id).len())
             .sum::<usize>()
     );
     for inst in &artifact.graph().insts {
-        assert_eq!(projection.use_row_len(inst.id), Some(inst.inputs.len()));
+        assert_eq!(
+            projection.use_row_len(inst.id),
+            Some(artifact.graph().inputs(inst.id).len())
+        );
     }
 
     assert_eq!(
@@ -2015,7 +2027,7 @@ fn dense_use_slices_cover_whole_subpiece_narrow_bitwise_casts_and_effects() {
                 binding_for_value(
                     artifact
                         .graph()
-                        .value(artifact.graph().inst(remainder_inst).unwrap().inputs[input_idx])
+                        .value(artifact.graph().inputs(remainder_inst)[input_idx])
                         .unwrap()
                 )
                 .unwrap()

@@ -110,10 +110,7 @@ fn observable_beside(
         .iter()
         .map(|slot| slot.storage().location())
         .collect::<std::collections::BTreeSet<_>>();
-    let transfer_inputs = graph
-        .inst(at)
-        .map(|inst| inst.inputs.to_vec())
-        .unwrap_or_default();
+    let transfer_inputs = graph.inputs(at);
     graph.insts.iter().find(|inst| {
         if inst.id != at && effect(&inst.payload) {
             return true;

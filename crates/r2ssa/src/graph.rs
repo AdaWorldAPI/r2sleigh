@@ -226,7 +226,6 @@ pub struct GraphInst {
     pub id: InstId,
     pub block: BlockId,
     pub ordinal: usize,
-    pub inputs: Vec<ValueId>,
     pub output: Option<ValueId>,
     pub payload: InstPayload,
 }
@@ -249,6 +248,8 @@ pub struct SsaGraph {
     pub insts: Vec<GraphInst>,
     pub values: Vec<GraphValue>,
     pub def_of: Vec<Option<InstId>>,
+    /// The values each instruction reads, in operand order: one array for the function.
+    pub(crate) inputs: crate::dense::Csr<InstId, ValueId>,
     /// Where each value is read, grouped by value.
     ///
     /// Flat, with an offset per value, rather than a vector per value: a
@@ -475,6 +476,8 @@ impl SsaGraph {
         // instructions at the peak.
         let count = function.arena().live();
         let mut insts = Vec::with_capacity(count);
+        let mut inputs = crate::dense::Csr::with_capacity(count, 2 * count);
+        let mut reads = Vec::new();
         let mut inst_by_op = vec![None; function.id_limit()];
         let mut op_by_inst = Vec::with_capacity(count);
         let mut instructions = r2il::InstructionRuns::default();
@@ -483,18 +486,19 @@ impl SsaGraph {
             let block_id = block_by_addr[&block.addr];
 
             for (phi_idx, (op_id, phi)) in block.sited_phis().enumerate() {
-                let inputs = phi
-                    .sources
-                    .iter()
-                    .map(|(_, value)| numbering.intern(*value))
-                    .collect::<Vec<_>>();
+                reads.clear();
+                reads.extend(
+                    phi.sources
+                        .iter()
+                        .map(|(_, value)| numbering.intern(*value)),
+                );
                 let output = numbering.intern(phi.dst);
                 // A merge's storage is the phi's to state, a cleared one included.
                 if let Some(value) = numbering.values.get_mut(output.0 as usize) {
                     value.canonical_storage = phi.canonical_storage;
                 }
-                let inst_id = InstId(insts.len() as u32);
-                numbering.record(inst_id, &inputs, Some(output));
+                let inst_id = inputs.push_row(reads.iter().copied());
+                numbering.record(inst_id, &reads, Some(output));
                 let predecessors = phi
                     .sources
                     .iter()
@@ -509,7 +513,6 @@ impl SsaGraph {
                     id: inst_id,
                     block: block_id,
                     ordinal: phi_idx,
-                    inputs,
                     output: Some(output),
                     payload: InstPayload::Phi { predecessors },
                 });
@@ -519,20 +522,20 @@ impl SsaGraph {
             }
 
             for (op_idx, (op_id, op)) in block.sited().enumerate() {
-                let inputs = op
-                    .sources()
-                    .into_iter()
-                    .map(|value| numbering.intern(*value))
-                    .collect::<Vec<_>>();
+                reads.clear();
+                reads.extend(
+                    op.sources()
+                        .into_iter()
+                        .map(|value| numbering.intern(*value)),
+                );
                 let output = op.dst().map(|dst| numbering.intern(*dst));
                 let payload = InstPayload::Op(op.map(&mut |operand| numbering.value_of(*operand)));
-                let inst_id = InstId(insts.len() as u32);
-                numbering.record(inst_id, &inputs, output);
+                let inst_id = inputs.push_row(reads.iter().copied());
+                numbering.record(inst_id, &reads, output);
                 insts.push(GraphInst {
                     id: inst_id,
                     block: block_id,
                     ordinal: block.phis().len() + op_idx,
-                    inputs,
                     output,
                     payload,
                 });
@@ -581,6 +584,7 @@ impl SsaGraph {
             insts,
             values,
             def_of,
+            inputs,
             use_offsets: use_offsets_of(&uses_of),
             use_sites: uses_of.into_iter().flatten().collect(),
             value_of_var: value_by_var,
@@ -772,10 +776,16 @@ impl SsaGraph {
         self.insts.get(id.0 as usize)
     }
 
+    /// The values an instruction reads, in operand order; a phi's in its predecessors' order.
+    pub fn inputs(&self, id: InstId) -> &[ValueId] {
+        self.inputs.get(id)
+    }
+
     /// Give back the room the values grew, once the seal has added the last entry value.
     pub(crate) fn shrink_to_fit(&mut self) {
         self.values.shrink_to_fit();
         self.def_of.shrink_to_fit();
+        self.inputs.shrink_to_fit();
     }
 
     /// The storage an instruction writes: its output value's, which a phi shares with its merge.

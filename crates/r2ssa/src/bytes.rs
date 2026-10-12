@@ -285,13 +285,17 @@ fn observed_input_bytes(
             (var.size, var.constant_bits())
         })),
     };
-    inst.inputs.iter().enumerate().map(move |(index, input)| {
-        let read = match rule {
-            None => observed,
-            Some(rule) => rule.backward(index, observed).unwrap_or(ByteMask::All),
-        };
-        (*input, read)
-    })
+    graph
+        .inputs(inst.id)
+        .iter()
+        .enumerate()
+        .map(move |(index, input)| {
+            let read = match rule {
+                None => observed,
+                Some(rule) => rule.backward(index, observed).unwrap_or(ByteMask::All),
+            };
+            (*input, read)
+        })
 }
 
 /// Every value some root depends on, with the bytes of it that dependence

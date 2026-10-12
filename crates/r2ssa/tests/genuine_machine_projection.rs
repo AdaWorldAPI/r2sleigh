@@ -120,7 +120,9 @@ fn exact_uses_from_storage(
         .insts
         .iter()
         .flat_map(|inst| {
-            inst.inputs
+            artifact
+                .graph()
+                .inputs(inst.id)
                 .iter()
                 .enumerate()
                 .filter_map(move |(input_idx, input)| {

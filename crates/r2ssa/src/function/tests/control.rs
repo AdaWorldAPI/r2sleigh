@@ -232,7 +232,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
         .graph()
         .inst_spelled_at(0x1730, 0)
         .and_then(|inst| identity_phi.graph().inst(inst))
-        .and_then(|inst| inst.inputs.first().copied())
+        .and_then(|inst| identity_phi.graph().inputs(inst.id).first().copied())
         .expect("identity phi return input");
     assert!(
         identity_phi
@@ -248,7 +248,7 @@ fn prepared_expression_certificates_render_only_identity_phis() {
         .graph()
         .inst_spelled_at(0x1730, 0)
         .and_then(|inst| mixed_phi.graph().inst(inst))
-        .and_then(|inst| inst.inputs.first().copied())
+        .and_then(|inst| mixed_phi.graph().inputs(inst.id).first().copied())
         .expect("mixed phi return input");
     assert!(
         mixed_phi
@@ -1102,7 +1102,7 @@ fn producerless_switch_selector_is_retained_as_a_leaf() {
             )
         })
         .expect("branch instruction");
-    assert_eq!(branch.inputs, vec![selector]);
+    assert_eq!(artifact.graph().inputs(branch.id), [selector]);
 }
 
 #[test]

@@ -230,7 +230,7 @@ fn a_definitionless_constant_has_a_canonical_value_term() {
                 .expect("return operation"),
         )
         .expect("return instruction");
-    let constant = graph.inst(inst).expect("return graph instruction").inputs[0];
+    let constant = graph.inputs(inst)[0];
     let roots = canonicalize(&artifact, &projection).expect("canonical roots");
 
     assert!(

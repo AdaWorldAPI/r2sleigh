@@ -120,7 +120,7 @@ pub(crate) fn exact_copy_chain_to_entry_storage(
         };
         let source = *src;
         if definition.output != Some(current)
-            || definition.inputs.as_slice() != [source]
+            || graph.inputs(definition.id) != [source]
             || graph.var(*dst).size != width
             || graph.var(source).size != width
             || !insts.insert(inst)
@@ -145,11 +145,11 @@ pub(crate) struct Derived<'a> {
     pub(crate) structured: &'a StructuredDataflowFacts,
 }
 
-pub(crate) fn expression_phi_is_identity(inst: &crate::graph::GraphInst) -> bool {
-    let Some(first) = inst.inputs.first() else {
+pub(crate) fn expression_phi_is_identity(graph: &SsaGraph, inst: &crate::graph::GraphInst) -> bool {
+    let Some(first) = graph.inputs(inst.id).first() else {
         return false;
     };
-    inst.inputs.iter().all(|input| input == first)
+    graph.inputs(inst.id).iter().all(|input| input == first)
 }
 
 pub(crate) fn ram_memory_access_matches_source(

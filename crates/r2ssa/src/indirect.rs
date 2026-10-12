@@ -21,7 +21,7 @@ use crate::function::{SSAFunction, SsaArtifact};
 use crate::graph::{GraphInst, InstId, InstPayload, SsaGraph, UseSite, ValueId};
 
 pub(crate) fn exact_input(graph: &SsaGraph, inst: &GraphInst, input_idx: usize) -> Option<ValueId> {
-    let value = *inst.inputs.get(input_idx)?;
+    let value = *graph.inputs(inst.id).get(input_idx)?;
     graph
         .use_sites(value)
         .binary_search(&UseSite {
@@ -194,8 +194,8 @@ fn walk_index(
         let InstPayload::Op(op) = &inst.payload else {
             break;
         };
-        let coefficient = inst
-            .inputs
+        let coefficient = graph
+            .inputs(inst.id)
             .iter()
             .find(|input| **input != carries)
             .and_then(|input| constant(*input));
@@ -282,7 +282,7 @@ fn index_operand(
         return None;
     };
     let constant = |value: ValueId| values.get(value).and_then(|range| range.as_constant());
-    let input = |index: usize| inst.inputs.get(index).copied();
+    let input = |index: usize| graph.inputs(inst.id).get(index).copied();
     let scaled = |value: ValueId| {
         graph
             .def_inst(value)

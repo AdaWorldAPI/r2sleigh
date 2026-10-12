@@ -628,6 +628,7 @@ impl SemanticObligationInventory {
             match &inst.payload {
                 InstPayload::Op(op) => {
                     seed_direct_obligations(
+                        graph,
                         inst,
                         op,
                         &mut required,
@@ -900,7 +901,7 @@ impl SemanticObligationInventory {
                 let Some(inst) = graph.inst(read) else {
                     continue;
                 };
-                for input in &inst.inputs {
+                for input in graph.inputs(inst.id) {
                     seed_value_definition(
                         graph,
                         *input,
@@ -1037,7 +1038,7 @@ impl SemanticObligationInventory {
                     source: SemanticSourceSite::GraphInstruction(inst.id),
                     inputs: explicit_inputs
                         .remove(&(inst.id, kind, component))
-                        .unwrap_or_else(|| inst.inputs.clone()),
+                        .unwrap_or_else(|| graph.inputs(inst.id).to_vec()),
                     edge_use: explicit_edge_uses.remove(&(inst.id, kind, component)),
                 });
             }
@@ -1581,6 +1582,7 @@ fn block_can_reenter(graph: &SsaGraph, start: crate::graph::BlockId) -> bool {
 }
 
 fn seed_direct_obligations(
+    graph: &SsaGraph,
     inst: &crate::graph::GraphInst,
     op: &SSAOp<crate::graph::ValueId>,
     required: &mut ObligationSeeds,
@@ -1630,7 +1632,7 @@ fn seed_direct_obligations(
             );
             if matches!(op, SSAOp::LoadLinked { .. }) {
                 seed_instruction(inst.id, Kind::Atomicity, Component::Whole, required);
-            } else if let Some(guard) = inst.inputs.last().copied() {
+            } else if let Some(guard) = graph.inputs(inst.id).last().copied() {
                 seed_instruction_with_inputs(
                     inst.id,
                     Kind::ControlPredicate,
@@ -1651,7 +1653,7 @@ fn seed_direct_obligations(
             );
             if matches!(op, SSAOp::StoreConditional { .. }) {
                 seed_instruction(inst.id, Kind::Atomicity, Component::Whole, required);
-            } else if let Some(guard) = inst.inputs.last().copied() {
+            } else if let Some(guard) = graph.inputs(inst.id).last().copied() {
                 seed_instruction_with_inputs(
                     inst.id,
                     Kind::ControlPredicate,
@@ -1677,7 +1679,7 @@ fn seed_direct_obligations(
         }
         SSAOp::Return { .. } => seed_instruction(inst.id, Kind::Return, Component::Whole, required),
         SSAOp::CBranch { .. } | SSAOp::Switch { .. } => {
-            let predicate = inst.inputs.last().copied().into_iter().collect();
+            let predicate = graph.inputs(inst.id).last().copied().into_iter().collect();
             seed_instruction_with_inputs(
                 inst.id,
                 Kind::ControlPredicate,
@@ -1853,7 +1855,7 @@ fn propagate_live_dependencies(
         let Some(inst) = graph.inst(inst_id).filter(|_| !direct.contains(inst_id)) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             let Some(definition) = graph.def_inst(*input) else {
                 continue;
             };
@@ -2574,7 +2576,7 @@ mod tests {
                         size: 8,
                     })
             })
-            .and_then(|inst| inst.inputs.first())
+            .and_then(|inst| used.graph().inputs(inst.id).first())
             .copied()
             .expect("copy consumes the exact post-call result");
         assert!(matches!(

@@ -967,7 +967,9 @@ impl InductionFact {
         if !matches!(inst.payload, InstPayload::Phi { .. }) {
             return false;
         }
-        if !inst.inputs.contains(&self.init) || !inst.inputs.contains(&self.update) {
+        if !graph.inputs(inst.id).contains(&self.init)
+            || !graph.inputs(inst.id).contains(&self.update)
+        {
             return false;
         }
         induction_step_for_update(graph, self.phi, self.update, self.width_bits) == Some(self.step)
@@ -1810,8 +1812,8 @@ impl<'a> ObjectModelBuilder<'a> {
                 | crate::SSAOp::Cast { src, .. }
                 | crate::SSAOp::CallRestore { src, .. },
             ) => rooted(src).then_some((*src, 0)),
-            crate::InstPayload::Phi { .. } => inst
-                .inputs
+            crate::InstPayload::Phi { .. } => graph
+                .inputs(inst.id)
                 .iter()
                 .copied()
                 .find(|input| graph.value(*input).is_some() && rooted(input))
@@ -1846,7 +1848,7 @@ impl<'a> ObjectModelBuilder<'a> {
                 {
                     (*a, None)
                 }
-                crate::InstPayload::Phi { .. } => (*inst.inputs.first()?, None),
+                crate::InstPayload::Phi { .. } => (*graph.inputs(inst.id).first()?, None),
                 _ => return None,
             };
             graph.value(base)?;
