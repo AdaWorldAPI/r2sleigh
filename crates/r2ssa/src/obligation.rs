@@ -214,19 +214,21 @@ impl SemanticObligationId {
     /// `{instruction}:{kind}:{component}`, the instruction spelled by
     /// [`CanonicalInstructionId::spelled`].
     pub fn spelled(self, graph: &SsaGraph) -> SpelledObligation {
+        let ordinal = self.instruction.spelled(graph).ordinal;
         SpelledObligation {
-            instruction: self.instruction.spelled(graph),
             id: self,
+            ordinal: ordinal.and_then(|ordinal| u32::try_from(ordinal).ok()),
         }
     }
 }
 
 /// A [`SemanticObligationId`] spelled against the sealed function it is about,
-/// ordered as the spelling reads: by instruction, then kind and component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+/// ordered as the spelling reads: by instruction, then kind and component. It
+/// keeps the identity once and only the place its operation holds beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpelledObligation {
-    instruction: SpelledInstruction,
     id: SemanticObligationId,
+    ordinal: Option<u32>,
 }
 
 impl SpelledObligation {
@@ -235,9 +237,29 @@ impl SpelledObligation {
         self.id
     }
 
+    /// The obligation spelled, borrowed.
+    pub const fn identity(&self) -> &SemanticObligationId {
+        &self.id
+    }
+
     /// Its instruction, spelled.
-    pub const fn instruction(&self) -> SpelledInstruction {
-        self.instruction
+    pub fn instruction(&self) -> SpelledInstruction {
+        SpelledInstruction {
+            id: self.id.instruction,
+            ordinal: self.ordinal.map(|ordinal| ordinal as usize),
+        }
+    }
+}
+
+impl Ord for SpelledObligation {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.instruction().cmp(&other.instruction())).then_with(|| self.id.cmp(&other.id))
+    }
+}
+
+impl PartialOrd for SpelledObligation {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -246,7 +268,9 @@ impl std::fmt::Display for SpelledObligation {
         write!(
             f,
             "{}:{}:{:?}",
-            self.instruction, self.id.kind, self.id.component
+            self.instruction(),
+            self.id.kind,
+            self.id.component
         )
     }
 }

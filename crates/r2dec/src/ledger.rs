@@ -213,16 +213,21 @@ impl LedgerClosure {
 /// Every obligation the inventory recorded, and what became of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObligationLedger {
-    outcomes: BTreeMap<SemanticObligationId, Outcome>,
-    conflicts: BTreeMap<SemanticObligationId, usize>,
+    /// Every obligation as it is spelled, in the order the spelling reads:
+    /// by block, then by an operation's place in it, each identity once. An
+    /// obligation names its operation by identity, so this order is taken
+    /// from the sealed function once, when the ledger opens; every other
+    /// column here is by place in it.
+    reading_order: Vec<SpelledObligation>,
+    /// Each obligation's outcome, by place.
+    outcomes: Vec<Outcome>,
+    /// The places in identity order: how an identity finds its obligation.
+    by_id: Vec<u32>,
+    /// Incompatible answers, by place.
+    conflicts: BTreeMap<u32, usize>,
     /// Obligations of definitions whose values were split out of a shared
     /// variable, so that every rendered read sees the value it stands for.
-    split: BTreeSet<SemanticObligationId>,
-    /// Every obligation as it is spelled, in the order the spelling reads:
-    /// by block, then by an operation's place in it. An obligation names its
-    /// operation by identity, so this order is taken from the sealed
-    /// function once, when the ledger opens.
-    reading_order: Vec<SpelledObligation>,
+    split: BTreeSet<u32>,
     /// The premises the function's decided checks rely on; none where a runtime model decided them.
     premises: BTreeSet<r2source::Premise>,
 }
@@ -236,22 +241,31 @@ impl ObligationLedger {
 
     /// Open a ledger over a set of obligations, each undecided.
     pub fn over(ids: impl IntoIterator<Item = SemanticObligationId>, graph: &SsaGraph) -> Self {
-        let outcomes = ids
-            .into_iter()
-            .map(|id| (id, Outcome::Unattributed))
-            .collect::<BTreeMap<_, _>>();
-        let mut reading_order = outcomes
-            .keys()
+        let ids = ids.into_iter().collect::<BTreeSet<_>>();
+        let mut reading_order = (ids.into_iter())
             .map(|id| id.spelled(graph))
             .collect::<Vec<_>>();
         reading_order.sort();
+        let mut by_id = (0..reading_order.len())
+            .map(|place| u32::try_from(place).expect("fewer than 2^32 obligations"))
+            .collect::<Vec<_>>();
+        by_id.sort_unstable_by_key(|place| reading_order[*place as usize].id());
         Self {
-            outcomes,
+            outcomes: vec![Outcome::Unattributed; reading_order.len()],
+            reading_order,
+            by_id,
             conflicts: BTreeMap::new(),
             split: BTreeSet::new(),
-            reading_order,
             premises: BTreeSet::new(),
         }
+    }
+
+    /// Where an obligation sits in the reading order, by binary search over the identity order.
+    fn place(&self, id: &SemanticObligationId) -> Option<u32> {
+        let at = (self.by_id)
+            .binary_search_by(|place| self.reading_order[*place as usize].identity().cmp(id))
+            .ok()?;
+        Some(self.by_id[at])
     }
 
     /// The same ledger, stating the premises the function's decided checks rely on.
@@ -270,9 +284,10 @@ impl ObligationLedger {
 
     /// Say what became of one obligation, keeping the first answer if two disagree.
     pub fn record(&mut self, id: SemanticObligationId, outcome: Outcome) -> Record {
-        let Some(slot) = self.outcomes.get_mut(&id) else {
+        let Some(place) = self.place(&id) else {
             return Record::Unknown;
         };
+        let slot = &mut self.outcomes[place as usize];
         match *slot {
             Outcome::Unattributed => {
                 *slot = outcome;
@@ -280,7 +295,7 @@ impl ObligationLedger {
             }
             existing if existing == outcome => Record::Redundant,
             existing => {
-                *self.conflicts.entry(id).or_insert(0) += 1;
+                *self.conflicts.entry(place).or_insert(0) += 1;
                 Record::Conflict(existing)
             }
         }
@@ -294,33 +309,34 @@ impl ObligationLedger {
     /// refusal can name where the incompatible answers occurred.
     /// Name the obligations of definitions split out of a shared variable.
     pub fn mark_split(&mut self, ids: impl IntoIterator<Item = SemanticObligationId>) {
-        self.split
-            .extend(ids.into_iter().filter(|id| self.outcomes.contains_key(id)));
+        let places = (ids.into_iter())
+            .filter_map(|id| self.place(&id))
+            .collect::<Vec<_>>();
+        self.split.extend(places);
     }
 
     /// How many rendered obligations the text discharges through a variable
     /// split out of a shared one: rendered, and rendered only because the
     /// reaching-values check split them.
     pub fn split_rendered(&self) -> usize {
-        self.split
-            .iter()
-            .filter(|id| matches!(self.outcomes.get(id), Some(Outcome::Rendered)))
+        (self.split.iter())
+            .filter(|place| self.outcomes[**place as usize] == Outcome::Rendered)
             .count()
     }
 
     pub fn record_conflict(&mut self, id: SemanticObligationId) -> Record {
-        let Some(existing) = self.outcomes.get(&id).copied() else {
+        let Some(place) = self.place(&id) else {
             return Record::Unknown;
         };
-        *self.conflicts.entry(id).or_insert(0) += 1;
-        Record::Conflict(existing)
+        *self.conflicts.entry(place).or_insert(0) += 1;
+        Record::Conflict(self.outcomes[place as usize])
     }
 
     /// Replace an outcome a later layer disproved, without counting it as a conflict.
     pub fn overwrite(&mut self, id: SemanticObligationId, outcome: Outcome) -> Record {
-        match self.outcomes.get_mut(&id) {
-            Some(slot) => {
-                *slot = outcome;
+        match self.place(&id) {
+            Some(place) => {
+                self.outcomes[place as usize] = outcome;
                 Record::Accepted
             }
             None => Record::Unknown,
@@ -329,18 +345,15 @@ impl ObligationLedger {
 
     /// What became of one obligation, or `Unattributed` for anything this ledger does not hold.
     pub fn outcome(&self, id: &SemanticObligationId) -> Outcome {
-        self.outcomes
-            .get(id)
-            .copied()
-            .unwrap_or(Outcome::Unattributed)
+        self.place(id)
+            .map_or(Outcome::Unattributed, |place| self.outcomes[place as usize])
     }
 
     /// Every obligation, in the order the spelling reads.
     pub fn entries(&self) -> impl Iterator<Item = (&SemanticObligationId, Outcome)> {
-        self.reading_order
-            .iter()
-            .filter_map(|spelled| self.outcomes.get_key_value(&spelled.id()))
-            .map(|(id, outcome)| (id, *outcome))
+        (self.reading_order.iter())
+            .zip(self.outcomes.iter().copied())
+            .map(|(spelled, outcome)| (spelled.identity(), outcome))
     }
 
     /// The obligations no layer spoke about, which is the list of decompiler
@@ -363,10 +376,8 @@ impl ObligationLedger {
     /// Obligations with incompatible answers, in the order the spelling
     /// reads.
     pub fn conflicts(&self) -> impl Iterator<Item = (&SemanticObligationId, usize)> {
-        self.reading_order
-            .iter()
-            .filter_map(|spelled| self.conflicts.get_key_value(&spelled.id()))
-            .map(|(id, count)| (id, *count))
+        (self.conflicts.iter())
+            .map(|(place, count)| (self.reading_order[*place as usize].identity(), *count))
     }
 
     /// The first obligation, in the order the spelling reads, that `wanted`
@@ -375,19 +386,15 @@ impl ObligationLedger {
         &self,
         mut wanted: impl FnMut(&SemanticObligationId, Outcome) -> bool,
     ) -> Option<SpelledObligation> {
-        self.reading_order.iter().copied().find(|spelled| {
-            self.outcomes
-                .get(&spelled.id())
-                .is_some_and(|outcome| wanted(&spelled.id(), *outcome))
-        })
+        (self.reading_order.iter())
+            .zip(self.outcomes.iter().copied())
+            .find(|(spelled, outcome)| wanted(spelled.identity(), *outcome))
+            .map(|(spelled, _)| *spelled)
     }
 
     /// The first conflicting obligation in the order the spelling reads.
     pub fn first_conflict_spelled(&self) -> Option<SpelledObligation> {
-        self.reading_order
-            .iter()
-            .copied()
-            .find(|spelled| self.conflicts.contains_key(&spelled.id()))
+        (self.conflicts.keys().next()).map(|place| self.reading_order[*place as usize])
     }
 
     /// How many refusals there are, by the kind of obligation refused.
@@ -471,9 +478,10 @@ impl ObligationLedger {
         );
         section(
             "refused-ids",
-            self.reading_order
-                .iter()
-                .filter(|spelled| self.outcomes.get(&spelled.id()) == Some(&Outcome::Refused))
+            (self.reading_order.iter())
+                .zip(self.outcomes.iter())
+                .filter(|(_, outcome)| **outcome == Outcome::Refused)
+                .map(|(spelled, _)| spelled)
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(" "),
@@ -489,7 +497,7 @@ impl ObligationLedger {
             ..LedgerClosure::default()
         };
         let trace = r2il::refusal_evidence::tracing();
-        for (id, outcome) in &self.outcomes {
+        for (id, outcome) in self.entries() {
             match outcome {
                 Outcome::Rendered => closure.rendered += 1,
                 Outcome::Assumed => closure.assumed += 1,
@@ -646,9 +654,9 @@ mod tests {
     /// entries would list no obligation while its outcomes hold some.
     #[test]
     fn a_serialized_ledger_without_its_reading_order_is_rejected() {
-        let without = r#"{"outcomes":{},"conflicts":{},"split":[]}"#;
+        let without = r#"{"outcomes":[],"by_id":[],"conflicts":{},"split":[],"premises":[]}"#;
         assert!(serde_json::from_str::<ObligationLedger>(without).is_err());
-        let with = r#"{"outcomes":{},"conflicts":{},"split":[],"reading_order":[],"premises":[]}"#;
+        let with = r#"{"reading_order":[],"outcomes":[],"by_id":[],"conflicts":{},"split":[],"premises":[]}"#;
         assert!(serde_json::from_str::<ObligationLedger>(with).is_ok());
     }
 
