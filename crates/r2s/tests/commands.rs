@@ -1334,18 +1334,19 @@ mod stripped {
     }
 
     #[test]
-    fn main_is_found_because_a_declaration_says_that_parameter_is_a_function() {
+    fn main_is_found_because_its_frame_says_so() {
         let run = r2s("aflj");
         assert!(run.ok, "{}", run.out);
-        // `main` is at 0x401050 in this build, and nothing calls it directly.
+        // `main` is at 0x401050 in this build, and nothing calls it directly: its `.eh_frame`
+        // entry states it, which outranks the handoff to `__libc_start_main` that also finds it
+        // (r2engine `a_function_handed_to_an_import_through_its_slot_is_found_as_handed`).
         let rows: Vec<serde_json::Value> =
             serde_json::from_str(run.out.trim()).expect("aflj is JSON");
-        let handed: Vec<u64> = rows
+        let main = rows
             .iter()
-            .filter(|row| row["confidence"] == "handed")
-            .filter_map(|row| row["addr"].as_u64())
-            .collect();
-        assert_eq!(handed, [0x401050], "{}", run.out);
+            .find(|row| row["addr"].as_u64() == Some(0x401050))
+            .unwrap_or_else(|| panic!("main is found: {}", run.out));
+        assert_eq!(main["confidence"], "stated", "{}", run.out);
     }
 
     #[test]
