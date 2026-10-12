@@ -3765,10 +3765,10 @@ impl SSAFunction {
         let mut switch_block_count = 0usize;
         let mut max_switch_cases = 0usize;
 
-        for block in self.blocks() {
+        for &addr in &self.block_order {
             if let Some(crate::cfg::BlockTerminator::Switch { cases, default }) = self
                 .cfg
-                .get_block(block.addr)
+                .get_block(addr)
                 .map(|block| &block.terminator)
             {
                 switch_block_count += 1;
