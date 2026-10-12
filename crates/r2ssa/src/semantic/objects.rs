@@ -36,8 +36,7 @@ pub(crate) fn collect_object_and_memory_facts(
         object_model.frame_reach =
             FrameReach::of(function, prep, graph, &object_model, machine_context);
     }
-    let access_summaries =
-        collect_access_summaries(graph, facts, addresses, &object_model);
+    let access_summaries = collect_access_summaries(graph, facts, addresses, &object_model);
     let memory = build_memory_ssa(function, graph, &object_model, access_summaries);
     (object_model, memory)
 }

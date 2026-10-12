@@ -63,14 +63,16 @@ impl<'a> ReachingStorage<'a> {
 
     fn scan(&mut self, block_addr: u64) {
         let mut state = self.entry(block_addr);
-        let Some(block) = self.function.get_block(block_addr) else {
+        let Some(block) = self.graph.block_id_for_addr(block_addr) else {
             return;
         };
         // The machine instruction being walked: its stamp, its start state and its insts.
         let mut pending: (Option<u64>, ReachingStorageState, Vec<InstId>) =
             (None, state, Vec::new());
-        for (op, _) in block.sited() {
-            let instruction = match self.function.arena().origin(op) {
+        for &inst in self.graph.op_insts(block) {
+            let origin =
+                (self.graph.op_for_inst(inst)).and_then(|op| self.function.arena().origin(op));
+            let instruction = match origin {
                 Some(crate::arena::OpOrigin::Lifted { instruction, .. }) => *instruction,
                 _ => None,
             };
@@ -79,18 +81,16 @@ impl<'a> ReachingStorage<'a> {
                 pending.0 = instruction;
                 pending.1 = state;
             }
-            if let Some(inst) = self.graph.inst_for_op(op) {
-                self.boundaries.insert(
-                    inst,
-                    StorageBoundary {
-                        before: state,
-                        instruction_start: pending.1,
-                        instruction_end: state,
-                    },
-                );
-                pending.2.push(inst);
-            }
-            state = written(self.graph, op, self.storage).unwrap_or(state);
+            self.boundaries.insert(
+                inst,
+                StorageBoundary {
+                    before: state,
+                    instruction_start: pending.1,
+                    instruction_end: state,
+                },
+            );
+            pending.2.push(inst);
+            state = written(self.graph, inst, self.storage).unwrap_or(state);
         }
         self.close(pending.2, state);
     }
@@ -109,12 +109,10 @@ impl<'a> ReachingStorage<'a> {
         if let Some(kill) = self.kills.get(&block_addr) {
             return *kill;
         }
-        let kill = match self.function.get_block(block_addr) {
+        let kill = match self.graph.block_id_for_addr(block_addr) {
             None => Some(ReachingStorageState::Conflict),
-            Some(block) => block
-                .sited()
-                .rev()
-                .find_map(|(op, _)| written(self.graph, op, self.storage)),
+            Some(block) => (self.graph.op_insts(block).iter().rev())
+                .find_map(|inst| written(self.graph, *inst, self.storage)),
         };
         self.kills.insert(block_addr, kill);
         kill
@@ -199,7 +197,7 @@ impl<'a> ReachingStorage<'a> {
         if known.contains(&ReachingStorageState::Conflict) {
             return ReachingStorageState::Conflict;
         }
-        match storage_phi_value(self.function, self.graph, block_addr, self.storage) {
+        match storage_phi_value(self.graph, block_addr, self.storage) {
             Ok(Some(value)) => ReachingStorageState::Value(value),
             Err(()) => ReachingStorageState::Conflict,
             Ok(None) if known.iter().all(|state| *state == first) => first,
@@ -227,10 +225,10 @@ impl<'a> ReachingStorage<'a> {
 /// is its value, a write of part of it or an operation the graph lost is a conflict.
 fn written(
     graph: &SsaGraph,
-    op: OpId,
+    inst: InstId,
     storage: CanonicalStorageId,
 ) -> Option<ReachingStorageState> {
-    let Some(inst) = graph.inst_for_op(op).and_then(|inst| graph.inst(inst)) else {
+    let Some(inst) = graph.inst(inst) else {
         return Some(ReachingStorageState::Conflict);
     };
     let written = graph.written_storage(inst)?;
@@ -267,17 +265,15 @@ fn entry_storage_state(graph: &SsaGraph, storage: CanonicalStorageId) -> Reachin
 }
 
 fn storage_phi_value(
-    function: &SSAFunction,
     graph: &SsaGraph,
     block_addr: u64,
     storage: CanonicalStorageId,
 ) -> Result<Option<ValueId>, ()> {
-    let block = function.get_block(block_addr).ok_or(())?;
-    let values = block
-        .phis()
-        .iter()
-        .filter(|phi| phi.canonical_storage == Some(storage))
-        .filter_map(|phi| graph.value_of(phi.dst))
+    let block = graph.block_id_for_addr(block_addr).ok_or(())?;
+    let values = (graph.phi_insts(block).iter())
+        .filter_map(|phi| graph.inst(*phi))
+        .filter(|phi| graph.written_storage(phi) == Some(storage))
+        .filter_map(|phi| phi.output)
         .collect::<Vec<_>>();
     match values.as_slice() {
         [] => Ok(None),
@@ -323,12 +319,10 @@ mod tests {
     }
 
     /// The instructions of a block in order, and the storage `x` is, read off its write.
-    fn insts(function: &SSAFunction, graph: &SsaGraph, addr: u64) -> Vec<InstId> {
-        let block = function.get_block(addr).expect("block");
-        block
-            .sited()
-            .filter_map(|(op, _)| graph.inst_for_op(op))
-            .collect()
+    fn insts(graph: &SsaGraph, addr: u64) -> Vec<InstId> {
+        graph
+            .op_insts(graph.block_id_for_addr(addr).expect("block"))
+            .to_vec()
     }
 
     fn written_storage(graph: &SsaGraph, inst: InstId) -> (CanonicalStorageId, ValueId) {
@@ -364,15 +358,15 @@ mod tests {
                 }],
             ),
         ]);
-        let (x, seven) = written_storage(&graph, insts(&function, &graph, 0x1000)[0]);
+        let (x, seven) = written_storage(&graph, insts(&graph, 0x1000)[0]);
         let mut reaching = ReachingStorage::new(&function, &graph, x);
         // The latch is asked first: its entry is its header's, which the latch's own exit feeds.
-        let latch = insts(&function, &graph, 0x1008)[0];
+        let latch = insts(&graph, 0x1008)[0];
         assert_eq!(
             reaching.before(latch),
             Some(ReachingStorageState::Value(seven))
         );
-        let header = insts(&function, &graph, 0x1004)[0];
+        let header = insts(&graph, 0x1004)[0];
         assert_eq!(
             reaching.before(header),
             Some(ReachingStorageState::Value(seven))
@@ -410,7 +404,7 @@ mod tests {
                 ],
             ),
         ]);
-        let (x, _) = written_storage(&graph, insts(&function, &graph, 0x1004)[0]);
+        let (x, _) = written_storage(&graph, insts(&graph, 0x1004)[0]);
         // A merge nothing reads after keeps no phi once a pass drops it; the arms then disagree.
         let mut function = function;
         function
@@ -419,7 +413,7 @@ mod tests {
             .retain_phis(crate::Pass::Fixture, |phi| phi.canonical_storage != Some(x));
         let graph = SsaGraph::from_function_with_storage(&function);
         let mut reaching = ReachingStorage::new(&function, &graph, x);
-        let merge = insts(&function, &graph, 0x100c)[0];
+        let merge = insts(&graph, 0x100c)[0];
         assert_eq!(reaching.before(merge), Some(ReachingStorageState::Conflict));
     }
 
@@ -436,7 +430,7 @@ mod tests {
                 },
             ],
         )]);
-        let insts = insts(&function, &graph, 0x1000);
+        let insts = insts(&graph, 0x1000);
         let (x, five) = written_storage(&graph, insts[1]);
         let mut reaching = ReachingStorage::new(&function, &graph, x);
         let first = reaching.at(insts[0]).expect("first");

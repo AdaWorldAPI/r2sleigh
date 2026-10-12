@@ -55,11 +55,11 @@ pub(crate) fn collect_call_sites(
                         raw_identity.is_some_and(|identity| {
                             context.is_tail_call_site(identity)
                                 && match op {
-                                    SSAOp::Branch { .. } => graph
-                                        .value(*target)
-                                        .is_some_and(|value| {
+                                    SSAOp::Branch { .. } => {
+                                        graph.value(*target).is_some_and(|value| {
                                             value.canonical_storage == Some(identity.target())
-                                        }),
+                                        })
+                                    }
                                     // A slot in memory, or the register the
                                     // jump goes through: both are targets a
                                     // tail transfer can name, and the register
@@ -68,12 +68,9 @@ pub(crate) fn collect_call_sites(
                                     // branch actually reads.
                                     SSAOp::BranchInd { .. } => {
                                         identity.target().space == crate::CanonicalStorageSpace::Ram
-                                            || graph
-                                                .value(*target)
-                                                .is_some_and(|value| {
-                                                    value.canonical_storage
-                                                        == Some(identity.target())
-                                                })
+                                            || graph.value(*target).is_some_and(|value| {
+                                                value.canonical_storage == Some(identity.target())
+                                            })
                                     }
                                     _ => false,
                                 }

@@ -24,7 +24,7 @@ fn test_switch_selector(function: &SSAFunction, block_addr: u64) -> String {
     let graph = crate::graph::SsaGraph::from_function(function);
     let predicates = crate::semantic::collect_predicate_facts_for_test(function, &graph);
     let values = crate::values::solve_value_ranges(&graph, function, None, &predicates);
-    let selector = crate::indirect::dispatch_selectors(function, &graph, &values)
+    let selector = crate::indirect::dispatch_selectors(&graph, &values)
         .remove(&block_addr)
         .expect("the analysis names a selector");
     graph

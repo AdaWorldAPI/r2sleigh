@@ -26,13 +26,10 @@ pub fn branch_condition_in<'o, V: 'o>(
     ops: impl ExactSizeIterator<Item = &'o SSAOp<V>> + Clone,
 ) -> Option<(usize, &'o V)> {
     let terminal = ops.len().checked_sub(1)?;
-    let mut branches = ops
-        .clone()
-        .enumerate()
-        .filter_map(|(idx, op)| match op {
-            SSAOp::CBranch { cond, .. } => Some((idx, cond)),
-            _ => None,
-        });
+    let mut branches = ops.clone().enumerate().filter_map(|(idx, op)| match op {
+        SSAOp::CBranch { cond, .. } => Some((idx, cond)),
+        _ => None,
+    });
     let found = branches.next()?;
     branches.next().is_none().then_some(())?;
     let guards_tail = ops.skip(found.0 + 1).any(|op| {

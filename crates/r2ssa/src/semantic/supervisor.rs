@@ -31,7 +31,11 @@ impl crate::SsaArtifact {
         let graph = self.graph();
         let sites = (graph.blocks.iter())
             .flat_map(|block| graph.op_insts(block.id).iter().copied())
-            .filter(|inst| graph.op(*inst).is_some_and(|op| function.enters_supervisor(op)))
+            .filter(|inst| {
+                graph
+                    .op(*inst)
+                    .is_some_and(|op| function.enters_supervisor(op))
+            })
             .collect::<Vec<_>>();
         if sites.is_empty() {
             return Vec::new();

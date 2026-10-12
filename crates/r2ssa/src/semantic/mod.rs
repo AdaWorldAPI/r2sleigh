@@ -50,7 +50,6 @@ use r2il::SpaceId;
 use serde::{Deserialize, Serialize};
 
 use crate::address::{AddressProvenanceFacts, collect_address_provenance};
-use crate::arena::OpId;
 use crate::assumption::{AssumptionSet, AssumptionSubject, AssumptionUsageReport, AssumptionValue};
 use crate::cfg::BlockTerminator;
 use crate::function::{DecompilePrepFacts, SSAFunction, StackAddressBase, StackAddressRoot};

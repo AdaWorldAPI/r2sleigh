@@ -745,9 +745,9 @@ pub(crate) fn movable_for_clause_value(
             else {
                 return false;
             };
-            suffix.iter().all(|inst| {
-                matches!(graph.op(*inst), Some(SSAOp::Branch { .. } | SSAOp::Nop))
-            })
+            suffix
+                .iter()
+                .all(|inst| matches!(graph.op(*inst), Some(SSAOp::Branch { .. } | SSAOp::Nop)))
         })
 }
 

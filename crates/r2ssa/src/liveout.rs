@@ -72,13 +72,17 @@ impl FunctionLiveOut {
         return_storages: &[CanonicalStorageId],
     ) -> Self {
         let mut live = Self::default();
-        for block in func.named_blocks() {
+        for block in &graph.blocks {
             // A predicated return (`bxeq lr`) ends its block in a return the terminator does not name.
+            let last = graph.op_insts(block.id).last();
             let returns = func
                 .cfg()
                 .get_block(block.addr)
                 .is_some_and(|cfg| cfg.is_return())
-                || matches!(block.ops().last(), Some(crate::op::SSAOp::Return { .. }));
+                || matches!(
+                    last.and_then(|inst| graph.op(*inst)),
+                    Some(crate::op::SSAOp::Return { .. })
+                );
             if !returns {
                 continue;
             }
@@ -143,14 +147,11 @@ impl FunctionLiveOut {
             if !seen.insert((addr, written)) {
                 continue;
             }
-            let Some(block) = func.get_block(addr) else {
+            let Some(block) = graph.block_id_for_addr(addr) else {
                 continue;
             };
-            let storage_of = |id: &crate::VarId| {
-                graph
-                    .value_of(*id)
-                    .and_then(|value| graph.value(value)?.canonical_storage)
-            };
+            let storage_of = |id: &ValueId| graph.value(*id)?.canonical_storage;
+            let ops = || graph.op_insts(block).iter().filter_map(|inst| graph.op(*inst));
             let mut defined_here = false;
             // Whether a call on this path leaves the return register holding a
             // value this function never defines.
@@ -162,7 +163,7 @@ impl FunctionLiveOut {
             // the zero and left everything the comparison computed observed by
             // nothing. Walking back until the location is covered names every
             // definition the caller actually reads.
-            for op in block.ops().iter().rev() {
+            for op in ops().rev() {
                 // The shared rule, so this walk and the return boundary's
                 // cannot drift. Walking past a call named the last thing put in
                 // the register before it -- for a function whose final act is
@@ -182,17 +183,16 @@ impl FunctionLiveOut {
                     continue;
                 }
                 written = true;
-                if let Some(value) = graph.value_of(*dst) {
-                    self.values.insert(value);
-                    found |= here.insert(value);
-                }
+                self.values.insert(*dst);
+                found |= here.insert(*dst);
                 if covers_fully(storage, return_storage) {
                     defined_here = true;
                     break;
                 }
             }
-            for phi in block.phis() {
-                let Some(storage) = storage_of(&phi.dst) else {
+            let phis = (graph.phi_insts(block).iter()).filter_map(|inst| graph.inst(*inst)?.output);
+            for phi in phis {
+                let Some(storage) = storage_of(&phi) else {
                     continue;
                 };
                 if !contributes_to(storage, return_storage) {
@@ -200,7 +200,7 @@ impl FunctionLiveOut {
                 }
                 // Only a write that covers the whole return storage replaces the
                 // merge. A narrower one leaves the remaining bytes to the phi.
-                let overwritten = block.ops().iter().any(|op| {
+                let overwritten = ops().any(|op| {
                     op.dst().is_some_and(|dst| {
                         storage_of(dst).is_some_and(|written| covers_fully(written, return_storage))
                     })
@@ -209,11 +209,9 @@ impl FunctionLiveOut {
                     continue;
                 }
                 written = true;
-                if let Some(value) = graph.value_of(phi.dst) {
-                    defined_here |= covers_fully(storage, return_storage);
-                    self.values.insert(value);
-                    found |= here.insert(value);
-                }
+                defined_here |= covers_fully(storage, return_storage);
+                self.values.insert(phi);
+                found |= here.insert(phi);
             }
             if clobbered {
                 // The path answers with the callee's value, which is not one of
