@@ -191,15 +191,16 @@ pub(crate) fn loop_carrier_facts(
         body: loop_body,
         ..
     } = loop_;
-    let Some(header_block) = function.named_block(header) else {
+    let Some(header_block) = graph.block_id_for_addr(header) else {
         return Vec::new();
     };
-    let mut carriers = header_block
-        .phis()
-        .iter()
-        .filter_map(|phi| {
-            let phi_value = graph.value_id_for_var(&phi.dst)?;
-            let phi_inst = graph.def_inst(phi_value)?;
+    let mut carriers = (graph.phi_insts(header_block).iter())
+        .filter_map(|&phi_inst| {
+            let phi = graph.inst(phi_inst)?;
+            let phi_value = phi.output?;
+            let crate::InstPayload::Phi { predecessors } = &phi.payload else {
+                return None;
+            };
             // Pruned SSA is not guaranteed at this seam. A loop-local output
             // can induce a syntactic header phi whose value is never read;
             // such a dead merge carries no live state and must not acquire a
@@ -211,10 +212,12 @@ pub(crate) fn loop_carrier_facts(
             }
             let mut entries = Vec::new();
             let mut updates = Vec::new();
-            for (input_idx, (predecessor, source)) in phi.sources.iter().enumerate() {
+            let sources = predecessors.iter().zip(graph.inputs(phi_inst));
+            for (input_idx, (predecessor, source)) in sources.enumerate() {
+                let predecessor = &graph.block(*predecessor)?.addr;
                 let edge = LoopCarrierEdgeValue {
                     predecessor: *predecessor,
-                    value: graph.value_id_for_var(source)?,
+                    value: *source,
                     site: UseSite {
                         inst: phi_inst,
                         input_idx,
@@ -246,7 +249,7 @@ pub(crate) fn loop_carrier_facts(
                 loop_id,
                 header,
                 phi: phi_value,
-                width: phi.dst.size,
+                width: graph.var(phi_value).size,
                 identity_values: BTreeSet::from([phi_value]),
                 entries,
                 updates,

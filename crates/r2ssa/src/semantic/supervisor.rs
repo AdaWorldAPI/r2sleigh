@@ -29,17 +29,9 @@ impl crate::SsaArtifact {
     pub fn supervisor_calls(&self, number: CanonicalStorageId) -> Vec<SupervisorCall> {
         let function = self.function();
         let graph = self.graph();
-        let sites = function
-            .named_blocks()
-            .iter()
-            .flat_map(|block| {
-                block
-                    .sited()
-                    .filter_map(|(id, op)| match function.enters_supervisor(op) {
-                        true => graph.inst_for_op(id),
-                        false => None,
-                    })
-            })
+        let sites = (graph.blocks.iter())
+            .flat_map(|block| graph.op_insts(block.id).iter().copied())
+            .filter(|inst| graph.op(*inst).is_some_and(|op| function.enters_supervisor(op)))
             .collect::<Vec<_>>();
         if sites.is_empty() {
             return Vec::new();

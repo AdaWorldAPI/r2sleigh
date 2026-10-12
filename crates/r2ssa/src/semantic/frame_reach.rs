@@ -612,16 +612,16 @@ fn call_reaches(
         .and_then(r2source::SourceConventionSlots::stack_arguments)
         .map_or(0, |placement| placement.first_offset().max(0));
     let mut states = ReachingStorage::new(function, graph, stack_pointer);
-    for block in function.named_blocks() {
-        for (op_id, op) in block.sited() {
+    for block in &graph.blocks {
+        for &call in graph.op_insts(block.id) {
+            let Some(op) = graph.op(call) else {
+                continue;
+            };
             let instruction = match op {
                 SSAOp::Call { instruction, .. } | SSAOp::CallInd { instruction, .. } => {
                     *instruction
                 }
                 _ => continue,
-            };
-            let Some(call) = graph.inst_for_op(op_id) else {
-                continue;
             };
             let sp = match states.before(call) {
                 Some(ReachingStorageState::Value(value)) => graph

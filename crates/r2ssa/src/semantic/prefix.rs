@@ -62,7 +62,6 @@ impl MemoryPrefix {
         );
         phase!("objects", objects.objects.len());
         let (memory_accesses, member_run_stores) = collect_structured_memory_access_facts(
-            function,
             graph,
             &objects,
             &memory,

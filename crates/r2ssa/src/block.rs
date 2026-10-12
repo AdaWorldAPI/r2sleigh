@@ -18,10 +18,16 @@ use crate::var::SSAVar;
 /// transfer it decides stands after it. `r2il::guarded_transfer` is where the
 /// machine graph reads the same shape, and this is the SSA form of it.
 pub fn branch_condition<V>(block: &SSABlock<V>) -> Option<(usize, &V)> {
-    let terminal = block.ops.len().checked_sub(1)?;
-    let mut branches = block
-        .ops
-        .iter()
+    branch_condition_in(block.ops.iter())
+}
+
+/// [`branch_condition`] over a block's operations wherever they are held, in order.
+pub fn branch_condition_in<'o, V: 'o>(
+    ops: impl ExactSizeIterator<Item = &'o SSAOp<V>> + Clone,
+) -> Option<(usize, &'o V)> {
+    let terminal = ops.len().checked_sub(1)?;
+    let mut branches = ops
+        .clone()
         .enumerate()
         .filter_map(|(idx, op)| match op {
             SSAOp::CBranch { cond, .. } => Some((idx, cond)),
@@ -29,7 +35,7 @@ pub fn branch_condition<V>(block: &SSABlock<V>) -> Option<(usize, &V)> {
         });
     let found = branches.next()?;
     branches.next().is_none().then_some(())?;
-    let guards_tail = block.ops[found.0 + 1..].iter().any(|op| {
+    let guards_tail = ops.skip(found.0 + 1).any(|op| {
         matches!(
             op,
             SSAOp::Return { .. } | SSAOp::Branch { .. } | SSAOp::BranchInd { .. }

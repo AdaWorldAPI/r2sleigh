@@ -50,7 +50,7 @@ pub(crate) fn collect_call_result_certificates(
         height,
         CallResultFlowState::default(),
         |block_addr, input| {
-            let Some(block) = function.get_block(block_addr) else {
+            let Some(block) = body.graph.block_id_for_addr(block_addr) else {
                 return input.clone();
             };
             process_call_result_flow_block(
@@ -73,7 +73,7 @@ pub(crate) fn collect_call_result_certificates(
     // Then the certificates, once, from each block's settled entry state.
     for &block_addr in function.block_addrs() {
         let (Some(block), Some(input)) = (
-            function.get_block(block_addr),
+            body.graph.block_id_for_addr(block_addr),
             solved.entry.get(&block_addr),
         ) else {
             continue;
@@ -122,13 +122,13 @@ pub(crate) struct CallResultSink<'a> {
 pub(crate) fn process_call_result_flow_block(
     body: Body<'_>,
     derived: Derived<'_>,
-    block: &crate::SSABlock<crate::VarId>,
+    block: crate::graph::BlockId,
     callsites_by_inst: &crate::dense::IdMap<InstId, CallSiteId>,
     mut state: CallResultFlowState,
     mut sink: Option<CallResultSink<'_>>,
 ) -> CallResultFlowState {
     let graph = body.graph;
-    let width = |id: &crate::VarId| body.function.var(*id).size;
+    let width = |id: &ValueId| graph.var(*id).size;
     let (boundaries, objects, call_sites, structured) = (
         derived.boundaries,
         derived.objects,
@@ -136,8 +136,8 @@ pub(crate) fn process_call_result_flow_block(
         derived.structured,
     );
     let mut active_call = None;
-    for (id, op) in block.sited() {
-        let Some(inst) = graph.inst_for_op(id) else {
+    for &inst in graph.op_insts(block) {
+        let Some(op) = graph.op(inst) else {
             continue;
         };
         match op {
@@ -152,9 +152,7 @@ pub(crate) fn process_call_result_flow_block(
                 if !call_sites.by_id.contains_key(&call_site_id) {
                     continue;
                 }
-                let Some(value) = graph.value_of(*dst) else {
-                    continue;
-                };
+                let value = *dst;
                 let Some(boundary) = boundaries
                     .calls
                     .get(&call_site_id)
@@ -240,15 +238,11 @@ pub(crate) fn process_call_result_flow_block(
                 insert_call_result_certificate(sink.as_mut(), &mut state.tracked, cert);
             }
             SSAOp::Copy { dst, src } => {
-                let Some(src_value) = graph.value_of(*src) else {
-                    continue;
-                };
+                let src_value = *src;
                 let Some(source) = state.tracked.get(src_value) else {
                     continue;
                 };
-                let Some(dst_value) = graph.value_of(*dst) else {
-                    continue;
-                };
+                let dst_value = *dst;
                 let cert = CallResultCertificate {
                     call_site: source.call_site,
                     at: inst,
@@ -265,15 +259,11 @@ pub(crate) fn process_call_result_flow_block(
             | SSAOp::Trunc { dst, src }
             | SSAOp::Cast { dst, src, .. }
             | SSAOp::Subpiece { dst, src, .. } => {
-                let Some(src_value) = graph.value_of(*src) else {
-                    continue;
-                };
+                let src_value = *src;
                 let Some(source) = state.tracked.get(src_value) else {
                     continue;
                 };
-                let Some(dst_value) = graph.value_of(*dst) else {
-                    continue;
-                };
+                let dst_value = *dst;
                 let cert = CallResultCertificate {
                     call_site: source.call_site,
                     at: inst,
@@ -290,7 +280,7 @@ pub(crate) fn process_call_result_flow_block(
                 val,
                 ..
             } => {
-                let value = graph.value_of(*val);
+                let value = Some(*val);
                 let stack_access = value
                     .and_then(|value| {
                         stack_memory_access_at(StackMemoryAccessInput {
@@ -345,9 +335,7 @@ pub(crate) fn process_call_result_flow_block(
                 dst,
                 ..
             } => {
-                let Some(dst_value) = graph.value_of(*dst) else {
-                    continue;
-                };
+                let dst_value = *dst;
                 let Some((object, offset, access)) =
                     stack_memory_access_at(StackMemoryAccessInput {
                         graph,

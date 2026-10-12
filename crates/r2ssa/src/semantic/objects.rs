@@ -37,13 +37,12 @@ pub(crate) fn collect_object_and_memory_facts(
             FrameReach::of(function, prep, graph, &object_model, machine_context);
     }
     let access_summaries =
-        collect_access_summaries(function, graph, facts, addresses, &object_model);
+        collect_access_summaries(graph, facts, addresses, &object_model);
     let memory = build_memory_ssa(function, graph, &object_model, access_summaries);
     (object_model, memory)
 }
 
 pub(crate) fn collect_access_summaries(
-    function: &SSAFunction,
     graph: &SsaGraph,
     prep_facts: Option<&DecompilePrepFacts>,
     addresses: &AddressProvenanceFacts,
@@ -51,11 +50,12 @@ pub(crate) fn collect_access_summaries(
 ) -> crate::dense::IdMap<InstId, AccessSummary> {
     let mut summaries = crate::dense::IdMap::default();
 
-    for block in function.named_blocks() {
-        for (op_id, op) in block.sited() {
-            let Some(inst_id) = graph.inst_for_op(op_id) else {
+    for block in &graph.blocks {
+        for &inst_id in graph.op_insts(block.id) {
+            let Some(op) = graph.op(inst_id) else {
                 continue;
             };
+            let op = &graph.named_op(op);
             let mut uses = Vec::new();
             let mut defs = Vec::new();
             match op {
@@ -111,7 +111,7 @@ pub(crate) fn collect_access_summaries(
                         addresses,
                         object_model,
                         graph,
-                        &swap.addr,
+                        swap.addr,
                         swap.space,
                         swap.expected.size.max(swap.replacement.size),
                     );
@@ -264,13 +264,10 @@ pub(crate) fn build_memory_ssa(
                     *held = Held::Merged(block_addr);
                 }
             }
-            let Some(block) = function.get_block(block_addr) else {
+            let Some(block) = graph.block_id_for_addr(block_addr) else {
                 return state;
             };
-            for (op_id, _) in block.sited() {
-                let Some(inst_id) = graph.inst_for_op(op_id) else {
-                    continue;
-                };
+            for &inst_id in graph.op_insts(block) {
                 let Some(summary) = access_summaries.get(inst_id) else {
                     continue;
                 };

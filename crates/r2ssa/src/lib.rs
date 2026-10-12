@@ -95,7 +95,7 @@ pub use assumption::{
     AnalysisAssumption, AnalysisAssumptionConflict, AssumptionProvenance, AssumptionScope,
     AssumptionSet, AssumptionSubject, AssumptionUsageReport, AssumptionValue,
 };
-pub use block::{BlockMut, SSABlock, branch_condition};
+pub use block::{BlockMut, SSABlock, branch_condition, branch_condition_in};
 pub use cfg::{BasicBlock, BlockTerminator, CFG, CFGEdge, DeclaredSuccessors};
 pub use control::{
     SsaCancellationToken, SsaExecutionControl, SsaExecutionStopReason, SsaPrepareError,

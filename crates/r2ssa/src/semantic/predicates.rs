@@ -17,9 +17,12 @@ pub(crate) fn collect_predicate_facts(
     let mut next_predicate_id = 0u32;
 
     for &block_addr in function.block_addrs() {
-        let Some(block) = function.get_block(block_addr) else {
+        let Some(block) = graph.block_id_for_addr(block_addr) else {
             continue;
         };
+        let ops = (graph.op_insts(block).iter())
+            .filter_map(|inst| graph.op(*inst))
+            .collect::<Vec<_>>();
         let Some(cfg_block) = function.cfg().get_block(block_addr) else {
             continue;
         };
@@ -28,10 +31,9 @@ pub(crate) fn collect_predicate_facts(
                 true_target,
                 false_target,
             } => {
-                let Some((_, cond)) = crate::branch_condition(block) else {
+                let Some((_, &condition)) = crate::branch_condition_in(ops.iter().copied()) else {
                     continue;
                 };
-                let condition = graph.value_of(*cond).expect("predicate condition in graph");
                 let id = PredicateId(next_predicate_id);
                 next_predicate_id = next_predicate_id.saturating_add(1);
                 predicates.insert(
@@ -72,8 +74,8 @@ pub(crate) fn collect_predicate_facts(
                         // outright. A dispatch through a table does not, and
                         // what it switches on comes from the value analysis,
                         // which has not run yet -- it is filled in there.
-                        selector: block.ops().iter().rev().find_map(|op| match op {
-                            SSAOp::Switch { selector } => graph.value_of(*selector),
+                        selector: ops.iter().rev().find_map(|op| match op {
+                            SSAOp::Switch { selector } => Some(*selector),
                             _ => None,
                         }),
                         cases: cases.clone(),

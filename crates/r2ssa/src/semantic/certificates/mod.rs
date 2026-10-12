@@ -737,21 +737,17 @@ pub(crate) fn movable_for_clause_value(
     let Some(definition) = graph.def_inst(value) else {
         return false;
     };
-    let Some(op) = graph.op_for_inst(definition) else {
-        return false;
-    };
     graph.block_addr_of(definition) == Some(block_addr)
-        && function.get_block(block_addr).is_some_and(|block| {
-            let Some(suffix) = block
-                .position(op)
-                .and_then(|index| index.checked_add(1))
-                .and_then(|start| block.ops().get(start..))
+        && graph.block_id_for_addr(block_addr).is_some_and(|block| {
+            let insts = graph.op_insts(block);
+            let Some(suffix) = (insts.iter().position(|inst| *inst == definition))
+                .and_then(|index| insts.get(index + 1..))
             else {
                 return false;
             };
-            suffix
-                .iter()
-                .all(|op| matches!(op, SSAOp::Branch { .. } | SSAOp::Nop))
+            suffix.iter().all(|inst| {
+                matches!(graph.op(*inst), Some(SSAOp::Branch { .. } | SSAOp::Nop))
+            })
         })
 }
 
