@@ -98,12 +98,12 @@ stays alive until the response is built.
 | #173 | A value's definition, inputs and width are the graph's alone | heap peak 180.6 to 173.8 MB; the peak moves from render to preparation |
 | #174 | The inventory's seeds a bit per whole-instruction kind; one backward pass taints the incomplete returns | heap peak 173.8 to 172.2 MB (the render phase's again), 0pack 199.5 to 189.4 MB; peak RSS 0pack 334 to 298 MB |
 | #175 | The term arena interns its types (a node 56 to 32 bytes), its side tables dense and shrunk once canonical; root steps as runs; the unread `reads` lists and producer ids deleted | heap peak 172.2 to 166.7 MB (now the type seal's), 0pack 189.4 to 177.6 MB; pumasim 3% faster |
+| #176 | The array inference borrows its operations; the inventory's table sized from its seeds and sorted in place; the import's roots recorded as runs as each completes | heap peak 166.7 to 158.6 MB; peak RSS 4 to 7% lower |
 
 ## Left
 
-pumasim's peak (166.7 MB) is the type seal's: r2types' array inference
-clones every operation twice into name-keyed maps (42.6 MB, MM.11; T deletes
-the system). 0pack's (177.6 MB) is render's: one numbering (MM.6, the
+The phases now peak within a few MB of each other, so a cut in one moves
+the peak. 0pack's (177.6 MB) is render's: one numbering (MM.6, the
 function, table and graph), the machine projection and render structures
 (MM.8), compact identities (MM.7). Then the fixed cost (MM.4, 29.8 MB) and
 the allocator's collect (MM.9). The facts only sealing reads (MM.3) are

@@ -357,22 +357,26 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          root steps are runs over two arrays (#175: every value's
          canonical term also built a transitive producer set to fill a
          `reads` list nothing read, and its import held a 32-byte producer
-         id nothing read). A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
+         id nothing read); r2types' array inference borrows the
+         operations it indexes by name, the inventory's table is sized
+         from its seeds and sorted in place, and the import's roots are
+         recorded as runs as each completes (#176: the inference cloned
+         every operation twice, 42.6 MB at the type seal; the table kept
+         its doubling slack and a stable sort's scratch; the importer held
+         a hash map of two vectors per root, 9.2 MB). A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
          386 MB, time unchanged. Since #172: heap peak (dhat) pumasim
-         `pdd @ 0x23fdf0` 180.6 to 166.7 MB (197.0 at #167), 0pack
-         `0x58e3d0` 199.5 to 177.6 MB since #173; release peak RSS 0pack
-         340 to 298 MB, pumasim 311 to 283 MB; pumasim's time 1.57 to
-         1.53 s. pumasim's peak (166.7 MB, about 1.81 KB per operation) is
-         now the type seal's: r2types' confidence-scored array inference
-         (`scalar_array_access_certificates_from_ssa`) clones every
-         operation twice into maps keyed by spelled names, 42.6 MB, inside
-         six rounds (T's rest, below). 0pack's (177.6 MB) is render's: the
-         analysis artifact 58.4 MB, render's own 25.0 MB, the machine
-         projection 18.9 MB, the term import 9.5 MB. Left, largest first:
-         0. **MM.11** (immediate) the array inference's copies: its two
-            maps of cloned operations by name read the named blocks it is
-            handed; deleting the system is T's (below), and until then it
-            borrows what it reads, in rounds stated as a budget.
+         `pdd @ 0x23fdf0` 180.6 to 158.6 MB (197.0 at #167), 0pack
+         `0x58e3d0` 199.5 to 177.6 MB since #173; release peak RSS, median
+         of 5, 0pack 340 to 275 MB, pumasim 311 to 272 MB; pumasim's time
+         1.57 to 1.49 s. Each phase's peak is now within a few MB of the
+         others (preparation's inventory build, the type seal's array
+         inference, render's import), so a cut in one moves the peak to
+         the next. 0pack's (177.6 MB, about 1.9 KB per operation) is
+         render's: the analysis artifact 58.4 MB, render's own 25.0 MB,
+         the machine projection 18.9 MB, the term import 9.5 MB. The array
+         inference still keys maps by spelled names, in six rounds that
+         keep a partial result when they run out: T deletes it (below).
+         Left, largest first:
          1. **MM.6** one numbering (16.6 MB function and value table, 13.0
             MB graph): each variable and operation held twice, F2's plan.
          2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,

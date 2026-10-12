@@ -409,11 +409,11 @@ pub struct SemanticObligation {
 pub struct ObligationTable(Vec<SemanticObligation>);
 
 impl ObligationTable {
-    /// The table of these obligations; of two with one identity the later stands, as a map's insert.
+    /// The table of these obligations, whose identities are distinct: sorted in place, since a
+    /// stable sort's scratch was the inventory's peak (doc/adr-memory-model.md, MM.10).
     fn of(mut obligations: Vec<SemanticObligation>) -> Self {
-        obligations.reverse();
-        obligations.sort_by_key(|obligation| obligation.id);
-        obligations.dedup_by_key(|obligation| obligation.id);
+        obligations.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+        debug_assert!(obligations.windows(2).all(|pair| pair[0].id != pair[1].id));
         Self(obligations)
     }
 
@@ -1047,7 +1047,8 @@ impl SemanticObligationInventory {
         let mut inventory = Self::empty(graph.insts.len());
         inventory.construction_failures = construction_failures;
         inventory.unstructured_cycle_blocks = structured.unstructured_cycle_blocks.clone();
-        let mut obligations = Vec::new();
+        // One obligation per seed at most: sized once, the table keeps no growth.
+        let mut obligations = Vec::with_capacity(required.len());
         for inst in &graph.insts {
             let Some(id) = canonical_ids.get(inst.id).copied() else {
                 continue;
@@ -1583,6 +1584,15 @@ impl ObligationSeeds {
 
     fn contains(&self, inst: InstId) -> bool {
         self.whole[inst] != 0 || self.parts.contains(inst)
+    }
+
+    /// How many (instruction, kind, component) seeds are held.
+    fn len(&self) -> usize {
+        let whole = self
+            .whole
+            .iter()
+            .map(|(_, bits)| bits.count_ones() as usize);
+        whole.sum::<usize>() + self.parts.values().map(Vec::len).sum::<usize>()
     }
 
     /// The seeded instructions, in id order.
