@@ -330,6 +330,17 @@ maintainer accepts broken renderings on `rebuild` until it merges.
       7. **LX2**, D27's adapter deleted: D0 reads T's and F2's dense
          indexes.
       8. **D26**'s purge delay, the maintainer's (PF row).
+      9. **MM**, memory as a linear budget
+         ([memory-model](doc/adr-memory-model.md)): phases consume what
+         only they read, caches budgeted in bytes (GreedyDual-Size), a
+         forced collect at phase boundaries, a typed refusal past the
+         budget, and superlinear shapes replaced when a function shows one.
+         Measured 2026-10-12: about 2.1 KB of heap per SSA operation at the
+         top, `RSS − F` growing as size^0.71 over 148 functions, sessions
+         plateauing at 445 to 869 MB; the only functions over 1 GB were a
+         debug file's zero fill decoded as code (fixed, #166). Exit: heap
+         bytes per operation and session RSS gated, `c ≤ 600 B` then
+         `≤ 300 B`, sessions under a stated budget.
 6. **LP2 to LP4**, then **I**, **C2, C4**, **P7, P8, P9, P11**.
 7. Beside the path, as small items when a step waits on CI: **L5**, **M6**
    rest.
