@@ -55,12 +55,6 @@ pub struct CanonicalValue {
     pub value: ValueId,
     pub base_root: MachineExprId,
     pub canonical: TermId,
-    /// The values `canonical` still reads, sorted and distinct.
-    ///
-    /// The graph's use table is the population *before* rewriting. A branch
-    /// that read three condition codes and now reads one comparison still has
-    /// three graph uses, so counting those is how a folded flag stayed bound.
-    pub reads: Box<[ValueId]>,
     pub multiplicity: Multiplicity,
 }
 
@@ -72,8 +66,6 @@ pub struct CanonicalValue {
 pub struct CanonicalAccess {
     pub access: StructuredAccessId,
     pub canonical: TermId,
-    /// The values `canonical` still reads, sorted and distinct.
-    pub reads: Box<[ValueId]>,
 }
 
 /// A node whose rewriting exceeded its derived budget.
@@ -209,37 +201,6 @@ impl CanonicalRoots {
 /// path, as a statement of its own.
 pub fn renders_inline(arena: &TermArena, id: TermId) -> bool {
     !matches!(arena.term(id).kind, TermKind::Opaque(_))
-}
-
-/// The values a canonical term still reads, sorted and distinct.
-///
-/// A leaf is a `Source` read of a binding or an entity's root, which is how a memory read
-/// appears; an expanded producer a `Source` leaf still reads is read, not discharged.
-fn values_read(
-    projection: &MachineProjection,
-    value_by_root: &HashMap<MachineExprId, ValueId>,
-    arena: &TermArena,
-    term: TermId,
-    substituted: &BTreeSet<CanonicalInstructionId>,
-) -> Box<[ValueId]> {
-    let mut read = Vec::new();
-    for leaf in arena.leaves(term) {
-        if let Some(value) = value_by_root.get(&leaf) {
-            read.push(*value);
-        }
-        if let Some(MachineExprKind::Source { binding, .. }) =
-            projection.expr(leaf).map(|expr| expr.kind())
-        {
-            read.push(binding.value());
-            let kept = projection.entity_for_output(binding.value());
-            let kept = kept.filter(|entity| substituted.contains(&entity.producer()));
-            let kept = kept.and_then(|entity| projection.entity_for_producer(entity.producer()));
-            read.extend(kept.map(|entity| entity.output().value()));
-        }
-    }
-    read.sort_unstable();
-    read.dedup();
-    read.into_boxed_slice()
 }
 
 /// The producers among `substituted` whose values `canonical` no longer
@@ -407,11 +368,6 @@ pub fn canonicalize_with(
             return Err(RewriteError::ValueOutOfRange(value));
         }
     }
-    let value_by_root = projection
-        .entities()
-        .iter()
-        .map(|entity| (entity.root(), entity.output().value()))
-        .collect::<HashMap<_, _>>();
     let mut arena = TermArena::new();
     let import = import_with(artifact, projection, &mut arena, policy, declared_pointers);
     // Definitionless constants have no machine entity and therefore no
@@ -462,25 +418,16 @@ pub fn canonicalize_with(
             .get(&imported.term)
             .copied()
             .unwrap_or(imported.term);
-        let substituted = import.substituted(imported.value);
         let multiplicity = if import.is_duplicable(projection, &arena, canonical_term) {
             Multiplicity::Any
         } else {
             Multiplicity::Once
         };
-        let reads = values_read(
-            projection,
-            &value_by_root,
-            &arena,
-            canonical_term,
-            &substituted,
-        );
         if let Some(cell) = values.get_mut(imported.value.0 as usize) {
             *cell = Some(CanonicalValue {
                 value: imported.value,
                 base_root: imported.base_root,
                 canonical: canonical_term,
-                reads,
                 multiplicity,
             });
         }
@@ -497,7 +444,6 @@ pub fn canonicalize_with(
             value,
             base_root,
             canonical: canonical_term,
-            reads: Box::new([]),
             multiplicity: Multiplicity::Any,
         });
     }
@@ -507,22 +453,15 @@ pub fn canonicalize_with(
             .get(&imported.term)
             .copied()
             .unwrap_or(imported.term);
-        let substituted = import.access_substituted(imported.access);
         accesses.insert(
             imported.access,
             CanonicalAccess {
                 access: imported.access,
                 canonical: canonical_term,
-                reads: values_read(
-                    projection,
-                    &value_by_root,
-                    &arena,
-                    canonical_term,
-                    &substituted,
-                ),
             },
         );
     }
+    arena.shrink_to_fit();
     Ok(CanonicalRoots {
         arena,
         import,

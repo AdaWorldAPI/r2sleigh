@@ -470,9 +470,23 @@ pub struct PointerWalk {
 /// leaves, because a rule sees nothing else. Every table is keyed by a
 /// nullary term, which the driver never rebuilds, so a fact declared on a leaf
 /// is still on it when a rule reads it.
+/// A value's base node no leaf reads yet.
+const NO_LEAF: u32 = u32::MAX;
+
+/// A term as the arena stores it: its type by index into the arena's types, so a node is 32
+/// bytes where a [`Term`] is 56 (doc/adr-memory-model.md, MM.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Node {
+    ty: u32,
+    kind: TermKind,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TermArena {
-    nodes: Vec<Term>,
+    nodes: Vec<Node>,
+    /// Each distinct type once, in first-use order; `type_ids` finds one and is never iterated.
+    types: Vec<MachineType>,
+    type_ids: HashMap<MachineType, u32>,
     /// By term: its size as a tree, fixed when it is minted, since a term never changes.
     sizes: Vec<u64>,
     /// Where each interned term sits in `nodes`, by hash.
@@ -500,16 +514,13 @@ pub struct TermArena {
     /// The walk certificate of a leaf that reads a pointer carried round a
     /// loop.
     walks: HashMap<TermId, PointerWalk>,
-    /// The first leaf minted for each value. Occurrences differ; what they
-    /// read does not, so every fact about a value is keyed on this one and
-    /// every other occurrence is normalised to it before a lookup.
-    canonical_leaves: HashMap<MachineExprId, TermId>,
-    /// The next occurrence to mint.
-    occurrences: u32,
-    /// Where each occurrence was imported from, for the occurrences the
-    /// importer could name one for. A leaf minted for a certificate rather
-    /// than for a read has none.
-    origins: HashMap<OccurrenceId, LeafOrigin>,
+    /// The first leaf minted for each value, by the value's base node. Occurrences differ; what
+    /// they read does not, so every fact about a value is keyed on this one and every other
+    /// occurrence is normalised to it before a lookup. `NO_LEAF` where none is minted.
+    canonical_leaves: Vec<u32>,
+    /// Where each occurrence was imported from, by occurrence; `None` for a leaf minted for a
+    /// certificate rather than for a read. Its length is the next occurrence.
+    origins: Vec<Option<LeafOrigin>>,
 }
 
 /// An open-addressed table of term identifiers, compared against the arena.
@@ -521,14 +532,14 @@ struct TermIndex {
 }
 
 impl TermIndex {
-    fn hash_of(term: &Term) -> u64 {
+    fn hash_of(term: &Node) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         term.hash(&mut hasher);
         hasher.finish()
     }
 
-    fn find(&self, term: &Term, nodes: &[Term]) -> Option<TermId> {
+    fn find(&self, term: &Node, nodes: &[Node]) -> Option<TermId> {
         if self.slots.is_empty() {
             return None;
         }
@@ -543,7 +554,7 @@ impl TermIndex {
         }
     }
 
-    fn insert(&mut self, id: TermId, nodes: &[Term]) {
+    fn insert(&mut self, id: TermId, nodes: &[Node]) {
         // Half full at most, so a probe is short and the table never fills.
         if (self.occupied + 1) * 2 > self.slots.len() {
             self.grow(nodes);
@@ -552,7 +563,7 @@ impl TermIndex {
         self.occupied += 1;
     }
 
-    fn place(&mut self, id: TermId, nodes: &[Term]) {
+    fn place(&mut self, id: TermId, nodes: &[Node]) {
         let mask = self.slots.len() - 1;
         let mut at = Self::hash_of(&nodes[id.index()]) as usize & mask;
         while self.slots[at] != 0 {
@@ -561,7 +572,7 @@ impl TermIndex {
         self.slots[at] = id.0 + 1;
     }
 
-    fn grow(&mut self, nodes: &[Term]) {
+    fn grow(&mut self, nodes: &[Node]) {
         let previous = std::mem::take(&mut self.slots);
         self.slots = vec![0u32; (previous.len() * 2).max(64)];
         for slot in previous {
@@ -593,24 +604,45 @@ impl TermArena {
         expr: MachineExprId,
         origin: Option<LeafOrigin>,
     ) -> TermId {
-        let occurrence = OccurrenceId(self.occurrences);
-        self.occurrences += 1;
+        let occurrence = OccurrenceId(self.origins.len() as u32);
+        self.origins.push(origin);
         let id = TermId(self.nodes.len() as u32);
-        self.nodes.push(Term {
+        let ty = self.type_id(ty);
+        self.nodes.push(Node {
             ty,
             kind: TermKind::Leaf(LeafRead { expr, occurrence }),
         });
         self.sizes.push(1);
-        self.canonical_leaves.entry(expr).or_insert(id);
-        if let Some(origin) = origin {
-            self.origins.insert(occurrence, origin);
+        if self.canonical_leaves.len() <= expr.index() {
+            self.canonical_leaves.resize(expr.index() + 1, NO_LEAF);
+        }
+        let first = &mut self.canonical_leaves[expr.index()];
+        if *first == NO_LEAF {
+            *first = id.0;
         }
         id
     }
 
+    /// The index of `ty` in this arena's types, minted on first use.
+    fn type_id(&mut self, ty: MachineType) -> u32 {
+        *self.type_ids.entry(ty).or_insert_with(|| {
+            self.types.push(ty);
+            (self.types.len() - 1) as u32
+        })
+    }
+
+    /// Give back what growth left, once nothing more is minted: the arena is read through
+    /// render, and a doubling vector holds up to twice its terms.
+    pub fn shrink_to_fit(&mut self) {
+        self.nodes.shrink_to_fit();
+        self.sizes.shrink_to_fit();
+        self.origins.shrink_to_fit();
+        self.canonical_leaves.shrink_to_fit();
+    }
+
     /// Where this occurrence was imported from, when it names a read.
     pub fn origin(&self, occurrence: OccurrenceId) -> Option<LeafOrigin> {
-        self.origins.get(&occurrence).copied()
+        self.origins.get(occurrence.0 as usize).copied().flatten()
     }
 
     /// The occurrence every fact about this term's value is keyed on: the
@@ -618,7 +650,9 @@ impl TermArena {
     /// leaf.
     pub fn canonical(&self, id: TermId) -> TermId {
         match self.term(id).kind {
-            TermKind::Leaf(read) => self.canonical_leaves.get(&read.expr).copied().unwrap_or(id),
+            TermKind::Leaf(read) => (self.canonical_leaves.get(read.expr.index()))
+                .filter(|first| **first != NO_LEAF)
+                .map_or(id, |first| TermId(*first)),
             _ => id,
         }
     }
@@ -657,7 +691,10 @@ impl TermArena {
             !matches!(kind, TermKind::Leaf(_)),
             "a leaf is minted by `leaf`, which gives it an occurrence"
         );
-        let term = Term { ty, kind };
+        let term = Node {
+            ty: self.type_id(ty),
+            kind,
+        };
         if let Some(id) = self.interned.find(&term, &self.nodes) {
             return id;
         }
@@ -677,7 +714,11 @@ impl TermArena {
     }
 
     pub fn term(&self, id: TermId) -> Term {
-        self.nodes[id.index()]
+        let node = self.nodes[id.index()];
+        Term {
+            ty: self.types[node.ty as usize],
+            kind: node.kind,
+        }
     }
 
     /// Record that `leaf` stands for `definition`.
@@ -769,10 +810,7 @@ impl TermArena {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (TermId, Term)> + '_ {
-        self.nodes
-            .iter()
-            .enumerate()
-            .map(|(index, term)| (TermId(index as u32), *term))
+        self.ids().map(|id| (id, self.term(id)))
     }
 
     /// Every base-arena node this term reads, each once, in first-visit order.

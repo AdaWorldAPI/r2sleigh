@@ -351,32 +351,41 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          pass taints every return whose interface is unproven (#174: each
          seeded instruction had held its own `BTreeSet`, and each such
          return, every return during recovery, rescanned every
-         instruction, `O(k · (B + I))`: 35.5 MB at preparation's peak).
-         A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
+         instruction, `O(k · (B + I))`: 35.5 MB at preparation's peak);
+         the term arena holds a type once and a node in 32 bytes, its side
+         tables dense, its arrays shrunk once canonical, and the import's
+         root steps are runs over two arrays (#175: every value's
+         canonical term also built a transitive producer set to fill a
+         `reads` list nothing read, and its import held a 32-byte producer
+         id nothing read). A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
          386 MB, time unchanged. Since #172: heap peak (dhat) pumasim
-         `pdd @ 0x23fdf0` 180.6 to 172.2 MB (197.0 at #167), 0pack
-         `0x58e3d0` 199.5 to 189.4 MB at #174; release peak RSS 0pack 340 to
-         298 MB, pumasim 311 to 294 MB, time unchanged. The peak is the
-         render phase's (172.2 MB, 92,007 operations, about 1.87 KB per
-         operation): the analysis artifact 54.0 MB, the open 28.1 MB, the
-         term import 19.0 MB, the machine projection 14.4 MB, render's own
-         12.6 MB. Left, largest first:
+         `pdd @ 0x23fdf0` 180.6 to 166.7 MB (197.0 at #167), 0pack
+         `0x58e3d0` 199.5 to 177.6 MB since #173; release peak RSS 0pack
+         340 to 298 MB, pumasim 311 to 283 MB; pumasim's time 1.57 to
+         1.53 s. pumasim's peak (166.7 MB, about 1.81 KB per operation) is
+         now the type seal's: r2types' confidence-scored array inference
+         (`scalar_array_access_certificates_from_ssa`) clones every
+         operation twice into maps keyed by spelled names, 42.6 MB, inside
+         six rounds (T's rest, below). 0pack's (177.6 MB) is render's: the
+         analysis artifact 58.4 MB, render's own 25.0 MB, the machine
+         projection 18.9 MB, the term import 9.5 MB. Left, largest first:
+         0. **MM.11** (immediate) the array inference's copies: its two
+            maps of cloned operations by name read the named blocks it is
+            handed; deleting the system is T's (below), and until then it
+            borrows what it reads, in rounds stated as a budget.
          1. **MM.6** one numbering (16.6 MB function and value table, 13.0
             MB graph): each variable and operation held twice, F2's plan.
          2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
             symbols 7.6, names 4.2), PF's.
-         3. **MM.5** the term arena (18.3 MB): a 56-byte node, side tables
-            in hash maps keyed by its own dense ids, a vector grown by
-            doubling.
-         4. **MM.7** compact identities: a disposition (48 B per
+         3. **MM.7** compact identities: a disposition (48 B per
             instruction) and an imported value carry a 32-byte canonical
             instruction id the graph already implies; an obligation copies
             its instruction's graph inputs where it states none of its own.
-         5. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
+         4. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
             of it the type) and render's own structures (7.6 MB).
-         6. **MM.9** D26: one forced collect at each phase boundary,
+         5. **MM.9** D26: one forced collect at each phase boundary,
             measured.
-         7. **MM.3** (conditional) facts only sealing reads, measured
+         6. **MM.3** (conditional) facts only sealing reads, measured
             2026-10-12 at the render peak: the fact pass holds 28.7 MB (the
             35.7 estimate counted r2types'), of which memory SSA 5.3 MB
             (struct inference, slicing and recomputed liveness read it),
@@ -384,7 +393,7 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             domains under 0.1 MB. Dropping them at the seal needs the
             analysis and its sealing as one query, since both hold one
             `Arc<SsaArtifact>`: worth it only once the rest are done.
-         8. Follow-up (D11): `populate_certified_parameter_exprs` copies a
+         7. Follow-up (D11): `populate_certified_parameter_exprs` copies a
             parameter's binding along same-width copies in a `while
             changed` loop over every value, `O(V · chain)`; one pass in
             definition order states the same set.

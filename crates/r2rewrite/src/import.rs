@@ -35,7 +35,6 @@ pub const OBJECT_ADDRESS: &str = "address.object";
 pub struct ImportedValue {
     pub value: ValueId,
     pub base_root: MachineExprId,
-    pub producer: CanonicalInstructionId,
     /// The value's own instruction as a term, with expanded producers inside.
     pub term: TermId,
 }
@@ -53,6 +52,71 @@ pub struct Substitution {
 pub struct ImportStep {
     own: Box<[Rewrite]>,
     substitutions: Box<[Substitution]>,
+}
+
+impl ImportStep {
+    fn view(&self) -> StepView<'_> {
+        StepView {
+            own: &self.own,
+            substitutions: &self.substitutions,
+        }
+    }
+}
+
+/// One step as its readers walk it, wherever it is held.
+#[derive(Debug, Clone, Copy)]
+struct StepView<'a> {
+    own: &'a [Rewrite],
+    substitutions: &'a [Substitution],
+}
+
+/// Every imported root's step, by root, as two runs over two arrays: a root no import reached
+/// has empty runs, which every walk reads as no step.
+#[derive(Debug, Clone, Default)]
+struct Steps {
+    own_at: Vec<u32>,
+    own: Vec<Rewrite>,
+    substitutions_at: Vec<u32>,
+    substitutions: Vec<Substitution>,
+}
+
+impl Steps {
+    /// The steps of `roots`, sorted by root once: `O(R log R + rewrites + substitutions)`.
+    fn of(mut roots: Vec<(MachineExprId, RootImport)>) -> Self {
+        roots.sort_unstable_by_key(|(root, _)| root.index());
+        let len = roots.last().map_or(0, |(root, _)| root.index() + 1);
+        let mut steps = Self {
+            own_at: Vec::with_capacity(len + 1),
+            substitutions_at: Vec::with_capacity(len + 1),
+            ..Self::default()
+        };
+        steps.own_at.push(0);
+        steps.substitutions_at.push(0);
+        let mut roots = roots.into_iter().peekable();
+        for index in 0..len {
+            if let Some((_, imported)) = roots.next_if(|(root, _)| root.index() == index) {
+                steps.own.extend(imported.own);
+                steps.substitutions.extend(imported.substitutions);
+            }
+            steps.own_at.push(steps.own.len() as u32);
+            steps
+                .substitutions_at
+                .push(steps.substitutions.len() as u32);
+        }
+        steps.own.shrink_to_fit();
+        steps.substitutions.shrink_to_fit();
+        steps
+    }
+
+    fn get(&self, root: MachineExprId) -> Option<StepView<'_>> {
+        let at = root.index();
+        let run =
+            |offsets: &[u32]| Some(*offsets.get(at)? as usize..*offsets.get(at + 1)? as usize);
+        Some(StepView {
+            own: &self.own[run(&self.own_at)?],
+            substitutions: &self.substitutions[run(&self.substitutions_at)?],
+        })
+    }
 }
 
 /// The cell one structured memory access reads or writes, as a term.
@@ -73,7 +137,7 @@ pub struct Import {
     values: Vec<Option<ImportedValue>>,
     accesses: BTreeMap<StructuredAccessId, ImportedAccess>,
     /// Each imported root's step, by root.
-    roots: Vec<Option<ImportStep>>,
+    roots: Steps,
     /// Entry values whose storage no instruction of the function writes.
     entry_never_redefined: BTreeSet<ValueId>,
 }
@@ -105,7 +169,7 @@ impl Import {
     /// Every rewrite import applied to build an access's cell, in application order.
     pub fn access_trace(&self, access: StructuredAccessId) -> Vec<Rewrite> {
         self.access(access)
-            .map_or_else(Vec::new, |imported| self.flattened(&imported.step))
+            .map_or_else(Vec::new, |imported| self.flattened(imported.step.view()))
     }
 
     /// The producers expanded into a value's term, transitively: rendering the term renders
@@ -121,22 +185,23 @@ impl Import {
         &self,
         access: StructuredAccessId,
     ) -> BTreeSet<CanonicalInstructionId> {
-        self.access(access)
-            .map_or_else(BTreeSet::new, |imported| self.producers(&imported.step))
+        self.access(access).map_or_else(BTreeSet::new, |imported| {
+            self.producers(imported.step.view())
+        })
     }
 
-    fn step(&self, root: MachineExprId) -> Option<&ImportStep> {
-        self.roots.get(root.index())?.as_ref()
+    fn step(&self, root: MachineExprId) -> Option<StepView<'_>> {
+        self.roots.get(root)
     }
 
     /// A step's substitutions' rewrites, each flattened in order, then its own: a post-order walk
     /// on an explicit stack, as a substitution chain may be as deep as the function is long.
-    fn flattened(&self, step: &ImportStep) -> Vec<Rewrite> {
+    fn flattened(&self, step: StepView<'_>) -> Vec<Rewrite> {
         let mut out = Vec::new();
         let mut stack = vec![(step, 0)];
         while let Some((step, next)) = stack.pop() {
             let Some(substitution) = step.substitutions.get(next) else {
-                out.extend_from_slice(&step.own);
+                out.extend_from_slice(step.own);
                 continue;
             };
             stack.push((step, next + 1));
@@ -147,7 +212,7 @@ impl Import {
 
     /// Every producer a step absorbed, directly or through what those absorbed. A producer
     /// has one root, so a producer already collected is a root already walked.
-    fn producers(&self, step: &ImportStep) -> BTreeSet<CanonicalInstructionId> {
+    fn producers(&self, step: StepView<'_>) -> BTreeSet<CanonicalInstructionId> {
         let mut producers = BTreeSet::new();
         let mut stack = vec![step];
         while let Some(step) = stack.pop() {
@@ -528,7 +593,6 @@ pub fn import_with(
             *cell = Some(ImportedValue {
                 value,
                 base_root: entity.root(),
-                producer: entity.producer(),
                 term: root.term,
             });
         }
@@ -541,16 +605,7 @@ pub fn import_with(
             accesses.insert(*access, imported);
         }
     }
-    let mut roots = Vec::new();
-    for (root, imported) in importer.roots {
-        if roots.len() <= root.index() {
-            roots.resize(root.index() + 1, None);
-        }
-        roots[root.index()] = Some(ImportStep {
-            own: imported.own.into(),
-            substitutions: imported.substitutions.into(),
-        });
-    }
+    let roots = Steps::of(importer.roots.into_iter().collect());
     Import {
         values,
         accesses,
