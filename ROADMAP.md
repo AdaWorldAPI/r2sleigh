@@ -438,6 +438,19 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             maps back from canonical ids (MM.7).
          5. **MM.9** D26: one forced collect at each phase boundary,
             measured.
+         5a. Done (#187): the written-lane record held 24 bytes a byte,
+            twice (by variable and by operation), through interface
+            recovery's preparation, where 0pack peaked after #186; 73,988 of
+            the largest function's 74,097 outputs are data throughout. A
+            record is now its size where every byte is data, and the pass
+            keeps each variable's definition in place of a second copy.
+            Heap peak 0pack 158.3 to 148.2 MiB, pumasim 139.9 to 133.1,
+            session 179.6 to 168.5; peak RSS 4 to 7% lower; time 1 to 2%
+            lower; census byte-identical. 0pack's peak is render's again:
+            the graph 17.8, the image 8.0, the projection's nodes 7.1,
+            obligation dispositions 10.0, term leaves 5.4. Left: the
+            capture's `while` over every block until nothing moves is a
+            round-robin fixpoint, owed to `r2ssa::fixpoint` (D11).
          6. **MM.3** (conditional) facts only sealing reads, measured
             2026-10-12 at the render peak: the fact pass holds 28.7 MB (the
             35.7 estimate counted r2types'), of which memory SSA 5.3 MB

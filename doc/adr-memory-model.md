@@ -104,6 +104,7 @@ stays alive until the response is built.
 | #183 | The seal drops the function's operations; the graph holds each once | heap peak 0pack 167.3 to 162.4 MB, pumasim 147.6 to 143.8 |
 | #185 | The machine projection holds one root per instruction; an entity's output and producer are read from the graph and the obligations | heap peak 0pack 162.4 to 159.2 MB, pumasim 143.8 to 141.1 |
 | #186 | The seal drops the value table and the operation origins; the reaching scan groups by the graph's instruction column | heap peak 0pack 159.1 to 158.3 MB, session 187.5 to 179.6 |
+| #187 | A written-lane record of data throughout is its size; the pass keeps one copy | heap peak 0pack 158.3 to 148.2 MB, pumasim 139.9 to 133.1, session 179.6 to 168.5 |
 
 ## Left
 
