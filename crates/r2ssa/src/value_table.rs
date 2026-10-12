@@ -13,8 +13,6 @@
 //! `VarId` to its value densely. The two are distinct types, so a function
 //! operand cannot be read as a graph value or the other way round.
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 
 use crate::CanonicalStorageId;
@@ -35,20 +33,14 @@ impl crate::dense::DenseId for VarId {
 }
 
 #[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    dylint_lib = "r2sleigh_lints",
-    allow(
-        entity_keyed_map,
-        reason = "keyed by name where there is no value table: renaming builds the names the table interns, the table's own interning index, or a one-instruction block"
-    )
-)]
 pub struct ValueTable {
     vars: Vec<SSAVar>,
     /// The lifted storage each variable was read from or written to, where
     /// the lift stated one: the one owner of that fact, a column beside the
     /// variable rather than a second map keyed by its name.
     storage: Vec<Option<CanonicalStorageId>>,
-    index: HashMap<SSAVar, VarId>,
+    /// Each variable's id by its hash, compared against `vars`: the variable is held once.
+    index: crate::dense::HashIndex,
 }
 
 impl ValueTable {
@@ -56,18 +48,20 @@ impl ValueTable {
     pub(crate) fn shrink_to_fit(&mut self) {
         self.vars.shrink_to_fit();
         self.storage.shrink_to_fit();
-        self.index.shrink_to_fit();
+        let vars = &self.vars;
+        (self.index).shrink_to_fit(|at| vars[at as usize].index_hash());
     }
 
     /// The id `var` is held under, interning it first if it is new.
     pub fn intern(&mut self, var: &SSAVar) -> VarId {
-        if let Some(id) = self.index.get(var) {
-            return *id;
+        if let Some(id) = self.id_of(var) {
+            return id;
         }
         let id = VarId(u32::try_from(self.vars.len()).expect("fewer than 2^32 variables"));
         self.vars.push(var.clone());
         self.storage.push(None);
-        self.index.insert(var.clone(), id);
+        let vars = &self.vars;
+        (self.index).insert(id.0, var.index_hash(), |at| vars[at as usize].index_hash());
         id
     }
 
@@ -119,7 +113,10 @@ impl ValueTable {
 
     /// The id `var` is held under, where it has been interned.
     pub fn id_of(&self, var: &SSAVar) -> Option<VarId> {
-        self.index.get(var).copied()
+        let vars = &self.vars;
+        (self.index)
+            .find(var.index_hash(), |at| vars[at as usize] == *var)
+            .map(VarId)
     }
 
     pub fn len(&self) -> usize {
@@ -145,9 +142,11 @@ impl ValueTable {
         );
         for (var, storage) in minted.vars.into_iter().zip(minted.storage) {
             let id = VarId::from_len(self.vars.len());
-            self.index.insert(var.clone(), id);
+            let hash = var.index_hash();
             self.vars.push(var);
             self.storage.push(storage);
+            let vars = &self.vars;
+            (self.index).insert(id.0, hash, |at| vars[at as usize].index_hash());
         }
     }
 }
@@ -164,18 +163,12 @@ impl VarId {
 /// carries them as [`Minted`], and they join the table when it applies.
 ///
 /// Interning is `O(1)` expected per variable, as the table's own is.
-#[cfg_attr(
-    dylint_lib = "r2sleigh_lints",
-    allow(
-        entity_keyed_map,
-        reason = "keyed by name where there is no value table: renaming builds the names the table interns, the table's own interning index, or a one-instruction block"
-    )
-)]
 pub(crate) struct Minting<'t> {
     table: &'t ValueTable,
     vars: Vec<SSAVar>,
     storage: Vec<Option<CanonicalStorageId>>,
-    index: HashMap<SSAVar, VarId>,
+    /// Each variable's id by its hash, compared against `vars`: the variable is held once.
+    index: crate::dense::HashIndex,
 }
 
 /// What a [`Minting`] numbered, and the table length it numbered past.
@@ -198,25 +191,27 @@ impl<'t> Minting<'t> {
             table,
             vars: Vec::new(),
             storage: Vec::new(),
-            index: HashMap::new(),
+            index: crate::dense::HashIndex::default(),
         }
     }
 
     /// The id `var` is held under, numbering it past the table if neither
     /// the table nor this minting holds it yet.
     pub(crate) fn intern(&mut self, var: &SSAVar) -> VarId {
-        if let Some(id) = self
-            .table
-            .id_of(var)
-            .or_else(|| self.index.get(var).copied())
-        {
+        if let Some(id) = self.table.id_of(var) {
             return id;
         }
-        let id = VarId::from_len(self.table.len() + self.vars.len());
+        let hash = var.index_hash();
+        let vars = &self.vars;
+        if let Some(at) = (self.index).find(hash, |at| vars[at as usize] == *var) {
+            return VarId::from_len(self.table.len() + at as usize);
+        }
+        let row = self.vars.len() as u32;
         self.vars.push(var.clone());
         self.storage.push(None);
-        self.index.insert(var.clone(), id);
-        id
+        let vars = &self.vars;
+        (self.index).insert(row, hash, |at| vars[at as usize].index_hash());
+        VarId::from_len(self.table.len() + row as usize)
     }
 
     /// As [`Self::intern`], a new variable holding the lifted storage `storage`.

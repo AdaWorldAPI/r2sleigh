@@ -592,6 +592,81 @@ impl<I: DenseId, T> Csr<I, T> {
     }
 }
 
+/// The rows of a table, open-addressed by each row's hash: a lookup compares against the row where
+/// the table already holds it, so the key is held once (doc/adr-memory-model.md, MM.12).
+///
+/// At most half full, so a probe reads a slot or two; a slot keeps its row's high hash bits, so a
+/// probe past another row reads no row. Growth rehashes every row, `O(rows)`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HashIndex {
+    /// The row's high hash bits, then one more than the row, so zero is an empty slot.
+    slots: Vec<u64>,
+    rows: usize,
+}
+
+impl HashIndex {
+    /// An index over `rows` rows, hashed by `hash`.
+    pub fn of(rows: usize, hash: impl Fn(u32) -> u64) -> Self {
+        let mut index = Self {
+            slots: vec![0; rows.next_power_of_two().max(4) * 2],
+            rows,
+        };
+        for row in 0..rows as u32 {
+            index.place(hash(row), row);
+        }
+        index
+    }
+
+    /// The row `matches` accepts among those that hash to `hash`.
+    pub fn find(&self, hash: u64, matches: impl Fn(u32) -> bool) -> Option<u32> {
+        let mask = self.slots.len().checked_sub(1)?;
+        let tag = hash >> 32 << 32;
+        let mut at = (hash as usize) & mask;
+        loop {
+            match self.slots[at] {
+                0 => return None,
+                slot if slot >> 32 << 32 == tag && matches(slot as u32 - 1) => {
+                    return Some(slot as u32 - 1);
+                }
+                _ => at = (at + 1) & mask,
+            }
+        }
+    }
+
+    /// Index `row`, the next row, which hashes to `row_hash`; growing rehashes every row by `hash`.
+    pub fn insert(&mut self, row: u32, row_hash: u64, hash: impl Fn(u32) -> u64) {
+        debug_assert_eq!(row as usize, self.rows, "rows are indexed in order");
+        if (self.rows + 1) * 2 > self.slots.len() {
+            let mut grown = Self {
+                slots: vec![0; (self.slots.len() * 2).max(8)],
+                rows: self.rows,
+            };
+            for at in 0..self.rows as u32 {
+                grown.place(hash(at), at);
+            }
+            *self = grown;
+        }
+        self.place(row_hash, row);
+        self.rows += 1;
+    }
+
+    fn place(&mut self, hash: u64, row: u32) {
+        let mask = self.slots.len() - 1;
+        let mut at = (hash as usize) & mask;
+        while self.slots[at] != 0 {
+            at = (at + 1) & mask;
+        }
+        self.slots[at] = hash >> 32 << 32 | u64::from(row + 1);
+    }
+
+    /// Give back the slots growth left beyond twice the rows.
+    pub fn shrink_to_fit(&mut self, hash: impl Fn(u32) -> u64) {
+        if self.slots.len() > self.rows.next_power_of_two().max(4) * 2 {
+            *self = Self::of(self.rows, hash);
+        }
+    }
+}
+
 /// A value for a few ids, sorted by id and sized by its entries: a dataflow state copied per block
 /// costs `O(entries)` (doc/adr-next-pass.md, model 8), where an [`IdMap`]'s grows with the bound.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -670,6 +745,27 @@ impl<I: DenseId, T> SparseMap<I, T> {
 
 #[cfg(test)]
 mod tests {
+    /// An index finds each row it was given, through growth and with colliding hashes.
+    #[test]
+    fn a_hash_index_finds_every_row_through_growth() {
+        let keys = (0..100u64).map(|key| key * 7919).collect::<Vec<_>>();
+        // Every fourth key shares a hash, so probes walk past rows that do not match.
+        let hash = |row: u32| keys[row as usize] / 4;
+        let mut index = HashIndex::default();
+        for row in 0..keys.len() as u32 {
+            index.insert(row, hash(row), hash);
+        }
+        index.shrink_to_fit(hash);
+        for (row, key) in keys.iter().enumerate() {
+            assert_eq!(
+                index.find(key / 4, |at| keys[at as usize] == *key),
+                Some(row as u32)
+            );
+        }
+        assert_eq!(index.find(3, |at| keys[at as usize] == 3), None);
+        assert_eq!(HashIndex::of(keys.len(), hash), index);
+    }
+
     /// A sparse map answers as an ordered map does, whatever order its ids arrive in.
     #[test]
     fn a_sparse_map_keeps_its_ids_in_order() {

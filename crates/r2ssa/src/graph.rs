@@ -275,7 +275,7 @@ pub struct SsaGraph {
     /// random read into `values`, for every question. A probe reads the
     /// variable back out of `values`, which is where it already is, and asks
     /// once.
-    pub(crate) value_index: Vec<u32>,
+    pub(crate) value_index: crate::dense::HashIndex,
     /// The instruction each operation and phi became, indexed by its
     /// [`OpId`]: dense over the function's arena, `None` for an id whose
     /// operation is dead.
@@ -314,24 +314,8 @@ pub(crate) fn runs_by_instruction(instructions: &r2il::InstructionRuns) -> Vec<(
 }
 
 /// Every value, addressed by its variable's hash.
-pub(crate) fn value_index_of(values: &[GraphValue]) -> Vec<u32> {
-    // Half full at most, so a probe walks a slot or two.
-    let slots = values.len().next_power_of_two().max(4) * 2;
-    let mut index = vec![0u32; slots];
-    for value in values {
-        insert_value_slot(&mut index, value.var.index_hash(), value.id.0);
-    }
-    index
-}
-
-/// Put a value in the first free slot from its variable's hash.
-fn insert_value_slot(index: &mut [u32], hash: u64, id: u32) {
-    let mask = index.len() - 1;
-    let mut at = (hash as usize) & mask;
-    while index[at] != 0 {
-        at = (at + 1) & mask;
-    }
-    index[at] = id + 1;
+pub(crate) fn value_index_of(values: &[GraphValue]) -> crate::dense::HashIndex {
+    crate::dense::HashIndex::of(values.len(), |at| values[at as usize].var.index_hash())
 }
 
 /// The start of each value's run of uses, with a final entry for the total.
@@ -638,22 +622,10 @@ impl SsaGraph {
     }
 
     pub fn value_id_for_var(&self, var: &SSAVar) -> Option<ValueId> {
-        if self.value_index.is_empty() {
-            return None;
-        }
-        let mask = self.value_index.len() - 1;
-        let mut at = (var.index_hash() as usize) & mask;
-        loop {
-            let slot = *self.value_index.get(at)?;
-            if slot == 0 {
-                return None;
-            }
-            let id = ValueId(slot - 1);
-            if self.values.get(id.0 as usize)?.var == *var {
-                return Some(id);
-            }
-            at = (at + 1) & mask;
-        }
+        let values = &self.values;
+        (self.value_index)
+            .find(var.index_hash(), |at| values[at as usize].var == *var)
+            .map(ValueId)
     }
 
     /// The instruction an operation or phi became.
@@ -847,11 +819,8 @@ impl SsaGraph {
             var,
             canonical_storage: Some(storage),
         });
-        if self.values.len() * 2 > self.value_index.len() {
-            self.value_index = value_index_of(&self.values);
-        } else {
-            insert_value_slot(&mut self.value_index, hash, id.0);
-        }
+        let values = &self.values;
+        (self.value_index).insert(id.0, hash, |at| values[at as usize].var.index_hash());
         self.def_of.push(None);
         self.use_offsets.push(self.use_sites.len() as u32);
         Some(id)
