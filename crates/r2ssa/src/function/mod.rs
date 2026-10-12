@@ -2721,7 +2721,7 @@ pub struct SSAFunction {
     /// A promoted slot access is a copy of a variable in the prepared
     /// operations, so it is no longer one of the function's memory
     /// operations, and every layer that counts those has to agree.
-    promoted_slots: crate::dense::IdSet<crate::arena::OpId>,
+    promoted_slots: BTreeSet<(u64, usize)>,
     /// The operations a decided compiler-inserted check is: a canary (under `Premise::UbFreeSource`)
     /// or a runtime's stack bound (by its model).
     compiler_inserted: crate::dense::IdSet<crate::arena::OpId>,
@@ -3612,13 +3612,20 @@ impl SSAFunction {
         matches!(op, SSAOp::CallOther { userop, .. } if self.supervisor_calls.contains(userop))
     }
 
-    /// The memory operations slot promotion rewrote into copies.
-    pub fn promoted_slots(&self) -> &crate::dense::IdSet<crate::arena::OpId> {
+    /// The memory operations slot promotion rewrote into copies, by where they were lifted:
+    /// `(block, index)`, read while the function has its origins.
+    pub const fn promoted_slots(&self) -> &BTreeSet<(u64, usize)> {
         &self.promoted_slots
     }
 
     pub(crate) fn record_promoted_slots(&mut self, ops: crate::dense::IdSet<crate::arena::OpId>) {
-        self.promoted_slots = ops;
+        let arena = self.arena();
+        self.promoted_slots = (ops.iter())
+            .filter_map(|op| match arena.origin(op)? {
+                crate::arena::OpOrigin::Lifted { block, index, .. } => Some((*block, *index)),
+                crate::arena::OpOrigin::Derived { .. } => None,
+            })
+            .collect();
     }
 
     /// The operations a decided compiler-inserted check is (`crate::stack_protector`,

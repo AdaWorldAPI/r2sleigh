@@ -937,7 +937,6 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
         interface,
     )
     .expect("typed decompile artifact");
-    let typed_function = typed.function();
     let typed_facts = typed.decompile_prep_facts();
     let op_roots = typed
         .named_block(0x3000)
@@ -946,10 +945,9 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
         .iter()
         .filter_map(|op| op.dst())
         .filter_map(|dst| {
-            typed_facts
-                .stack_address_root_of(typed.graph().value_id_for_var(dst)?)
-                .copied()
-                .map(|root| (typed_function.canonical_storage_for_var(dst), root))
+            let value = typed.graph().value_id_for_var(dst)?;
+            let storage = typed.graph().value(value)?.canonical_storage;
+            (typed_facts.stack_address_root_of(value).copied()).map(|root| (storage, root))
         })
         .collect::<Vec<_>>();
     let entry_op_roots = typed
@@ -959,10 +957,9 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
         .iter()
         .filter_map(|op| op.dst())
         .filter_map(|dst| {
-            typed_facts
-                .entry_stack_address_root_of(typed.graph().value_id_for_var(dst)?)
-                .copied()
-                .map(|root| (typed_function.canonical_storage_for_var(dst), root))
+            let value = typed.graph().value_id_for_var(dst)?;
+            let storage = typed.graph().value(value)?.canonical_storage;
+            (typed_facts.entry_stack_address_root_of(value).copied()).map(|root| (storage, root))
         })
         .collect::<Vec<_>>();
     // The frame pointer has a position now, not a base of its own. Here it
