@@ -142,7 +142,9 @@ impl Basis {
 /// A premise is not evidence. It is the condition under which the evidence
 /// means what the fact says, and a consumer that cannot grant it must not
 /// act on the fact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Premise {
     /// Every transfer into the code is one the image shows: no caller outside
     /// it -- another image, a callback registered at run time, generated

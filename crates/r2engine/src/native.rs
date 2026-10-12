@@ -1105,12 +1105,14 @@ impl Callees {
     fn evidence(
         &self,
         library: BTreeMap<u64, r2ssa::interproc::FunctionSemanticSummary>,
+        reentering: BTreeSet<u64>,
     ) -> r2ssa::CalleeEvidence {
         r2ssa::CalleeEvidence {
             interfaces: self.interfaces.clone(),
             preserved: self.preserved.clone(),
             reach: self.reach.clone(),
             library,
+            reentering,
         }
     }
 
@@ -1737,6 +1739,7 @@ impl Native<'_> {
         });
         let calls = call_sites(&walked.body, self.program);
         let library = library_evidence(self.program, &calls);
+        let reentering = reentering_calls(&calls);
         let function = NativeFunction {
             address: walked.body.entry,
             name: walked.name.clone(),
@@ -1777,7 +1780,7 @@ impl Native<'_> {
             r2source::native::capture(&self.machine, function).map_err(NativeRefusal::Capture)?;
         let lifted = Disassembler::lift_owned_function(snapshot)
             .map_err(|error| NativeRefusal::Lift(error.to_string()))?;
-        Ok((lifted, callees.evidence(library)))
+        Ok((lifted, callees.evidence(library, reentering)))
     }
 }
 
@@ -1863,6 +1866,21 @@ fn library_evidence(
                 crate::library::import_summary(call.target, &name)?,
             ))
         })
+        .collect()
+}
+
+/// The call targets r2abi's runtime model says re-enter their caller at its entry, by the name the
+/// program gives them: a model keyed by name, which the stack check weighs beside its shape.
+fn reentering_calls(calls: &[NativeCall]) -> BTreeSet<u64> {
+    calls
+        .iter()
+        .filter(|call| call.transfer == r2source::AdvisoryCallTransfer::Call)
+        .filter(|call| {
+            call.name
+                .as_deref()
+                .is_some_and(r2abi::runtime::reenters_caller)
+        })
+        .map(|call| call.target)
         .collect()
 }
 
@@ -2277,8 +2295,9 @@ pub fn call_effect(
     bits: u32,
     platform: r2abi::Platform,
     profile: &LanguageProfile,
-    variadic_count: Option<&str>,
+    convention: Option<&r2abi::CallingConvention>,
 ) -> Option<SourceCallEffect> {
+    let variadic_count = convention.and_then(|convention| convention.variadic_count_register);
     let prototype = profile.default_prototype()?;
     let place = |name: &str| {
         let placed =
@@ -2360,6 +2379,17 @@ pub fn call_effect(
                 None => Ok(effect),
             },
         )
+        .and_then(|effect| {
+            let bound = convention.and_then(|convention| convention.stack_bound);
+            match bound.and_then(|bound| Some((bound, place(bound.register)?))) {
+                Some((bound, base)) => effect.with_stack_bound(r2source::SourceStackGuard {
+                    base,
+                    offset: bound.offset,
+                    width: bound.width,
+                }),
+                None => Ok(effect),
+            }
+        })
         .inspect_err(|error| {
             r2il::refusal_evidence!("call-effect", "{}: {error:?}", prototype.name);
         })
@@ -2516,7 +2546,7 @@ mod tests {
             64,
             r2abi::Platform::Unknown,
             &compiler,
-            convention.variadic_count_register,
+            Some(convention),
         );
         let prototypes = r2abi::Prototypes::parse(
             "on_double=func\nfunc.on_double.args=2\nfunc.on_double.arg.0=double,x\n\

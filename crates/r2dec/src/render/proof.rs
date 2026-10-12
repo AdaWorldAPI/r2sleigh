@@ -13,10 +13,17 @@ fn proof_columns(
     let split = ledger.split_rendered();
     let mut line = String::new();
     if closure.compiler_inserted > 0 {
-        let premise = r2source::Premise::UbFreeSource.spelled();
+        // A canary passes under a premise; Go's stack check passes by its callee's runtime model.
+        let reason = match ledger.premises().is_empty() {
+            true => "by the callee's runtime model".to_string(),
+            false => {
+                let premises = ledger.premises().iter().map(|premise| premise.spelled());
+                format!("assuming {}", premises.collect::<Vec<_>>().join(", "))
+            }
+        };
         let _ = write!(
             &mut line,
-            ", {} compiler-inserted (assuming {premise})",
+            ", {} compiler-inserted ({reason})",
             closure.compiler_inserted
         );
     }

@@ -169,13 +169,8 @@ fn assemble(
             .ok_or_else(|| format!("the compiler specification states no {prototype}"))?,
         None => compiler,
     };
-    let call_effect = crate::native::call_effect(
-        &machine.arch,
-        bits,
-        psabi,
-        &compiler,
-        convention.variadic_count_register,
-    );
+    let call_effect =
+        crate::native::call_effect(&machine.arch, bits, psabi, &compiler, Some(convention));
     // The specification names the register; the architecture says where it
     // lives, and the lift spells writes to it in those coordinates.
     let link = compiler.return_address.as_ref().and_then(|name| {

@@ -2355,6 +2355,7 @@ impl TrustedSsaArtifact {
             preserved: callee_preserved_carriers,
             reach: callee_argument_reach,
             library,
+            reentering,
         } = evidence;
         let callee_statements = crate::machine_context::CalleeStatement::of(callee_interfaces);
         let source = lifted.source().clone();
@@ -2484,6 +2485,7 @@ impl TrustedSsaArtifact {
                     .bind_source_string_literals(source.image().string_literals());
                 provisional_machine_context.bind_read_only(source.image().read_only());
                 provisional_machine_context.set_callee_statements(&callee_statements);
+                provisional_machine_context.set_reentering_callees(reentering.clone());
                 // The preliminary build may be the one sealed, so it decides under the same premises.
                 provisional_machine_context.set_accepted_premises(premises.clone());
                 let Ok(preliminary) =
@@ -2594,6 +2596,7 @@ impl TrustedSsaArtifact {
         machine_context.set_callee_names(correlated_call_sites.callee_names);
         machine_context.set_callee_argument_reach(callee_argument_reach.clone());
         machine_context.set_callee_library(library.clone());
+        machine_context.set_reentering_callees(reentering.clone());
         machine_context.set_callee_preserved(callees.preserved().clone());
         machine_context.set_result_owners(result_owners);
         machine_context.set_result_ambiguous(result_ambiguous);
@@ -3534,6 +3537,8 @@ pub struct CalleeEvidence {
     pub reach: BTreeMap<u64, BTreeMap<usize, crate::interproc::ArgumentReach>>,
     /// The model of each imported library routine called, from r2abi.
     pub library: BTreeMap<u64, crate::interproc::FunctionSemanticSummary>,
+    /// The callees a runtime model says re-enter their caller at its entry (Go's stack growth).
+    pub reentering: BTreeSet<u64>,
 }
 
 /// What the callees this function calls said about their own boundaries.

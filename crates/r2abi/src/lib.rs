@@ -6,6 +6,7 @@ pub mod declarations;
 pub mod frames;
 pub mod platform;
 pub mod prototypes;
+pub mod runtime;
 mod spelling;
 pub mod statement;
 pub mod syscalls;
@@ -13,7 +14,7 @@ pub mod types;
 
 pub use declarations::{DataObject, Declarations};
 pub use platform::{
-    CallingConvention, EntryStack, PlatformRegister, RegisterDuty, StackGuard,
+    CallingConvention, EntryStack, PlatformRegister, RegisterDuty, StackBound, StackGuard,
     architecture_registers, calling_convention, go_abi0_convention, go_calling_convention,
     go_unstated_convention, platform_registers, stack_guard,
 };

@@ -179,7 +179,21 @@ pub struct CallingConvention {
     /// The entry stack pointer's residue modulo an alignment, which a frame that keeps the
     /// machine's alignment reproduces; `None` where the convention states none.
     pub entry_stack: Option<EntryStack>,
+    /// The lowest stack pointer a function may run with, where the runtime keeps one a prologue
+    /// compares against; `None` where the convention states none.
+    pub stack_bound: Option<StackBound>,
     /// The documents that state these.
+    pub citation: &'static str,
+}
+
+/// Memory at a constant offset from a register the convention fixes, holding the stack pointer
+/// below which a function must not run: Go's `g.stackguard0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StackBound {
+    /// The fixed register, spelled as radare2 spells it.
+    pub register: &'static str,
+    pub offset: u64,
+    pub width: u32,
     pub citation: &'static str,
 }
 
@@ -202,6 +216,7 @@ const SYSTEM_V_AMD64: CallingConvention = CallingConvention {
         alignment: 16,
         residue: 8,
     }),
+    stack_bound: None,
     citation: "System V AMD64 psABI 1.0, section 3.2.2: \"The 128-byte area beyond the \
                location pointed to by %rsp is considered to be reserved and shall not be \
                modified by signal or interrupt handlers\"; section 3.5.7: \"%al is used as \
@@ -220,6 +235,7 @@ const MICROSOFT_X64: CallingConvention = CallingConvention {
         alignment: 16,
         residue: 8,
     }),
+    stack_bound: None,
     citation: "Microsoft x64 software conventions, \"Stack usage\": the convention \
                defines no red zone; its register usage table lists RBP as nonvolatile and usable as a frame pointer; \"Stack allocation\": \"The stack will always be maintained 16-byte aligned, except within the prolog (for example, after the return address is pushed)\"",
 };
@@ -236,6 +252,7 @@ const I386_CDECL: CallingConvention = CallingConvention {
         alignment: 16,
         residue: 12,
     }),
+    stack_bound: None,
     citation: "System V i386 ABI 1.1, \"Function Calling Sequence\": the convention \
                defines no red zone; its register table gives %ebp the frame pointer role; \"The end of the input argument area shall be aligned on a 16 byte boundary\", so %esp + 4 is a multiple of 16 at entry",
 };
@@ -252,6 +269,7 @@ const AAPCS64: CallingConvention = CallingConvention {
         alignment: 16,
         residue: 0,
     }),
+    stack_bound: None,
     citation: "AAPCS64, \"Universal stack constraints\": \"A process may only access \
                (for reading or writing) the closed interval of the entire stack delimited \
                by [SP, stack-base - 1]\"; its general-purpose register table names r29 FP, the frame pointer; \"Universal stack constraints\": \"SP mod 16 = 0\"",
@@ -277,6 +295,7 @@ const AAPCS32: CallingConvention = CallingConvention {
         alignment: 8,
         residue: 0,
     }),
+    stack_bound: None,
     citation: "AAPCS32, \"Universal stack constraints\": \"A process may only access \
                (for reading or writing) the closed interval of the entire stack delimited \
                by [SP, stack-base - 1]\"; AAPCS32 leaves the frame pointer to the platform, and GCC in ARM state keeps it in r11, the APCS fp; \"Public interfaces\": \"SP mod 8 = 0\"",
@@ -294,6 +313,7 @@ const RISCV_LP64: CallingConvention = CallingConvention {
         alignment: 16,
         residue: 0,
     }),
+    stack_bound: None,
     citation: "RISC-V ELF psABI, \"Integer Calling Convention\": the convention defines \
                no red zone; \"Register Convention\": x8 \"s0/fp Saved register/frame pointer\"; \"the stack pointer shall be aligned to a 128-bit boundary upon procedure entry\"",
 };
@@ -310,6 +330,14 @@ const GO_AMD64: CallingConvention = CallingConvention {
         alignment: 8,
         residue: 0,
     }),
+    stack_bound: Some(StackBound {
+        register: "r14",
+        offset: 16,
+        width: 8,
+        citation: "Go internal ABI (src/cmd/compile/abi-internal.md), amd64: \"R14 | Current \
+                   goroutine | Same | Same\"; runtime/runtime2.go: `type g struct { stack stack; \
+                   stackguard0 uintptr` after `type stack struct { lo, hi uintptr }`, so 16 bytes in",
+    }),
     citation: "Go internal ABI (src/cmd/compile/abi-internal.md), amd64: \"RBP | Frame pointer \
                | Same | Same\"; it defines no red zone; amd64: \"The stack pointer, RSP, grows down and is always aligned to 8 bytes\"",
 };
@@ -319,6 +347,13 @@ const GO_ARM64: CallingConvention = CallingConvention {
     entry_stack: Some(EntryStack {
         alignment: 16,
         residue: 0,
+    }),
+    stack_bound: Some(StackBound {
+        register: "x28",
+        offset: 16,
+        width: 8,
+        citation: "Go internal ABI (src/cmd/compile/abi-internal.md), arm64: \"R28 | Current \
+                   goroutine | Same | Same\"; runtime/runtime2.go: `stackguard0` 16 bytes into `g`",
     }),
     citation: "Go internal ABI (src/cmd/compile/abi-internal.md), arm64: \"R29 | Frame pointer \
                | Same | Same\"; it defines no red zone; arm64: \"The stack pointer, RSP, grows down and is always aligned to 16 bytes\"",

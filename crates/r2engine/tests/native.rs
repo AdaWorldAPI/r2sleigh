@@ -91,13 +91,7 @@ impl Machine {
             let convention = calling_convention(family, bits, platform).expect("a convention");
             Under {
                 convention,
-                effect: call_effect(
-                    &embedded.arch,
-                    bits,
-                    platform,
-                    &compiler,
-                    convention.variadic_count_register,
-                ),
+                effect: call_effect(&embedded.arch, bits, platform, &compiler, Some(convention)),
                 compiler,
             }
         };
@@ -5910,4 +5904,147 @@ fn a_frame_restore_ignores_flags_nothing_reads() {
         "shape_struct_array",
         RESTORE_BESIDE_UNREAD_FLAGS_A64,
     );
+}
+
+/// Go's prologue: `lea r12, [rsp-0x20]; cmp r12, [r14+0x10]; jbe grow`, a body returning 1, and a
+/// `grow` block calling `runtime.morestack_noctxt` and jumping back to the entry.
+const GO_STACK_CHECK: &[u8] = &[
+    0x4c, 0x8d, 0x64, 0x24, 0xe0, // 0x00 lea r12, [rsp - 0x20]
+    0x4d, 0x3b, 0x66, 0x10, // 0x05 cmp r12, [r14 + 0x10]
+    0x76, 0x0e, // 0x09 jbe 0x19
+    0x48, 0x83, 0xec, 0x28, // 0x0b sub rsp, 0x28
+    0xb8, 0x01, 0x00, 0x00, 0x00, // 0x0f mov eax, 1
+    0x48, 0x83, 0xc4, 0x28, // 0x14 add rsp, 0x28
+    0xc3, // 0x18 ret
+    0xe8, 0x12, 0x00, 0x00, 0x00, // 0x19 call 0x30
+    0xe9, 0xdd, 0xff, 0xff, 0xff, // 0x1e jmp 0x00
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // 0x23
+    0xc3, // 0x30 runtime.morestack_noctxt.abi0
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+];
+
+/// The Go prologue's bytes, its stack-growth routine under the name a test gives it.
+struct GoStack {
+    fixture: Fixture,
+    growth: String,
+}
+
+impl r2engine::body::Program for GoStack {
+    fn read(&self, vaddr: u64, max: usize) -> Option<Vec<u8>> {
+        self.fixture.read(vaddr, max)
+    }
+
+    fn region(&self, vaddr: u64) -> Option<r2engine::body::Region> {
+        self.fixture.region(vaddr)
+    }
+
+    fn is_entry(&self, vaddr: u64) -> bool {
+        self.fixture.is_entry(vaddr)
+    }
+}
+
+impl Program for GoStack {
+    fn holds_static_data(&self, vaddr: u64) -> bool {
+        self.fixture.holds_static_data(vaddr)
+    }
+
+    fn extents(&self) -> &r2types::ProgramExtents {
+        self.fixture.extents()
+    }
+
+    fn name_at(&self, vaddr: u64) -> Option<String> {
+        match vaddr.checked_sub(BASE) {
+            Some(0x30) => Some(self.growth.clone()),
+            _ => self.fixture.name_at(vaddr),
+        }
+    }
+
+    fn import_at(&self, vaddr: u64) -> Option<String> {
+        self.fixture.import_at(vaddr)
+    }
+}
+
+/// The machine under Go's ABIInternal, which states `g.stackguard0`.
+fn go_machine() -> Machine {
+    let mut machine = Machine::on("x86-64", "x86-64", 64, Platform::Linux);
+    let convention = r2abi::go_calling_convention("x86-64", 64, Platform::Linux, Some((1, 21)))
+        .expect("ABIInternal");
+    let compiler = LanguageProfile::parse(
+        machine
+            .embedded
+            .compiler_spec_of("golang")
+            .expect("a Go specification"),
+    )
+    .expect("parses")
+    .under("abi-internal")
+    .expect("ABIInternal's prototype");
+    let effect = call_effect(
+        &machine.embedded.arch,
+        64,
+        Platform::Linux,
+        &compiler,
+        Some(convention),
+    );
+    assert!(
+        effect
+            .as_ref()
+            .and_then(|effect| effect.stack_bound())
+            .is_some(),
+        "the convention states g.stackguard0"
+    );
+    machine.conventions.insert(
+        "golang",
+        Under {
+            convention,
+            effect,
+            compiler,
+        },
+    );
+    machine
+}
+
+/// The Go prologue's program, its growth routine under `growth`'s name.
+fn go_stack(growth: &str) -> GoStack {
+    GoStack {
+        fixture: Fixture {
+            bytes: GO_STACK_CHECK.to_vec(),
+            name: "main.main",
+        },
+        growth: growth.to_owned(),
+    }
+}
+
+#[test]
+fn a_go_stack_check_is_compiler_inserted_by_the_runtime_model() {
+    let machine = go_machine();
+    let program = go_stack("runtime.morestack_noctxt.abi0");
+    let response = decompile(&machine.under("golang"), &program, BASE).expect("decompile");
+    let text = response.output.text();
+    assert!(!text.contains("morestack"), "{text}");
+    assert!(
+        text.contains("compiler-inserted (by the callee's runtime model)"),
+        "{text}"
+    );
+}
+
+/// The same compare stays a branch where the convention states no bound, or where no runtime
+/// model says the failing edge's callee re-enters.
+#[test]
+fn a_stack_compare_without_a_bound_or_a_model_stays_a_branch() {
+    let machine = go_machine();
+    let c = decompile(
+        &machine.target(),
+        &go_stack("runtime.morestack_noctxt.abi0"),
+        BASE,
+    )
+    .expect("decompile");
+    assert!(c.output.text().contains("morestack"), "{}", c.output);
+    let unmodelled =
+        decompile(&machine.under("golang"), &go_stack("main.grow"), BASE).expect("decompile");
+    assert!(
+        unmodelled.output.text().contains("main_grow"),
+        "{}",
+        unmodelled.output
+    );
+    assert!(!unmodelled.output.text().contains("compiler-inserted"));
 }
