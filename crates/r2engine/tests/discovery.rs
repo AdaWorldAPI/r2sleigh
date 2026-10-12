@@ -7,8 +7,8 @@
 mod common;
 
 use common::{
-    ARM_ENTRY, BASE, CALLER, FORKED, GLIBC, JOINED, Literal, ONE, PASSES, STEPPED, THUMB_CALLED,
-    THUMB_LEAF, TWO, VENEER,
+    ARM_ENTRY, BASE, CALLER, FORKED, GLIBC, JOINED, Literal, ONE, PASSES, PLT_SEC_STUB, STEPPED,
+    THUMB_CALLED, THUMB_LEAF, TWO, VENEER,
 };
 use r2engine::discovery::Basis;
 use r2engine::program::{OpenProgram, Symbol, SymbolKind};
@@ -103,6 +103,30 @@ fn a_stated_frame_begins_a_function_and_the_stub_table_s_does_not() {
         Literal::plt().unwinding(BASE..BASE + 0x20),
     ));
     assert_eq!(framed_plt, plt);
+}
+
+#[test]
+fn a_frame_over_a_cet_plt_begins_no_function_though_the_plt_names_no_stub() {
+    let mut unframed = OpenProgram::of(Literal::plt_cet());
+    let plt = believed(&mut unframed);
+    let named = unframed.imports();
+    assert_eq!(
+        named
+            .stubs
+            .get(&PLT_SEC_STUB)
+            .map(|stub| stub.symbol.as_str()),
+        Some("_Exit")
+    );
+    assert!(named.stubs.range(BASE..PLT_SEC_STUB).next().is_none());
+    // The `.plt` frame holds PLT0 and a lazy entry; with no stub in it, only the section says so.
+    let framed = believed(&mut OpenProgram::of(
+        Literal::plt_cet().unwinding(BASE..PLT_SEC_STUB),
+    ));
+    assert_eq!(framed, plt);
+    assert!(
+        !framed.iter().any(|(address, _)| *address == BASE),
+        "{framed:x?}"
+    );
 }
 
 #[test]
