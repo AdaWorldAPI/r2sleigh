@@ -53,7 +53,6 @@ use crate::semantic::{
     PreparedFunctionFacts, ReturnValueCertificate, StackReloadSourceCertificate,
     StructuredDataflowFacts,
 };
-use crate::span::StorageSpans;
 use crate::value_table::VarId;
 use crate::var::SSAVar;
 use crate::{AssumptionSet, CanonicalStorageId, CanonicalStorageSpace};
@@ -312,59 +311,24 @@ impl<'a> InterfaceQuestions<'a> {
     }
 }
 
-/// Where every value is live, and what that liveness is allowed to ignore.
-///
-/// Every field here answers one question -- can these two values share a name
-/// -- and only the binding plan asks it. Grouping them keeps a dataflow pass
-/// from reaching a liveness fact it has no business reading.
+/// What the sealed artifact keeps of its liveness: where values leave the function, and the
+/// reads the text never performs. The value liveness and storage spans the build read are not
+/// kept (doc/adr-memory-model.md, decision 1).
 #[derive(Debug, Clone)]
 pub struct ArtifactLiveness {
-    storage_spans: StorageSpans,
     live_out: crate::liveout::FunctionLiveOut,
-    values: crate::liveness::ValueLiveness,
     /// Reads the text never performs: a call's conventional read of a register
     /// the certified call does not pass.
     ignored_reads: std::collections::BTreeSet<crate::graph::UseSite>,
 }
 
 impl ArtifactLiveness {
-    pub const fn storage_spans(&self) -> &StorageSpans {
-        &self.storage_spans
-    }
-
     pub const fn live_out(&self) -> &crate::liveout::FunctionLiveOut {
         &self.live_out
     }
 
-    /// Where every value is live, the fact every coalescing decision is made from.
-    pub const fn values(&self) -> &crate::liveness::ValueLiveness {
-        &self.values
-    }
-
     pub const fn ignored_reads(&self) -> &std::collections::BTreeSet<crate::graph::UseSite> {
         &self.ignored_reads
-    }
-
-    /// The same liveness, with the given definitions read where they were
-    /// inlined rather than where they were written.
-    ///
-    /// Four of the five facts here answer this one question together, so a
-    /// caller that relocates reads asks for it rather than threading them.
-    pub fn with_relocations(
-        &self,
-        graph: &SsaGraph,
-        relocations: &crate::dense::IdMap<crate::graph::InstId, crate::graph::InstId>,
-    ) -> crate::liveness::ValueLiveness {
-        if relocations.is_empty() {
-            return self.values.clone();
-        }
-        crate::liveness::ValueLiveness::compute_with_relocations(
-            graph,
-            &self.live_out,
-            relocations,
-            self.values.content().clone(),
-            &self.ignored_reads,
-        )
     }
 }
 
@@ -1037,81 +1001,27 @@ impl SsaArtifact {
         crate::abi::AbiProfile::from_machine_context(&self.machine_context)
     }
 
-    /// Where each storage stops holding one value and starts holding another.
-    pub const fn storage_spans(&self) -> &StorageSpans {
-        self.liveness.storage_spans()
-    }
-
-    /// Carriers whose values are not all one storage holding one value.
-    ///
-    /// A carrier is state a register preserves, and a register is reused, so a
-    /// carrier can reach across the point where its storage changed meaning.
-    /// Anything that wants to call a carrier one variable has to ask this first.
-    #[cfg_attr(
-        dylint_lib = "r2sleigh_lints",
-        allow(
-            entity_keyed_map,
-            reason = "the members of one entity (a certificate, carrier, return or component): a few ids each, where a dense index would cost O(values) per entity"
-        )
-    )]
-    pub fn carriers_spanning_a_reuse(&self) -> std::collections::BTreeSet<crate::SemanticId> {
-        let spans = self.storage_spans();
-        let mut spanning = std::collections::BTreeSet::new();
-        for loop_fact in self.facts.structured.loops.values() {
-            for carrier in &loop_fact.carriers {
-                let members = carrier.coalescing_values();
-                let occupants = self.carrier_storage_occupants(carrier, &members);
-                if !spans.all_one_span(occupants.iter().copied()) {
-                    spanning.insert(carrier.id);
-                }
-            }
-        }
-        spanning
-    }
-
-    /// The members of a carrier that live in the storage the carrier is.
-    ///
-    /// A carrier's members include the value each update computes, and a lifter
-    /// is free to compute that anywhere: Sleigh routes a flag-setting subtract
-    /// through a unique-space temporary, so `subs x1, x1, 1` contributes a member
-    /// in `Unique` to a carrier that is a register. That temporary is the
-    /// arithmetic, not the storage, and asking whether it shares a run with the
-    /// register asks whether two different places are one place, which they never
-    /// are. Every counter on this target was answered "spans a reuse" on that
-    /// basis, dropped from the name aliases, and rendered as the value it held on
-    /// entry -- a loop whose condition never changes.
-    ///
-    /// Reuse is a question about one storage holding two meanings, so only the
-    /// members in that storage can answer it.
-    #[cfg_attr(
-        dylint_lib = "r2sleigh_lints",
-        allow(
-            entity_keyed_map,
-            reason = "the members of one entity (a certificate, carrier, return or component): a few ids each, where a dense index would cost O(values) per entity"
-        )
-    )]
-    fn carrier_storage_occupants(
+    /// The value liveness and storage spans the build computed and dropped, computed again the
+    /// same way for a test that reads them.
+    #[cfg(test)]
+    pub(crate) fn recomputed_liveness(
         &self,
-        carrier: &crate::semantic::LoopCarrierFact,
-        members: &std::collections::BTreeSet<crate::ValueId>,
-    ) -> std::collections::BTreeSet<crate::ValueId> {
-        let storage_of = |value: crate::ValueId| {
-            self.graph()
-                .value(value)
-                .and_then(|value| value.canonical_storage)
-                .filter(|storage| !storage.is_unknown())
-        };
-        let Some(carrier_storage) = storage_of(carrier.phi) else {
-            return members.clone();
-        };
-        members
-            .iter()
-            .copied()
-            .filter(|member| {
-                storage_of(*member)
-                    .is_some_and(|storage| carrier_storage.location() == storage.location())
-            })
-            .collect()
+    ) -> (crate::liveness::ValueLiveness, crate::span::StorageSpans) {
+        let graph = self.graph();
+        let mut content = crate::liveness::ValueContent::of(graph, Some(&self.machine_context));
+        content.declare_same_content(&same_content_reads(
+            &self.facts.structured.memory_accesses,
+            &self.facts.memory,
+        ));
+        let values = crate::liveness::ValueLiveness::compute_with_relocations(
+            graph,
+            self.liveness.live_out(),
+            &crate::dense::IdMap::default(),
+            content,
+            self.liveness.ignored_reads(),
+        );
+        let spans = crate::span::StorageSpans::compute(graph, &values);
+        (values, spans)
     }
 
     /// Carriers this function moves through memory that already holds them.
@@ -1170,11 +1080,6 @@ impl SsaArtifact {
     /// Every liveness fact together, for a consumer that needs more than one.
     pub const fn liveness(&self) -> &ArtifactLiveness {
         &self.liveness
-    }
-
-    /// Where every value is live, the fact every coalescing decision is made from.
-    pub const fn value_liveness(&self) -> &crate::liveness::ValueLiveness {
-        self.liveness.values()
     }
 
     /// Reads the text never performs, which hold nothing live.
@@ -1602,28 +1507,6 @@ impl SsaArtifact {
         value_id: crate::graph::ValueId,
     ) -> Option<&CallResultCertificate> {
         self.facts.certificates.call_results.get(value_id)
-    }
-
-    pub fn call_result_certificate_for_inst(
-        &self,
-        inst: crate::graph::InstId,
-    ) -> Option<&CallResultCertificate> {
-        let value = self.facts.certificates.call_results_by_inst.get(inst)?;
-        self.facts.certificates.call_results.get(*value)
-    }
-
-    pub fn call_result_certificates_for_callsite(
-        &self,
-        call_site: CallSiteId,
-    ) -> Vec<&CallResultCertificate> {
-        self.facts
-            .certificates
-            .call_results_by_callsite
-            .get(&call_site)
-            .into_iter()
-            .flatten()
-            .filter_map(|value| self.facts.certificates.call_results.get(*value))
-            .collect()
     }
 
     pub fn return_certificate_for_inst(

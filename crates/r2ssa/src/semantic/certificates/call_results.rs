@@ -31,21 +31,13 @@ pub enum ValueOwner {
     StackSlot { object: ObjectId, offset: i64 },
 }
 
-pub(crate) type CallResultCertificateIndexes = (
-    crate::dense::IdMap<ValueId, CallResultCertificate>,
-    crate::dense::IdMap<InstId, ValueId>,
-    BTreeMap<CallSiteId, Vec<ValueId>>,
-);
-
 pub(crate) fn collect_call_result_certificates(
     body: Body<'_>,
     derived: Derived<'_>,
-) -> CallResultCertificateIndexes {
+) -> crate::dense::IdMap<ValueId, CallResultCertificate> {
     let function = body.function;
     let call_sites = derived.call_sites;
     let mut call_results = crate::dense::IdMap::default();
-    let mut call_results_by_inst = crate::dense::IdMap::default();
-    let mut call_results_by_callsite = BTreeMap::<CallSiteId, Vec<ValueId>>::new();
     let callsites_by_inst = &call_sites.by_inst;
     // Settle the tracked results on the fixpoint driver first, writing no
     // certificate: a state seen before the merges settle may claim an owner
@@ -94,18 +86,11 @@ pub(crate) fn collect_call_result_certificates(
             input.clone(),
             Some(CallResultSink {
                 call_results: &mut call_results,
-                call_results_by_inst: &mut call_results_by_inst,
-                call_results_by_callsite: &mut call_results_by_callsite,
             }),
         );
     }
 
-    for values in call_results_by_callsite.values_mut() {
-        values.sort_unstable();
-        values.dedup();
-    }
-
-    (call_results, call_results_by_inst, call_results_by_callsite)
+    call_results
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -129,11 +114,9 @@ impl crate::fixpoint::Join for CallResultFlowState {
     }
 }
 
-/// The three indexes a call-result certificate is recorded in at once.
+/// Where a call-result certificate is recorded once its block's entry state has settled.
 pub(crate) struct CallResultSink<'a> {
     pub(crate) call_results: &'a mut crate::dense::IdMap<ValueId, CallResultCertificate>,
-    pub(crate) call_results_by_inst: &'a mut crate::dense::IdMap<InstId, ValueId>,
-    pub(crate) call_results_by_callsite: &'a mut BTreeMap<CallSiteId, Vec<ValueId>>,
 }
 
 pub(crate) fn process_call_result_flow_block(
@@ -417,11 +400,6 @@ pub(crate) fn insert_call_result_certificate(
         tracked.insert(cert.value, cert);
         return;
     };
-    sink.call_results_by_inst.insert(cert.at, cert.value);
-    sink.call_results_by_callsite
-        .entry(cert.call_site)
-        .or_default()
-        .push(cert.value);
     tracked.insert(cert.value, cert.clone());
     sink.call_results.insert(cert.value, cert);
 }

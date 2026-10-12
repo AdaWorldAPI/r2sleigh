@@ -727,7 +727,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
     assert!(carrier.identity_values.contains(&chained_result_value));
     assert!(loop_fact.validate_carrier_members(
         prepared.graph(),
-        prepared.storage_spans(),
+        &prepared.recomputed_liveness().1,
         Some(prepared.machine_context()),
     ));
     for result in [result_value, chained_result_value] {
@@ -784,7 +784,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
     assert!(
         !forged_loop.validate_carrier_members(
             prepared.graph(),
-            prepared.storage_spans(),
+            &prepared.recomputed_liveness().1,
             Some(prepared.machine_context()),
         ),
         "stored membership must not validate against its own tampered rows"
@@ -810,7 +810,7 @@ fn projected_loop_peers_form_one_order_and_name_independent_component() {
             .expect("projected peer loop");
         assert!(loop_fact.validate_carrier_members(
             prepared.graph(),
-            prepared.storage_spans(),
+            &prepared.recomputed_liveness().1,
             Some(prepared.machine_context()),
         ));
         assert_eq!(loop_fact.carriers.len(), 3);
@@ -856,7 +856,7 @@ fn projected_loop_peers_require_one_coherent_storage_run() {
         .expect("separate peer loop");
     assert!(loop_fact.validate_carrier_members(
         prepared.graph(),
-        prepared.storage_spans(),
+        &prepared.recomputed_liveness().1,
         Some(prepared.machine_context()),
     ));
     assert!(

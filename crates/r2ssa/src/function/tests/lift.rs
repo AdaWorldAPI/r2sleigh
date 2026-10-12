@@ -208,7 +208,6 @@ fn call_result_certificates_require_a_complete_machine_boundary() {
     );
 
     assert!(first.certificates().call_results.is_empty());
-    assert!(first.certificates().call_results_by_callsite.is_empty());
 
     // With a convention boundary, a read of a contained return-register
     // lane is exact evidence for the result width even when the full

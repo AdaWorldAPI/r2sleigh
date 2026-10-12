@@ -348,8 +348,6 @@ impl Sealed {
         );
         let crate::semantic::CollectedLiveness {
             live_out,
-            values,
-            storage_spans,
             ignored_reads,
         } = liveness;
         let unobserved_merges = crate::deadphi::DeadPhis::find(&self.graph, &live_out, &facts);
@@ -375,9 +373,7 @@ impl Sealed {
             provenance: finish.provenance,
             sealed: self,
             liveness: super::ArtifactLiveness {
-                storage_spans,
                 live_out,
-                values,
                 ignored_reads,
             },
             unobserved_merges,

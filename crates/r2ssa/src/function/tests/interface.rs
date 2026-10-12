@@ -622,17 +622,14 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
                 })
         })
         .expect("post-call result op");
-    assert!(
-        prepared
-            .inst_at(0x1600, result.0)
-            .and_then(|inst| prepared.call_result_certificate_for_inst(inst))
-            .is_none()
-    );
-    assert!(
-        prepared
-            .call_result_certificates_for_callsite(call.call_site)
-            .is_empty()
-    );
+    let results = prepared
+        .certificates()
+        .call_results
+        .values()
+        .collect::<Vec<_>>();
+    let inst = prepared.inst_at(0x1600, result.0);
+    assert!(results.iter().all(|cert| Some(cert.at) != inst));
+    assert!(results.iter().all(|cert| cert.call_site != call.call_site));
 }
 
 #[test]

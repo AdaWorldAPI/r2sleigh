@@ -8,7 +8,7 @@ pub(crate) use shared::exact_copy_chain_to_entry_storage;
 mod stack;
 
 pub use call_results::*;
-pub use expressions::*;
+pub(crate) use expressions::*;
 pub use returns::*;
 pub use shared::*;
 pub use stack::*;
@@ -234,14 +234,6 @@ fn switch_guard(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IfRegionCertificate {
-    pub predicate: PredicateId,
-    pub block_addr: u64,
-    pub true_target: u64,
-    pub false_target: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpressionCertificate {
     pub value: ValueId,
     pub defining_inst: Option<InstId>,
@@ -413,19 +405,10 @@ impl<T> ByDirection<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedProofFailure {
-    pub owner: &'static str,
-    pub anchor: u64,
-    pub obligation: &'static str,
-    pub reason: String,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreparedFunctionCertificates {
     pub loops: BTreeMap<LoopId, LoopCertificate>,
     pub switches: BTreeMap<u64, SwitchCertificate>,
-    pub if_regions: BTreeMap<PredicateId, IfRegionCertificate>,
     pub expressions: crate::dense::IdMap<ValueId, ExpressionCertificate>,
     pub memory_accesses: BTreeMap<StructuredAccessId, MemoryAccessCertificate>,
     /// The accesses each instruction performs, by direction.
@@ -451,14 +434,9 @@ pub struct PreparedFunctionCertificates {
     /// The caller's stack slots read and never written, filled once the artifact is sealed.
     pub caller_stack_slots: BTreeMap<ObjectId, CallerStackSlotCertificate>,
     pub call_results: crate::dense::IdMap<ValueId, CallResultCertificate>,
-    pub call_results_by_inst: crate::dense::IdMap<InstId, ValueId>,
-    pub call_results_by_callsite: BTreeMap<CallSiteId, Vec<ValueId>>,
     pub stack_reloads: crate::dense::IdMap<ValueId, StackReloadSourceCertificate>,
     pub returns: Vec<ReturnValueCertificate>,
     pub returns_by_inst: crate::dense::IdMap<InstId, usize>,
-    /// Merges of two values that the one condition above them selects between.
-    pub two_way_selections: crate::dense::IdMap<InstId, TwoWaySelectionCertificate>,
-    pub failures: Vec<PreparedProofFailure>,
 }
 
 /// Remove the certified byte stride from one offset without manufacturing a
@@ -850,22 +828,6 @@ pub(crate) fn collect_prepared_function_certificates(
                     default: fact.default,
                     dispatch: dispatch_operations(graph, unobserved, *block_addr, fact.selector),
                     guard: switch_guard(function, graph, predicates, fact),
-                },
-            )
-        })
-        .collect();
-
-    let if_regions = predicates
-        .predicates
-        .iter()
-        .map(|(id, fact)| {
-            (
-                *id,
-                IfRegionCertificate {
-                    predicate: *id,
-                    block_addr: fact.block_addr,
-                    true_target: fact.true_target,
-                    false_target: fact.false_target,
                 },
             )
         })
@@ -1287,8 +1249,7 @@ pub(crate) fn collect_prepared_function_certificates(
         .filter_map(|certificate: &CallsiteCertificate| certificate.return_address_store)
         .collect::<crate::dense::IdSet<_>>();
 
-    let (call_results, call_results_by_inst, call_results_by_callsite) =
-        collect_call_result_certificates(body, derived);
+    let call_results = collect_call_result_certificates(body, derived);
     let stack_reloads = collect_stack_reload_source_certificates(
         body,
         objects,
@@ -1364,7 +1325,6 @@ pub(crate) fn collect_prepared_function_certificates(
     PreparedFunctionCertificates {
         loops,
         switches,
-        if_regions,
         expressions,
         memory_accesses,
         memory_accesses_by_inst,
@@ -1382,13 +1342,9 @@ pub(crate) fn collect_prepared_function_certificates(
         dead_frame_store_values: crate::dense::IdSet::default(),
         caller_stack_slots: BTreeMap::new(),
         call_results,
-        call_results_by_inst,
-        call_results_by_callsite,
         stack_reloads,
         returns,
         returns_by_inst,
-        two_way_selections: collect_two_way_selection_certificates(function, graph),
-        failures: Vec::new(),
     }
 }
 
