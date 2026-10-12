@@ -2021,7 +2021,7 @@ impl Native<'_> {
         &self,
         prepared: &r2ssa::SsaArtifact,
         sites: &[NativeCall],
-        op: &r2ssa::SSAOp<r2ssa::VarId>,
+        op: &r2ssa::SSAOp<r2ssa::ValueId>,
     ) -> Option<(u64, String)> {
         match op {
             r2ssa::SSAOp::Call {
@@ -2036,7 +2036,7 @@ impl Native<'_> {
                 instruction: Some(instruction),
             } => {
                 let graph = prepared.graph();
-                let value = graph.value_of(*target)?;
+                let value = *target;
                 let defined = graph.inst(graph.def_inst(value)?)?;
                 let r2ssa::InstPayload::Op(r2ssa::SSAOp::Load { addr, .. }) = &defined.payload
                 else {
@@ -2061,8 +2061,12 @@ impl Native<'_> {
         let prepared = artifact.shared_artifact();
         let sites = call_sites(&walked.body, self.program);
         let mut found = Vec::new();
-        for block in prepared.function().blocks() {
-            for (id, op) in block.sited() {
+        let graph = prepared.graph();
+        for block in &graph.blocks {
+            for &inst in graph.op_insts(block.id) {
+                let (Some(op), Some(id)) = (graph.op(inst), graph.op_for_inst(inst)) else {
+                    continue;
+                };
                 let Some((instruction, callee)) = self.called_name(prepared.as_ref(), &sites, op)
                 else {
                     continue;

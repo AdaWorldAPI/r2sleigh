@@ -65,8 +65,12 @@ impl LocalMemoryVersionFacts {
                 .iter()
                 .map(|value| (value.var.clone(), value.id)),
         );
-        for block in prepared.function().blocks() {
-            for (op_id, op) in block.sited() {
+        let graph = prepared.graph();
+        for block in &graph.blocks {
+            for &at in graph.op_insts(block.id) {
+                let (Some(op), Some(op_id)) = (graph.op(at), graph.op_for_inst(at)) else {
+                    continue;
+                };
                 if !matches!(
                     op,
                     SSAOp::Load {
@@ -79,7 +83,7 @@ impl LocalMemoryVersionFacts {
                 ) {
                     continue;
                 }
-                let inst = prepared.graph().inst_for_op(op_id);
+                let inst = Some(at);
                 let store_versions = inst
                     .and_then(|inst| prepared.memory_defs_for_inst(inst))
                     .into_iter()

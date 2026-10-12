@@ -830,15 +830,15 @@ pub fn exact_source_return_type(source: &r2ssa::SsaArtifact) -> Option<CTypeLike
     };
     let expected_carrier = r2ssa::ReturnCarrier::Register { storage };
     let mut return_count = 0usize;
+    let ssa = source.graph();
     for &block_addr in source.function().block_addrs() {
-        let block = source.function().get_block(block_addr)?;
-        for (op, ssa_op) in block.sited() {
-            if !matches!(ssa_op, r2ssa::SSAOp::Return { .. }) {
+        let block = ssa.block_id_for_addr(block_addr)?;
+        for &inst in ssa.op_insts(block) {
+            if !matches!(ssa.op(inst), Some(r2ssa::SSAOp::Return { .. })) {
                 continue;
             }
             return_count = return_count.checked_add(1)?;
-            let certificate =
-                source.return_certificate_for_inst(source.graph().inst_for_op(op)?)?;
+            let certificate = source.return_certificate_for_inst(inst)?;
             if !exact_return_certificate_matches(
                 certificate,
                 logical,

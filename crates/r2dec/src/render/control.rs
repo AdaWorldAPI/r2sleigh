@@ -146,11 +146,8 @@ impl<'i> Writer<'_, 'i> {
 
     /// A block's operations as one gap, where D2 rendered no values.
     fn gap(&mut self, addr: u64) -> Option<CStmt> {
-        let ops = self
-            .input
-            .function()
-            .get_block(addr)
-            .map_or(0, |block| block.ops().len());
+        let graph = self.input.graph();
+        let ops = (graph.block_id_for_addr(addr)).map_or(0, |block| graph.op_insts(block).len());
         (ops != 0).then(|| {
             let gap = CStmt::Gap(GapMarker {
                 kind: GapKind::ValuesNotRendered,

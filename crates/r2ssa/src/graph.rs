@@ -638,6 +638,49 @@ impl SsaGraph {
         self.op_by_inst.get(id.0 as usize).copied()
     }
 
+    /// Every block spelled by name, as the sealed function's `named_blocks` was: each operation
+    /// and phi under its own `OpId`. For readers still keyed by name (F2.3's transitional
+    /// readers, which P9 moves to values).
+    pub fn named_blocks(&self) -> Vec<crate::SSABlock> {
+        let spelled = |id: &ValueId| self.var(*id).clone();
+        self.blocks
+            .iter()
+            .map(|block| {
+                let insts = self.op_insts(block.id);
+                let ops = (insts.iter())
+                    .filter_map(|inst| Some(self.op(*inst)?.map(&mut |id| spelled(id))))
+                    .collect();
+                let ids = (insts.iter())
+                    .filter_map(|inst| self.op_for_inst(*inst))
+                    .collect();
+                let phi_insts = self.phi_insts(block.id);
+                let phis = (phi_insts.iter())
+                    .filter_map(|inst| {
+                        let phi = self.inst(*inst)?;
+                        let InstPayload::Phi { predecessors } = &phi.payload else {
+                            return None;
+                        };
+                        let output = phi.output?;
+                        let sources = (predecessors.iter().zip(self.inputs(*inst)))
+                            .filter_map(|(from, value)| {
+                                Some((self.block(*from)?.addr, spelled(value)))
+                            })
+                            .collect();
+                        Some(crate::PhiNode {
+                            dst: spelled(&output),
+                            sources,
+                            canonical_storage: self.value(output)?.canonical_storage,
+                        })
+                    })
+                    .collect();
+                let phi_ids = (phi_insts.iter())
+                    .filter_map(|inst| self.op_for_inst(*inst))
+                    .collect();
+                crate::SSABlock::with_ids(block.addr, block.size, (ops, ids), (phis, phi_ids))
+            })
+            .collect()
+    }
+
     /// The operation an instruction is; `None` for a phi.
     pub fn op(&self, id: InstId) -> Option<&SSAOp<ValueId>> {
         match &self.inst(id)?.payload {

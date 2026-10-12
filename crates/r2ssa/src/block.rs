@@ -155,6 +155,24 @@ impl<V> SSABlock<V> {
         Self::from_parts(addr, size, Vec::new(), Vec::new())
     }
 
+    /// A block holding operations and phis under the ids they already carry: a copy spelled off
+    /// the sealed graph (`SsaGraph::named_blocks`).
+    pub(crate) fn with_ids(
+        addr: u64,
+        size: u32,
+        (ops, ids): (Vec<SSAOp<V>>, Vec<OpId>),
+        (phis, phi_ids): (Vec<PhiNode<V>>, Vec<OpId>),
+    ) -> Self {
+        Self {
+            addr,
+            size,
+            ops,
+            ids,
+            phis,
+            phi_ids,
+        }
+    }
+
     /// A block holding these operations and phis, numbered by itself until a
     /// function adopts it ([`crate::arena`]).
     pub fn from_parts(addr: u64, size: u32, ops: Vec<SSAOp<V>>, phis: Vec<PhiNode<V>>) -> Self {

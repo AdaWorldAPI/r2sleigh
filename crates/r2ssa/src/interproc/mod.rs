@@ -2237,8 +2237,7 @@ fn collect_local_summary_facts_with_obligation_authority(
                     }
                     let location =
                         classify_memory_access_location(prepared, abi, addr, space, expected.size);
-                    out.unplaced_reach |=
-                        unplaced(&location, addr) | bits_of_var(swap.replacement);
+                    out.unplaced_reach |= unplaced(&location, addr) | bits_of_var(swap.replacement);
                     mark_location_access(&mut out, location, true, true);
                     out.memory_effects.insert(SummaryMemoryEffect {
                         kind: SummaryMemoryEffectKind::Read,

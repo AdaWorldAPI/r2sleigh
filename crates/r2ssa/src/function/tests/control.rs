@@ -1462,3 +1462,66 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
         crate::view::Representative::Value(const_root)
     );
 }
+
+/// The graph spells a sealed function's blocks exactly as the function does: each operation and
+/// phi under its own id, a merge with its sources and storage.
+#[test]
+fn the_graph_spells_the_sealed_blocks_as_the_function_does() {
+    let arch = make_x86_64_prep_arch();
+    let arm = |addr: u64, value: u64| R2ILBlock {
+        addr,
+        size: 4,
+        ops: vec![
+            R2ILOp::Copy {
+                dst: make_reg(0, 8),
+                src: make_const(value, 8),
+            },
+            R2ILOp::Branch {
+                target: make_const(0x1730, 8),
+            },
+        ],
+        ..Default::default()
+    };
+    let blocks = vec![
+        R2ILBlock {
+            addr: 0x1710,
+            size: 4,
+            ops: vec![R2ILOp::CBranch {
+                target: make_const(0x1724, 8),
+                cond: make_reg(8, 8),
+            }],
+            ..Default::default()
+        },
+        arm(0x1714, 3),
+        arm(0x1724, 5),
+        R2ILBlock {
+            addr: 0x1730,
+            size: 4,
+            ops: vec![R2ILOp::Return {
+                target: make_reg(0, 8),
+            }],
+            ..Default::default()
+        },
+    ];
+    let prepared = SsaArtifact::for_decompile(&blocks, Some(&arch)).expect("prepared SSA");
+    let spelled = |blocks: Vec<crate::SSABlock>| {
+        (blocks.iter())
+            .map(|block| {
+                let ops = (0..block.ops().len()).map(|at| (block.op_id(at), &block.ops()[at]));
+                (
+                    block.addr,
+                    block.size,
+                    format!("{:?}", ops.collect::<Vec<_>>()),
+                    format!("{:?}", block.phis()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let from_graph = spelled(prepared.graph().named_blocks());
+    assert!(
+        from_graph
+            .iter()
+            .any(|(_, _, _, phis)| phis.contains("canonical_storage"))
+    );
+    assert_eq!(from_graph, spelled(prepared.function().named_blocks()));
+}
