@@ -86,13 +86,16 @@ engine. Commands, the visual mode and the agent surface all ask it.
   cache is deleted, and `revision(db)` and `endian` have one owner.
 - Q4b: a value dropped past a table's capacity keeps its dependencies,
   so what read it stays good, and a value computed again from unmoved
-  reads keeps its `changed_at`. `Rendered(entry, thumb, tier)` holds
-  sixteen renderings with the name they define and the callees left
-  unread, so a redraw reads no analysis; a sealing refusal is held unless
+  reads keeps its `changed_at`. `Rendered(entry, thumb, tier)` holds its
+  newest rendering, with the name it defines and the callees left unread,
+  so a redraw of it reads no analysis (2026-10-12, adr-memory-model:
+  a function's answers are held only while newest); a sealing refusal is held unless
   the request's control could have caused it
   (`EngineExecutionControl::stopped`: cancellation is sticky and the
   deadline only passes). Measured: six render commands over two 0pack
-  functions in one session, 11.1 s to 4.9 s.
+  functions in one session, 11.1 s to 4.9 s with sixteen held; holding the
+  newest, the same six alternating renders take 2.23 s against 1.48 s
+  (2026-10-12), each return 0.19 s since callee summaries stay held.
 - Q4c: the decoders and their assembly are loaded the first time a
   question needs them (`ProgramInputs::machines`, a cell the container
   alone decides); `ensure_current` and the open program's copies of the

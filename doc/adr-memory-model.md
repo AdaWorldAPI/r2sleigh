@@ -59,11 +59,16 @@ stays alive until the response is built.
    text). The peak becomes the largest phase, not the sum of all. Target
    `c ≤ 600 B` per operation, then `c ≤ 300 B` with F2's single numbering
    (one variable table, the graph indexing the function's operations).
-2. **Caches are budgeted in bytes.** `Analysed` and `Sealed` share one budget
-   (128 MB by default), weighted by measured bytes per operation and evicted
-   by GreedyDual-Size (cost to recompute over size), so a session's `R` is
-   bounded whatever its length. A walk's lift is dropped once its function is
-   prepared; a rendering keeps its text and proof line, not its ledger.
+2. **Holding is no substitute for an algorithm.** The value of holding an
+   answer is its recompute cost over its bytes: a whole analysis costs about
+   8 ns per byte to compute again (pumasim's Gui constructor, 1.6 s for
+   195 MB), a callee's summary microseconds per byte. A query is held only
+   where it is a program-wide fact computed once (callee summaries, names,
+   returns, the survey: `Retention::Held`, O(program) in all); a function's
+   walk, analysis, sealing and rendering are held only while they are the
+   newest (`Retention::Newest`), and asked again they are computed again,
+   whose cost is the algorithm's to lower. Then `R` is the last function's
+   answers, whatever the session's length.
 3. **The allocator returns phase garbage at phase boundaries**: one forced
    collect after the analysis and after the render, measured on the four
    large functions, before any change of purge delay (D26).
