@@ -99,6 +99,8 @@ stays alive until the response is built.
 | #174 | The inventory's seeds a bit per whole-instruction kind; one backward pass taints the incomplete returns | heap peak 173.8 to 172.2 MB (the render phase's again), 0pack 199.5 to 189.4 MB; peak RSS 0pack 334 to 298 MB |
 | #175 | The term arena interns its types (a node 56 to 32 bytes), its side tables dense and shrunk once canonical; root steps as runs; the unread `reads` lists and producer ids deleted | heap peak 172.2 to 166.7 MB (now the type seal's), 0pack 189.4 to 177.6 MB; pumasim 3% faster |
 | #176 | The array inference borrows its operations; the inventory's table sized from its seeds and sorted in place; the import's roots recorded as runs as each completes | heap peak 166.7 to 158.6 MB; peak RSS 4 to 7% lower |
+| #177 | The timing gate reports and holds each case's heap peak (1.05x) and times a 50-function session | gate |
+| #178 | `dense::HashIndex`, slots of row ids and hash bits, owns the value table's and the graph's variable-to-id lookups | heap 1.2 to 2.4% lower, time unchanged |
 
 ## Left
 

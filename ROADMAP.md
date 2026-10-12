@@ -363,7 +363,11 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          recorded as runs as each completes (#176: the inference cloned
          every operation twice, 42.6 MB at the type seal; the table kept
          its doubling slack and a stable sort's scratch; the importer held
-         a hash map of two vectors per root, 9.2 MB). A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
+         a hash map of two vectors per root, 9.2 MB); one open-addressed
+         index (`dense::HashIndex`) owns each variable-to-id lookup (#178:
+         the value table keyed a `HashMap` by a second copy of every
+         variable beside the graph's own index; heap 1.2 to 2.4% lower,
+         time unchanged). A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
          386 MB, time unchanged. Since #172: heap peak (dhat) pumasim
          `pdd @ 0x23fdf0` 180.6 to 158.6 MB (197.0 at #167), 0pack
          `0x58e3d0` 199.5 to 177.6 MB since #173; release peak RSS, median
