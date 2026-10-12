@@ -169,9 +169,7 @@ fn blocks(artifact: &r2ssa::SsaArtifact) -> Vec<Block> {
         .values()
         .map(|span| span.instruction_addr())
         .collect::<BTreeSet<_>>();
-    let mut blocks = function
-        .blocks()
-        .iter()
+    let mut blocks = (artifact.graph().blocks.iter())
         .filter(|block| block.size > 0)
         .map(|block| {
             let end = block.addr + u64::from(block.size);
