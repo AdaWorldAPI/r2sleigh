@@ -94,16 +94,20 @@ stays alive until the response is built.
 | #169 | Per-function answers held only while newest | session 441 to 385 MB, time unchanged |
 | #170 | A prepared function keeps its walk's outline | heap peak 194.7 to 193.0 MB |
 | #171 | Facts nothing reads are not kept | heap peak 193.0 to 183.6 MB, 471 lines deleted |
-| ledger | Each obligation held once, columns by place | heap peak 183.4 to 180.6 MB |
+| #172 | Each obligation held once, columns by place | heap peak 183.4 to 180.6 MB |
+| #173 | A value's definition, inputs and width are the graph's alone | heap peak 180.6 to 173.8 MB; the peak moves from render to preparation |
 
 ## Left
 
-By the Gui constructor's peak (180.6 MB): the facts only sealing reads
-(MM.3, 35.7 MB group), the fixed cost (MM.4, 29.8 MB), the term arena
-(MM.5, 18.3 MB), one numbering (MM.6, 29.6 MB of function, table and
-graph), compact identities (MM.7), the machine projection and render
-structures (MM.8, 21.2 MB), and the allocator's collect (MM.9). The
-ROADMAP (step 8.9) orders them.
+By the Gui constructor's peak (173.8 MB, now in preparation): the
+inventory's seeds (MM.10, 35.5 MB: each incomplete boundary rescans every
+instruction and each seed holds its own `BTreeSet`), the fixed cost (MM.4,
+29.8 MB), the term arena (MM.5, 18.3 MB), one numbering (MM.6, 29.6 MB of
+function, table and graph), compact identities (MM.7), the machine
+projection and render structures (MM.8, 21.2 MB), and the allocator's
+collect (MM.9). The facts only sealing reads (MM.3) are 5.3 MB of memory
+SSA at the render peak, and dropping them needs the analysis and its
+sealing as one query: conditional. The ROADMAP (step 8.9) orders them.
 
 ## Gates
 
