@@ -113,11 +113,13 @@ orders them.
 
 ## Gates
 
-- Heap bytes per SSA operation (dhat, `census.py heap`) on pumasim
-  `0x23fdf0` and 0pack `0x58e3d0`: a ratchet beside PF4's time, RSS and
-  allocation count.
-- Session retention: RSS of a scripted 50-function `pdd` session on pumasim,
-  a ratchet.
+- The heap peak, beside time, RSS and the allocation count: r2s's
+  `alloc-count` build feeds r2il's counters and reports its peak live bytes
+  (`r2s: heap peak`, equal to dhat's to 0.01%), and `census.py time` fails a
+  case whose head exceeds 1.05x its base (`--heap-budget`, CI).
+- Session retention: `census.py time` times one session over pumasim's 50
+  functions (its largest and a sample down to its smallest) under the same
+  RSS, heap and time budgets.
 - The sweep that found the zero fill: every function over 512 MB in the
   measured binaries is named and judged.
 

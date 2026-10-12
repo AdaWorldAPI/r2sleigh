@@ -9,8 +9,8 @@
 //! run, and radare2's own analysis dominates it below a few hundred blocks.
 //!
 //! So the counters live here, at the bottom of the crate graph where every
-//! stage can reach them, and the global allocator that feeds them lives in the
-//! plugin behind a feature. With no allocator installed every function below is
+//! stage can reach them, and the global allocator that feeds them is r2s's
+//! `alloc-count` build. With no allocator installed every function below is
 //! a relaxed load of a zero, which is what an ordinary build pays.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -73,6 +73,25 @@ pub const fn size_class_bound(class: usize) -> Option<usize> {
     }
 }
 
+/// Count one allocation of `size` bytes: the counting allocator's half of these counters.
+pub fn allocated(size: usize) {
+    COUNTING.store(1, Ordering::Relaxed);
+    ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+    BY_SIZE[size_class(size)].fetch_add(1, Ordering::Relaxed);
+    let live = LIVE.fetch_add(size, Ordering::Relaxed) + size;
+    PEAK.fetch_max(live, Ordering::Relaxed);
+}
+
+/// The class whose bound is the least at or above `size`.
+fn size_class(size: usize) -> usize {
+    (((size.max(16) - 1).ilog2() - 3) as usize).min(SIZE_CLASSES - 1)
+}
+
+/// Count `size` bytes freed.
+pub fn freed(size: usize) {
+    LIVE.fetch_sub(size, Ordering::Relaxed);
+}
+
 /// Bytes allocated and not yet freed.
 pub fn live_bytes() -> usize {
     LIVE.load(Ordering::Relaxed)
@@ -104,4 +123,19 @@ static COUNTING: AtomicUsize = AtomicUsize::new(0);
 
 pub fn is_counting() -> bool {
     COUNTING.load(Ordering::Relaxed) == 1
+}
+
+#[cfg(test)]
+mod tests {
+    /// Each size falls in the first class whose bound holds it.
+    #[test]
+    fn a_size_counts_in_the_least_class_that_holds_it() {
+        for size in [0, 1, 16, 17, 32, 33, 4096, 8192, 8193, usize::MAX >> 1] {
+            let class = super::size_class(size);
+            assert!(super::size_class_bound(class).is_none_or(|bound| size <= bound));
+            assert!(
+                class == 0 || super::size_class_bound(class - 1).is_some_and(|below| size > below)
+            );
+        }
+    }
 }

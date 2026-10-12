@@ -401,8 +401,12 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             parameter's binding along same-width copies in a `while
             changed` loop over every value, `O(V · chain)`; one pass in
             definition order states the same set.
-         Exit: heap bytes per operation and the 50-function session RSS
-         gated as ratchets; `c ≤ 600 B` per operation, then `≤ 300 B`.
+         Gates (#177): `census.py time` reports and gates each case's heap
+         peak from the `alloc-count` build (1.05x the base) and times a
+         50-function pumasim session under the RSS, heap and time budgets;
+         at #176 the session's heap peak is 196.5 MiB against 151.3 for
+         its largest function alone. Exit: `c ≤ 600 B` per operation, then
+         `≤ 300 B`.
 6. **LP2 to LP4**, then **I**, **C2, C4**, **P7, P8, P9, P11**.
 7. Beside the path, as small items when a step waits on CI: **L5**, **M6**
    rest.

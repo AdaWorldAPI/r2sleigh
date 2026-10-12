@@ -6,10 +6,11 @@
   census.py sites DIR                              each staged function whose proof line counts a
                                                    residual its text holds no site for; fails on any
   census.py time --r2s BASE --r2s HEAD [--runs N] [--budget R] [--rss-budget R]
-                 [--count-r2s BASE --count-r2s HEAD] [--alloc-budget R] --bins DIR
+                 [--count-r2s BASE --count-r2s HEAD] [--alloc-budget R] [--heap-budget R] --bins DIR
                                                    median release time and peak RSS per case, and
-                                                   the allocation count from alloc-count builds;
-                                                   fails when HEAD exceeds a budget x BASE
+                                                   the allocation count and heap peak from
+                                                   alloc-count builds; fails when HEAD exceeds a
+                                                   budget x BASE
   census.py exponent --r2s R2S [--min-instructions N] [--sample N] [--max-exponent X]
                     [--out FILE] BINARY...         how `pdd` instructions retired, CPU time and
                                                    peak RSS grow with a function's instructions
@@ -43,10 +44,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # The functions where a quadratic pass shows first, and the two largest listings, in radare2's test binaries.
+# One session over pumasim's largest functions and a sample down to its smallest: what a session holds
+# between requests (doc/adr-memory-model.md, Gates).
+SESSION = (
+    0x23fdf0, 0x1fafb0, 0x2312c0, 0x4baf30, 0x213a60, 0x22a010, 0x1f61b0, 0x23da20,
+    0x452a80, 0x421360, 0x4501a0, 0x414ca0, 0x26a7b0, 0x46a470, 0x41d770, 0x44e290,
+    0x23ba50, 0x4ad0b0, 0x1e5fc0, 0x2690b0, 0x275e80, 0x274900, 0x273380, 0x1f4aa0,
+    0x1f3390, 0x32b4b0, 0x523800, 0x4fea20, 0x5a42f0, 0x20e340, 0x38f3c0, 0x437a40,
+    0x54cfd0, 0x57f2a0, 0x2e9a10, 0x529360, 0x37a6b0, 0x4ed1f0, 0x43c7c0, 0x5ac4f0,
+    0x2d0fe0, 0x2f6e30, 0x4bff00, 0x3954c0, 0x42acd0, 0x2cfc20, 0x42af90, 0x1c4dc0,
+    0x529df0, 0x4d7650,
+)
 TIMED = [("0pack", "pdd @ 0x0058e3d0"), ("0pack", "pdd @ 0x0062ecf0"),
          ("pumasim", "pdd @ 0x0023fdf0"), ("pumasim", "pdd @ 0x004baf30"),
-         ("pumasim", "afl"), ("0pack", "afl")]
+         ("pumasim", "afl"), ("0pack", "afl"),
+         ("pumasim", "; ".join(f"pdd @ {address:#x}" for address in SESSION), "session: pdd of 50 functions")]
 ALLOCATIONS = re.compile(r"^r2s: allocations: (\d+)$", re.MULTILINE)
+HEAP_PEAK = re.compile(r"^r2s: heap peak: (\d+)$", re.MULTILINE)
 INFO = re.compile(r"^addr: (0x[0-9a-f]+)\n(?:.*\n)*?num-instrs: (\d+)$", re.MULTILINE)
 # A dhat frame the project does not own: the allocator, the standard library and its collections.
 LIBRARY_FRAME = re.compile(r": <?(alloc|core|std|hashbrown)::|\((\?\?\?|dhat-|alloc/|core/|std/|hashbrown|smallvec"
@@ -187,7 +201,8 @@ def sites(args):
 
 
 def measured(binary, command, executable):
-    """Wall seconds, this child's own peak RSS in MB, its output, and the allocations it reported."""
+    """Wall seconds, this child's own peak RSS in MB, its output, and the allocations and heap peak
+    in MB it reported."""
     with tempfile.TemporaryFile() as out:
         start = time.perf_counter()
         child = subprocess.Popen([executable, "-q", "-c", command, str(binary)],
@@ -202,19 +217,23 @@ def measured(binary, command, executable):
     # ru_maxrss is bytes on macOS and KiB on Linux.
     peak = usage.ru_maxrss * (1 if sys.platform == "darwin" else 1024) / (1 << 20)
     found = ALLOCATIONS.search(text)
-    return seconds, peak, ALLOCATIONS.sub("", text), int(found.group(1)) if found else None
+    heap = HEAP_PEAK.search(text)
+    output = HEAP_PEAK.sub("", ALLOCATIONS.sub("", text))
+    return (seconds, peak, output, int(found.group(1)) if found else None,
+            int(heap.group(1)) / (1 << 20) if heap else None)
 
 
 def time_cases(args):
     failed = []
-    print("| case | base s | head s | ratio | base MB | head MB | ratio | allocations | output |\n"
-          "|---|---|---|---|---|---|---|---|---|")
-    for name, command in TIMED:
+    print("| case | base s | head s | ratio | base MB | head MB | ratio | base heap MB | head heap MB "
+          "| ratio | allocations | output |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for name, command, *label in TIMED:
+        case = f"{name} {label[0] if label else command}"
         binary = Path(args.bins) / name
         if not binary.exists():
-            print(f"| {name} {command} | missing | | | | | | | |")
+            print(f"| {case} | missing | | | | | | | | | | |")
             continue
-        seconds, peaks, digests, counts = {}, {}, {}, {}
+        seconds, peaks, digests, counts, heaps = {}, {}, {}, {}, {}
         for side, executable in zip(("base", "head"), args.r2s):
             runs = [measured(binary, command, executable) for _ in range(args.runs)]
             seconds[side] = statistics.median(run[0] for run in runs)
@@ -223,7 +242,8 @@ def time_cases(args):
         # A base built before the count existed has no counting build; head's count stands alone.
         for side, executable in zip(("base", "head"), args.count_r2s or ()):
             if Path(executable).exists():
-                counts[side] = measured(binary, command, executable)[3]
+                counted = measured(binary, command, executable)
+                counts[side], heaps[side] = counted[3], counted[4]
         ratio = seconds["head"] / seconds["base"]
         rss = peaks["head"] / peaks["base"]
         allocations = ""
@@ -231,17 +251,25 @@ def time_cases(args):
             allocated = counts["head"] / counts["base"]
             allocations = f"{counts['base']:,} -> {counts['head']:,} ({allocated:.2f})"
             if allocated > args.alloc_budget:
-                failed.append(f"{name} {command}: {allocated:.2f}x the base's allocations")
+                failed.append(f"{case}: {allocated:.2f}x the base's allocations")
         elif counts.get("head"):
             allocations = f"{counts['head']:,}"
+        heap = ["", "", ""]
+        if heaps.get("head"):
+            heap[1] = f"{heaps['head']:.1f}"
+        if heaps.get("base") and heaps.get("head"):
+            grown = heaps["head"] / heaps["base"]
+            heap = [f"{heaps['base']:.1f}", heap[1], f"{grown:.2f}"]
+            if grown > args.heap_budget:
+                failed.append(f"{case}: {grown:.2f}x the base's heap peak")
         if ratio > args.budget:
-            failed.append(f"{name} {command}: {ratio:.2f}x the base's time")
+            failed.append(f"{case}: {ratio:.2f}x the base's time")
         if rss > args.rss_budget:
-            failed.append(f"{name} {command}: {rss:.2f}x the base's peak RSS")
+            failed.append(f"{case}: {rss:.2f}x the base's peak RSS")
         same = digests["base"] == digests["head"]
-        print(f"| {name} {command} | {seconds['base']:.2f} | {seconds['head']:.2f} | {ratio:.2f} | "
-              f"{peaks['base']:.0f} | {peaks['head']:.0f} | {rss:.2f} | {allocations} | "
-              f"{'same' if same else 'moved'} |")
+        print(f"| {case} | {seconds['base']:.2f} | {seconds['head']:.2f} | {ratio:.2f} | "
+              f"{peaks['base']:.0f} | {peaks['head']:.0f} | {rss:.2f} | {' | '.join(heap)} | "
+              f"{allocations} | {'same' if same else 'moved'} |")
     for line in failed:
         print(line, file=sys.stderr)
     if failed:
@@ -384,6 +412,7 @@ def main():
     p.add_argument("--rss-budget", type=float, default=1.3)
     p.add_argument("--count-r2s", action="append")
     p.add_argument("--alloc-budget", type=float, default=1.3)
+    p.add_argument("--heap-budget", type=float, default=1.05)
     p.set_defaults(func=time_cases)
     p = sub.add_parser("exponent")
     p.add_argument("--r2s", required=True)
