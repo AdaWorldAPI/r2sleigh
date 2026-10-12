@@ -1,5 +1,6 @@
-//! A stack check a runtime decides: Go's prologue compares the stack pointer with `stackguard0` and
-//! calls a routine that re-enters the function (doc/adr-language-profile.md, item 3).
+//! A stack check a runtime decides, under `Premise::GoRuntime`: Go's prologue compares the stack
+//! pointer with `stackguard0` and calls a routine that re-enters the function
+//! (doc/adr-language-profile.md, item 3).
 
 use std::collections::BTreeSet;
 
@@ -24,9 +25,12 @@ struct Check {
     inserted: IdSet<OpId>,
 }
 
-/// Decide every stack check whose failing edge re-enters the function; no premise is accepted: the
-/// failing edge composes to the passing one by the callee's runtime model.
+/// Decide every stack check whose failing edge re-enters the function: under the runtime's
+/// contract for the routine the container names, the failing edge composes to the passing one.
 pub(crate) fn decide(func: &mut SSAFunction, machine: &SourceMachineContext) {
+    if !machine.accepts(r2source::Premise::GoRuntime) {
+        return;
+    }
     let Some(bound) = machine
         .call_effect()
         .and_then(r2source::SourceCallEffect::stack_bound)
@@ -71,6 +75,21 @@ pub(crate) fn decide(func: &mut SSAFunction, machine: &SourceMachineContext) {
         });
         inserted.extend(check.inserted.iter());
     }
+    let removed = remove_failing_blocks(func, &checks, &mut decided);
+    decided.reorder();
+    func.apply_edits(decided);
+    let addresses = crate::stack_protector::inserted_addresses(func, &inserted);
+    inserted.extend(addresses.iter());
+    func.record_compiler_inserted(inserted, removed);
+    func.record_premise(r2source::Premise::GoRuntime);
+}
+
+/// Remove each failing block only the decided checks reach, with its edge back to the entry.
+fn remove_failing_blocks(
+    func: &SSAFunction,
+    checks: &[Check],
+    decided: &mut EditPlan,
+) -> BTreeSet<u64> {
     let deciding = checks
         .iter()
         .map(|check| check.block)
@@ -81,31 +100,28 @@ pub(crate) fn decide(func: &mut SSAFunction, machine: &SourceMachineContext) {
         .map(|check| check.fail)
         .collect::<BTreeSet<_>>()
     {
-        if func
+        if !func
             .predecessors(fail)
             .iter()
             .all(|pred| deciding.contains(pred))
         {
-            // A growth path that jumps back to the entry leaves it a source the entry's merges drop.
-            for next in func.successors(fail) {
-                decided.reshape(ShapeEdit::RemoveEdge {
-                    from: fail,
-                    to: next,
-                });
-                decided.reshape(ShapeEdit::DropPhiSources {
-                    block: next,
-                    pred: fail,
-                });
-            }
-            decided.reshape(ShapeEdit::RemoveBlock(fail));
-            removed.insert(fail);
+            continue;
         }
+        // A growth path that jumps back to the entry leaves it a source the entry's merges drop.
+        for next in func.successors(fail) {
+            decided.reshape(ShapeEdit::RemoveEdge {
+                from: fail,
+                to: next,
+            });
+            decided.reshape(ShapeEdit::DropPhiSources {
+                block: next,
+                pred: fail,
+            });
+        }
+        decided.reshape(ShapeEdit::RemoveBlock(fail));
+        removed.insert(fail);
     }
-    decided.reorder();
-    func.apply_edits(decided);
-    let addresses = crate::stack_protector::inserted_addresses(func, &inserted);
-    inserted.extend(addresses.iter());
-    func.record_compiler_inserted(inserted, removed);
+    removed
 }
 
 /// The check ending one block: an unsigned `sp - k <= stackguard0` whose true edge re-enters.
@@ -294,11 +310,57 @@ fn reenters(
         .or_else(|| func.var(target).constant_bits());
     address.is_some_and(|target| machine.reenters_caller(target))
         && block.ops().iter().all(|op| match op {
-            SSAOp::Return { .. } => false,
             SSAOp::Store { addr, .. } => {
                 let (root, _) = defs.affine(func, *addr);
                 func.var(root).version == 0 && func.storage_of(root) == Some(stack_pointer)
             }
-            _ => true,
+            // The one modelled call and the boundary it states, the jump back, and values.
+            SSAOp::Call { .. }
+            | SSAOp::CallDefine { .. }
+            | SSAOp::CallUse { .. }
+            | SSAOp::CallRestore { .. }
+            | SSAOp::Branch { .. }
+            | SSAOp::Nop => true,
+            op => is_value(op),
         })
+}
+
+/// Whether an operation only computes a value: no memory, no control, no trap.
+fn is_value(op: &SSAOp<VarId>) -> bool {
+    matches!(
+        op,
+        SSAOp::Copy { .. }
+            | SSAOp::IntAdd { .. }
+            | SSAOp::IntSub { .. }
+            | SSAOp::IntMult { .. }
+            | SSAOp::IntNegate { .. }
+            | SSAOp::IntCarry { .. }
+            | SSAOp::IntSCarry { .. }
+            | SSAOp::IntSBorrow { .. }
+            | SSAOp::IntAnd { .. }
+            | SSAOp::IntOr { .. }
+            | SSAOp::IntXor { .. }
+            | SSAOp::IntNot { .. }
+            | SSAOp::IntLeft { .. }
+            | SSAOp::IntRight { .. }
+            | SSAOp::IntSRight { .. }
+            | SSAOp::IntEqual { .. }
+            | SSAOp::IntNotEqual { .. }
+            | SSAOp::IntLess { .. }
+            | SSAOp::IntSLess { .. }
+            | SSAOp::IntLessEqual { .. }
+            | SSAOp::IntSLessEqual { .. }
+            | SSAOp::IntZExt { .. }
+            | SSAOp::IntSExt { .. }
+            | SSAOp::BoolNot { .. }
+            | SSAOp::BoolAnd { .. }
+            | SSAOp::BoolOr { .. }
+            | SSAOp::BoolXor { .. }
+            | SSAOp::Piece { .. }
+            | SSAOp::Subpiece { .. }
+            | SSAOp::Trunc { .. }
+            | SSAOp::PtrAdd { .. }
+            | SSAOp::PtrSub { .. }
+            | SSAOp::Cast { .. }
+    )
 }

@@ -163,13 +163,16 @@ impl RenderedFunctionJson {
         language: r2abi::statement::SourceLanguage,
     ) -> Self {
         let proof = RenderProofJson::of(response.obligation_ledger.as_ref());
-        // A compiler-inserted elision holds only of a UB-free source, and so does what the analysis
-        // decided under it even where nothing it decided survives to the ledger.
+        // Each decided check states what it rests on in the ledger: a canary the UB-free source, a
+        // runtime's stack bound nothing.
         let premises = response
             .premises
             .iter()
             .copied()
-            .chain((proof.compiler_inserted > 0).then_some(r2source::Premise::UbFreeSource))
+            .chain(
+                (response.obligation_ledger.iter())
+                    .flat_map(|ledger| ledger.premises().iter().copied()),
+            )
             .collect::<BTreeSet<_>>()
             .into_iter()
             .map(r2source::Premise::spelled)

@@ -2466,7 +2466,10 @@ pub(crate) fn storage(arch: &ArchSpec, name: &str) -> Result<CanonicalStorageId,
 /// The premises the engine grants every derivation: a UB-free source, so a stack-protector check
 /// passes (doc/adr-frame-model.md, P4.4). A consumer that refuses it is item A's.
 pub(crate) fn accepted_premises() -> std::collections::BTreeSet<r2source::Premise> {
-    std::collections::BTreeSet::from([r2source::Premise::UbFreeSource])
+    std::collections::BTreeSet::from([
+        r2source::Premise::UbFreeSource,
+        r2source::Premise::GoRuntime,
+    ])
 }
 
 #[cfg(test)]

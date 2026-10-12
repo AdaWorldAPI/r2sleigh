@@ -5923,6 +5923,24 @@ const GO_STACK_CHECK: &[u8] = &[
     0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
 ];
 
+/// The same prologue whose growth path runs `cpuid` before it calls: an effect no model accounts
+/// for.
+const GO_STACK_CHECK_CPUID: &[u8] = &[
+    0x4c, 0x8d, 0x64, 0x24, 0xe0, // 0x00 lea r12, [rsp - 0x20]
+    0x4d, 0x3b, 0x66, 0x10, // 0x05 cmp r12, [r14 + 0x10]
+    0x76, 0x0e, // 0x09 jbe 0x19
+    0x48, 0x83, 0xec, 0x28, // 0x0b sub rsp, 0x28
+    0xb8, 0x01, 0x00, 0x00, 0x00, // 0x0f mov eax, 1
+    0x48, 0x83, 0xc4, 0x28, // 0x14 add rsp, 0x28
+    0xc3, // 0x18 ret
+    0x0f, 0xa2, // 0x19 cpuid
+    0xe8, 0x10, 0x00, 0x00, 0x00, // 0x1b call 0x30
+    0xe9, 0xdb, 0xff, 0xff, 0xff, // 0x20 jmp 0x00
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // 0x25
+    0xc3, // 0x30 runtime.morestack_noctxt.abi0
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+];
+
 /// The Go prologue's bytes, its stack-growth routine under the name a test gives it.
 struct GoStack {
     fixture: Fixture,
@@ -6026,7 +6044,7 @@ fn a_go_stack_check_is_compiler_inserted_by_the_runtime_model() {
         "the body runs unconditionally:\n{text}"
     );
     assert!(
-        text.contains("compiler-inserted (by the callee's runtime model)"),
+        text.contains("compiler-inserted (assuming go-runtime)"),
         "{text}"
     );
 }
@@ -6051,4 +6069,17 @@ fn a_stack_compare_without_a_bound_or_a_model_stays_a_branch() {
         unmodelled.output
     );
     assert!(!unmodelled.output.text().contains("compiler-inserted"));
+    let cpuid = GoStack {
+        fixture: Fixture {
+            bytes: GO_STACK_CHECK_CPUID.to_vec(),
+            name: "main.main",
+        },
+        growth: "runtime.morestack_noctxt.abi0".to_owned(),
+    };
+    let cpuid = decompile(&machine.under("golang"), &cpuid, BASE).expect("decompile");
+    assert!(
+        !cpuid.output.text().contains("compiler-inserted"),
+        "{}",
+        cpuid.output
+    );
 }
