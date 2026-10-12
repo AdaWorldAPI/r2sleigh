@@ -346,46 +346,48 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          each obligation once (#172); a value's definition, inputs and
          width are the graph's alone (#173: r2ssa's expression
          certificates and r2types' certified expressions each copied them
-         per value, 10.6 MB at the render peak). A 50-function `pdd`
-         session: pumasim 935 to 385 MB, 0pack 765 to 386 MB, time
-         unchanged; pumasim `pdd @ 0x23fdf0` heap peak 197.0 to 173.8 MB.
-         The render phase is now below preparation's: the peak (173.8 MB,
-         92,007 operations, about 1.89 KB per operation) is interface
-         recovery's provisional fact pass seeding the obligation inventory.
-         Left, largest first:
-         1. **MM.10** (immediate) the inventory's seeds: each seeded
-            instruction holds its own `BTreeSet` of (kind, component), a
-            leaf node for one or two entries, and a return whose interface
-            is unproven (every return, during recovery) seeds every
-            definition reaching it, rescanning all instructions per return,
-            `O(k · (B + I))`: 35.5 MB of the peak
-            (`taint_incomplete_boundary_inputs` 32.2 MB). The whole-value
-            kinds as a bitmask per instruction, the rest a sorted list; the
-            incomplete returns tainted in one backward pass, `O(B + E + I)`,
-            the same set.
-         2. **MM.3** (conditional) facts only sealing reads, measured
+         per value, 10.6 MB at the render peak); the inventory's seeds are
+         a bit per kind owed of the whole instruction, and one backward
+         pass taints every return whose interface is unproven (#174: each
+         seeded instruction had held its own `BTreeSet`, and each such
+         return, every return during recovery, rescanned every
+         instruction, `O(k · (B + I))`: 35.5 MB at preparation's peak).
+         A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
+         386 MB, time unchanged. Since #172: heap peak (dhat) pumasim
+         `pdd @ 0x23fdf0` 180.6 to 172.2 MB (197.0 at #167), 0pack
+         `0x58e3d0` 199.5 to 189.4 MB at #174; release peak RSS 0pack 340 to
+         298 MB, pumasim 311 to 294 MB, time unchanged. The peak is the
+         render phase's (172.2 MB, 92,007 operations, about 1.87 KB per
+         operation): the analysis artifact 54.0 MB, the open 28.1 MB, the
+         term import 19.0 MB, the machine projection 14.4 MB, render's own
+         12.6 MB. Left, largest first:
+         1. **MM.6** one numbering (16.6 MB function and value table, 13.0
+            MB graph): each variable and operation held twice, F2's plan.
+         2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
+            symbols 7.6, names 4.2), PF's.
+         3. **MM.5** the term arena (18.3 MB): a 56-byte node, side tables
+            in hash maps keyed by its own dense ids, a vector grown by
+            doubling.
+         4. **MM.7** compact identities: a disposition (48 B per
+            instruction) and an imported value carry a 32-byte canonical
+            instruction id the graph already implies; an obligation copies
+            its instruction's graph inputs where it states none of its own.
+         5. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
+            of it the type) and render's own structures (7.6 MB).
+         6. **MM.9** D26: one forced collect at each phase boundary,
+            measured.
+         7. **MM.3** (conditional) facts only sealing reads, measured
             2026-10-12 at the render peak: the fact pass holds 28.7 MB (the
             35.7 estimate counted r2types'), of which memory SSA 5.3 MB
             (struct inference, slicing and recomputed liveness read it),
             the inventory's preallocation 4.4 MB, predicates and control
             domains under 0.1 MB. Dropping them at the seal needs the
             analysis and its sealing as one query, since both hold one
-            `Arc<SsaArtifact>`: worth it only if the render peak passes
-            preparation's again.
-         3. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
-            symbols 7.6, names 4.2), PF's.
-         4. **MM.5** the term arena (18.3 MB): a 56-byte node, side tables
-            in hash maps keyed by its own dense ids, a vector grown by
-            doubling.
-         5. **MM.6** one numbering (16.6 MB function and value table, 13.0
-            MB graph): each variable and operation held twice, F2's plan.
-         6. **MM.7** compact identities: a disposition (48 B per
-            instruction) and an imported value carry a 32-byte canonical
-            instruction id the graph already implies.
-         7. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
-            of it the type) and render's own structures (7.6 MB).
-         8. **MM.9** D26: one forced collect at each phase boundary,
-            measured.
+            `Arc<SsaArtifact>`: worth it only once the rest are done.
+         8. Follow-up (D11): `populate_certified_parameter_exprs` copies a
+            parameter's binding along same-width copies in a `while
+            changed` loop over every value, `O(V · chain)`; one pass in
+            definition order states the same set.
          Exit: heap bytes per operation and the 50-function session RSS
          gated as ratchets; `c ≤ 600 B` per operation, then `≤ 300 B`.
 6. **LP2 to LP4**, then **I**, **C2, C4**, **P7, P8, P9, P11**.
