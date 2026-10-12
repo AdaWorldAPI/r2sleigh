@@ -363,7 +363,8 @@ pub(crate) fn analysed_from(
 /// One function's walk, through the dispatch tables it reads (doc/adr-resolved-bodies.md, P6a).
 #[derive(Clone)]
 pub struct Walk {
-    root: Walked,
+    /// Shared with each analysis of the body; the tables stay the walk's.
+    root: std::sync::Arc<Walked>,
     tables: Vec<NativePointerTable>,
 }
 
@@ -388,7 +389,7 @@ pub fn walk(
     let dispatches = root.body.unresolved.iter().any(indirect);
     if !dispatches {
         return Ok(Walk {
-            root,
+            root: std::sync::Arc::new(root),
             tables: Vec::new(),
         });
     }
@@ -409,11 +410,12 @@ pub fn walk(
     let reads = native.dispatch_reads(&root, &imports, restatement)?;
     let tables = native.pointer_tables(&reads);
     if tables.is_empty() {
+        let root = std::sync::Arc::new(root);
         return Ok(Walk { root, tables });
     }
     let dispatched = tables.iter();
     let dispatched = dispatched.map(|table| (table.instruction, table.targets.clone()));
-    let root = native.walk_dispatched(entry, &dispatched.collect())?;
+    let root = std::sync::Arc::new(native.walk_dispatched(entry, &dispatched.collect())?);
     Ok(Walk { root, tables })
 }
 
@@ -424,7 +426,9 @@ pub fn walk(
 /// about its values used to walk, lift and prepare the same body twice.
 pub struct Prepared {
     artifact: std::sync::Arc<TrustedSsaArtifact>,
-    root: Walked,
+    /// The walked body the query database holds, shared rather than copied; its tables are not
+    /// held here, so they go when the walk does.
+    root: std::sync::Arc<Walked>,
     facts: Vec<crate::CalleeFacts>,
     declared: Vec<r2types::SourceOwnedCalleeSignature>,
     ptr_bits: u32,
@@ -975,7 +979,6 @@ fn analyse(
         machine: machine(target)?,
         control: program.control().ssa_execution_control(),
     };
-    let (root, tables) = (walk.root.clone(), walk.tables.clone());
     let ptr_bits = crate::engine_effective_ptr_bits(target.arch);
 
     let Read {
@@ -983,13 +986,13 @@ fn analyse(
         facts,
         declared,
         unread,
-    } = read_callees(&native, target, &root, entry, ptr_bits);
+    } = read_callees(&native, target, &walk.root, entry, ptr_bits);
 
     let (artifact, _) = native.resolve(entry, walk, &callees, true)?;
-    let tables = tables.iter().map(DispatchTable::of).collect();
+    let tables = walk.tables.iter().map(DispatchTable::of).collect();
     Ok(Prepared {
         artifact,
-        root,
+        root: std::sync::Arc::clone(&walk.root),
         facts,
         declared,
         ptr_bits,
@@ -2536,7 +2539,7 @@ mod tests {
             declarations: &declarations,
         };
         let walked = walk(&target, &HandsAfterADouble, BASE).expect("walks");
-        let handed = handed(&target, &HandsAfterADouble, walked.root.body);
+        let handed = handed(&target, &HandsAfterADouble, walked.root.body.clone());
         assert_eq!(handed, [0x1020]);
     }
 }

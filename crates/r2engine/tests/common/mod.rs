@@ -163,6 +163,20 @@ const PLT: [u8; 0x26] = [
     0xc3, // ret
 ];
 
+/// The same `.plt` with a cache-line flush before the stub's jump through the slot: an effect the
+/// jump does not carry, so the body is no import stub.
+const PLT_FENCED: [u8; 0x26] = {
+    let mut bytes = PLT;
+    // clflush [rax]; jmp qword [rip + 0xfe7], the slot again from 0x13.
+    let stub = [0x0f, 0xae, 0x38, 0xff, 0x25, 0xe7, 0x0f, 0x00, 0x00];
+    let mut at = 0;
+    while at < stub.len() {
+        bytes[0x10 + at] = stub[at];
+        at += 1;
+    }
+    bytes
+};
+
 /// The same `.plt` as ld lays it out: PLT0 padded to its sixteen bytes with
 /// `nopl 0x0(%rax)`, which lifts to no operation at all, as `endbr64` does.
 const PLT_NOP_PADDED: [u8; 0x26] = {
@@ -524,6 +538,13 @@ impl Literal {
         for section in &mut program.container.sections {
             section.align = 16;
         }
+        program
+    }
+
+    /// The same `.plt`, its stub flushing a cache line before it jumps.
+    pub fn plt_fenced() -> Self {
+        let mut program = Self::plt();
+        program.code = &PLT_FENCED;
         program
     }
 

@@ -42,6 +42,7 @@ struct Cli {
 }
 
 fn main() {
+    let profile = allocator::profile();
     let cli = Cli::parse();
     let mut session = match session::Session::open(&cli.file) {
         Ok(session) => session,
@@ -74,7 +75,7 @@ fn main() {
     if let Some(script) = cli.command {
         // A quit is how a script ends, not a failure of it.
         let run = run_script(&mut session, &mut reader, &script);
-        allocator::report();
+        allocator::report(profile);
         std::process::exit(if run.failed { 1 } else { 0 });
     }
 

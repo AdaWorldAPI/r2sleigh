@@ -90,8 +90,9 @@ pub(crate) fn import_stub(
     })
 }
 
-/// An instruction that defines state a caller observes beside the transfer at `at`: a store, a
-/// call, or a register write the transfer does not carry and the convention preserves or passes.
+/// An instruction that defines state a caller observes beside the transfer at `at`: an effect
+/// (`SSAOp::has_observable_effects`), a call, or a register write the transfer does not carry and
+/// the convention preserves or passes.
 fn observable_beside(
     prepared: &r2ssa::SsaArtifact,
     at: r2ssa::InstId,
@@ -114,10 +115,7 @@ fn observable_beside(
         .map(|inst| inst.inputs.to_vec())
         .unwrap_or_default();
     graph.insts.iter().find(|inst| {
-        if matches!(
-            inst.payload,
-            r2ssa::InstPayload::Op(r2ssa::SSAOp::Store { .. } | r2ssa::SSAOp::Call { .. })
-        ) {
+        if inst.id != at && effect(&inst.payload) {
             return true;
         }
         let Some(output) = inst.output else {
@@ -143,4 +141,17 @@ fn observable_beside(
                 _ => false,
             })
     })
+}
+
+/// Whether an operation does something a caller observes besides its output: a call, or an effect
+/// other than control flow and the boundary read a transfer makes (`CallUse`).
+fn effect(payload: &r2ssa::InstPayload) -> bool {
+    let r2ssa::InstPayload::Op(op) = payload else {
+        return false;
+    };
+    match op {
+        r2ssa::SSAOp::Call { .. } | r2ssa::SSAOp::CallInd { .. } => true,
+        r2ssa::SSAOp::CallUse { .. } => false,
+        _ => !op.is_control_flow() && op.has_observable_effects(false),
+    }
 }

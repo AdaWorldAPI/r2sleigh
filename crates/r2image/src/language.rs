@@ -16,14 +16,21 @@ pub(crate) fn read(file: &object::File<'_>, symbols: &[Symbol]) -> Languages {
     let decorated = file.format() == object::BinaryFormat::MachO
         || file.format() == object::BinaryFormat::Pe && !file.is_64();
     let units = compile_units(file);
-    let stated = Stated::read(file, symbols, &units);
+    let buildinfo = go_buildinfo(file);
+    let go_version =
+        buildinfo.and_then(|info| buildinfo_version(info, &|at, len| read_at(file, at, len)));
+    let go_assembly = go_assembly(file, symbols);
+    // Build information or a pclntab found where Go's own readers look states Go, named or not,
+    // whether or not its version parses (a `devel` toolchain's does not).
+    let go_found = buildinfo.is_some() || go_assembly.is_some();
+    let stated = Stated::read(file, symbols, &units, go_found);
     let mangled = mangled(symbols, decorated, &|language| stated.states(language));
     let program = stated.program();
     Languages {
         program,
         ranges: disjoint(units, mangled),
-        go_version: go_version(file),
-        go_assembly: go_assembly(file, symbols),
+        go_version,
+        go_assembly,
     }
 }
 
@@ -82,9 +89,9 @@ fn pclntab_assembly(data: &[u8], little: bool) -> Option<BTreeSet<u64>> {
     Some(assembly)
 }
 
-/// The Go version the build information states. ELF and Mach-O name its section; a PE holds it
-/// in `.data` at a 16-byte boundary, where Go's own `debug/buildinfo` looks.
-fn go_version(file: &object::File<'_>) -> Option<(u32, u32)> {
+/// The build information blob, headed by its magic. ELF and Mach-O name its section; a PE holds
+/// it in `.data` at a 16-byte boundary, where Go's own `debug/buildinfo` looks.
+fn go_buildinfo<'d>(file: &'d object::File<'_>) -> Option<&'d [u8]> {
     const MAGIC: &[u8] = b"\xff Go buildinf:";
     let named = ["__go_buildinfo", ".go.buildinfo"]
         .iter()
@@ -96,7 +103,7 @@ fn go_version(file: &object::File<'_>) -> Option<(u32, u32)> {
             .find(|at| data[*at..].starts_with(MAGIC))?;
         Some(&data[at..])
     })?;
-    buildinfo_version(info, &|vaddr, len| read_at(file, vaddr, len))
+    info.starts_with(MAGIC).then_some(info)
 }
 
 /// The version in a build information blob: inline after its 32-byte header from Go 1.18
@@ -198,6 +205,7 @@ impl Stated {
         file: &object::File<'_>,
         symbols: &[Symbol],
         units: &[(Range<u64>, SourceLanguage)],
+        go_found: bool,
     ) -> Self {
         let section = |name: &str| file.section_by_name(name).is_some();
         let unit = |language: SourceLanguage| units.iter().any(|(_, stated)| *stated == language);
@@ -221,6 +229,7 @@ impl Stated {
             ]
             .iter()
             .any(|name| section(name))
+                || go_found
                 || unit(SourceLanguage::Go),
             rust: file
                 .section_by_name(".comment")

@@ -1166,7 +1166,6 @@ pub struct MachineEntity {
     output: MachineValueBinding,
     root: MachineExprId,
     producer: CanonicalInstructionId,
-    source_obligations: crate::obligation::InstructionObligations,
 }
 
 impl MachineEntity {
@@ -1180,10 +1179,6 @@ impl MachineEntity {
 
     pub const fn producer(&self) -> CanonicalInstructionId {
         self.producer
-    }
-
-    pub const fn source_obligations(&self) -> &crate::obligation::InstructionObligations {
-        &self.source_obligations
     }
 }
 
@@ -1351,7 +1346,6 @@ impl MachineProjection {
                         output,
                         root,
                         producer: disposition.id,
-                        source_obligations: disposition.obligations.clone(),
                     });
                 }
                 Err(error) if is_local_projection_failure(&error, inst.id) => {
@@ -2640,14 +2634,6 @@ impl MachineFunction {
                 );
                 return Err(MachineBuildError::EntityMismatch(inst_id));
             }
-            if disposition.obligations != entity.source_obligations
-                || entity
-                    .source_obligations
-                    .iter()
-                    .any(|id| id.instruction != entity.producer)
-            {
-                return Err(MachineBuildError::ObligationMismatch(inst_id));
-            }
             let inst = graph
                 .inst(inst_id)
                 .ok_or(MachineBuildError::MissingInstruction(inst_id))?;
@@ -3147,8 +3133,7 @@ impl MachineFunction {
             .obligations()
             .instruction_for_inst(inst.id)
             .ok_or(MachineBuildError::MissingInstructionDisposition(inst.id))?;
-        if disposition.id != entity.producer || disposition.obligations != entity.source_obligations
-        {
+        if disposition.id != entity.producer {
             return Err(MachineBuildError::ObligationMismatch(inst.id));
         }
         Ok(())

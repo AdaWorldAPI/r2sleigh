@@ -325,7 +325,6 @@ fn unsigned_64_bit_multiply_retains_wrapping_arithmetic() {
         .instruction_for_inst(mult_inst)
         .expect("multiply disposition");
     assert_eq!(entity.producer(), disposition.id);
-    assert_eq!(entity.source_obligations(), &disposition.obligations);
 }
 
 #[test]

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 77826bfe81a6a851236c5ca34484a78c5563414fde611452e3fa62a0c9b686ca # shrinks to c = Ptr(Struct([(8, Bottom), (8, Top)])), left = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], right = [15, 1, 1, 64, 21, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+cc 6849c21b8539bf6470023241e238bb3cd0774f918feb7ffb3f29b629ad01631d # shrinks to c = Struct({0: Top, 8: Top}), left = [1, 15, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], right = [22, 67, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+cc ad60df3d01af1fb0f61c7fef7d5d23d6b076f1fbdf64d32967b06e3dae7136ad # shrinks to a = Array(Float(64), Some(2)), b = Array(Float(32), None), c = Array(Float(32), Some(2))

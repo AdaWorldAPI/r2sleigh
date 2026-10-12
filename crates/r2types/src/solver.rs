@@ -44,50 +44,147 @@ pub struct SolvedTypes<K = SSAVar> {
     pub var_types: HashMap<K, TypeId>,
 }
 
-/// Solve a constraint set.
+/// Solve a constraint set: the constraints replayed through one [`IncrementalSolver`].
 ///
 /// O(C α(N)) for the classes plus one meet per bound after the first on its
 /// class, each memoised on the operand pair.
 pub fn solve_constraints<K: SolverNode>(
-    mut arena: TypeArena,
+    arena: TypeArena,
     constraints: &[Constraint<K>],
 ) -> SolvedTypes<K> {
-    let mut nodes = NodeInterner::<K>::default();
-    let mut classes = NodeClasses::default();
-    let mut bounds = Vec::new();
+    let mut solver = IncrementalSolver::new(arena);
     for constraint in constraints {
         match constraint {
-            Constraint::Equal { a, b, .. } => {
-                let a = nodes.intern(a, &mut classes);
-                let b = nodes.intern(b, &mut classes);
-                classes.union(a, b);
-            }
-            Constraint::Subtype { var, ty, .. } => {
-                bounds.push((nodes.intern(var, &mut classes), *ty));
-            }
+            Constraint::Equal { a, b, .. } => solver.equal(a, b),
+            Constraint::Subtype { var, ty, .. } => solver.bound(var, *ty),
+        }
+    }
+    solver.into_solved()
+}
+
+/// The classes and their types as constraints arrive, so a constraint found late joins the
+/// solution without a restart (adr-next-pass model 5).
+///
+/// A class's type is the meet of every bound on its members: a bound meets it into its class,
+/// a union meets the two classes' types. `TypeLattice::meet` is the greatest lower bound of the
+/// subtype order (lattice.rs, its properties tested), so the result does not depend on the order
+/// constraints arrive in, and equals a batch solve of the same set. `O(α(N))` per constraint plus
+/// one memoised meet.
+#[derive(Debug)]
+pub struct IncrementalSolver<K> {
+    arena: TypeArena,
+    nodes: NodeInterner<K>,
+    classes: NodeClasses,
+    /// Each class's type, held at its root.
+    types: Vec<Option<TypeId>>,
+    meets: HashMap<(TypeId, TypeId), TypeId>,
+}
+
+impl<K: SolverNode> IncrementalSolver<K> {
+    pub fn new(arena: TypeArena) -> Self {
+        Self {
+            arena,
+            nodes: NodeInterner::default(),
+            classes: NodeClasses::default(),
+            types: Vec::new(),
+            meets: HashMap::new(),
         }
     }
 
-    let mut class_types: Vec<Option<TypeId>> = vec![None; nodes.len()];
-    let mut meets: HashMap<(TypeId, TypeId), TypeId> = HashMap::new();
-    for (node, bound) in bounds {
-        let class = classes.find(node);
-        let met = match class_types[class] {
-            None => bound,
-            Some(current) => *meets
-                .entry((current, bound))
-                .or_insert_with(|| TypeLattice::meet(&mut arena, current, bound)),
+    /// The arena types are interned into, the solver's own.
+    pub fn arena(&self) -> &TypeArena {
+        &self.arena
+    }
+
+    pub fn arena_mut(&mut self) -> &mut TypeArena {
+        &mut self.arena
+    }
+
+    /// `a` and `b` are one variable.
+    pub fn equal(&mut self, a: &K, b: &K) {
+        let (a, b) = (self.intern(a), self.intern(b));
+        let (a, b) = (self.classes.find(a), self.classes.find(b));
+        if a == b {
+            return;
+        }
+        let met = match (self.types[a], self.types[b]) {
+            (Some(x), Some(y)) => Some(self.meet(x, y)),
+            (x, y) => x.or(y),
         };
-        class_types[class] = Some(met);
+        let root = self.classes.union(a, b);
+        self.types[root] = met;
     }
 
-    let mut var_types = HashMap::new();
-    for (id, node) in nodes.into_nodes().into_iter().enumerate() {
-        if let Some(ty) = class_types[classes.find(id)] {
-            var_types.insert(node, ty);
+    /// `node` lies below `ty`.
+    pub fn bound(&mut self, node: &K, ty: TypeId) {
+        let node = self.intern(node);
+        let class = self.classes.find(node);
+        let met = match self.types[class] {
+            None => ty,
+            Some(current) => self.meet(current, ty),
+        };
+        self.types[class] = Some(met);
+    }
+
+    /// The type of `node`'s class, where some bound reached it.
+    pub fn type_of(&mut self, node: &K) -> Option<TypeId> {
+        let id = self.nodes.get(node)?;
+        let class = self.classes.find(id);
+        self.types[class]
+    }
+
+    /// The class `node` is in, by its root, where the node has been seen.
+    pub fn class_of(&mut self, node: &K) -> Option<usize> {
+        let id = self.nodes.get(node)?;
+        Some(self.classes.find(id))
+    }
+
+    /// Every node whose class has a type, with it, in the order the nodes were first seen.
+    pub fn typed(&mut self) -> Vec<(K, TypeId)> {
+        let mut typed = Vec::new();
+        for id in 0..self.nodes.nodes.len() {
+            if let Some(ty) = self.types[self.classes.find(id)] {
+                typed.push((self.nodes.nodes[id].clone(), ty));
+            }
+        }
+        typed
+    }
+
+    /// Every node with a typed class, and its type.
+    pub fn into_solved(mut self) -> SolvedTypes<K> {
+        let mut var_types = HashMap::new();
+        for (id, node) in std::mem::take(&mut self.nodes)
+            .into_nodes()
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(ty) = self.types[self.classes.find(id)] {
+                var_types.insert(node, ty);
+            }
+        }
+        SolvedTypes {
+            arena: self.arena,
+            var_types,
         }
     }
-    SolvedTypes { arena, var_types }
+
+    fn intern(&mut self, node: &K) -> VarId {
+        let id = self.nodes.intern(node, &mut self.classes);
+        if id == self.types.len() {
+            self.types.push(None);
+        }
+        id
+    }
+
+    fn meet(&mut self, a: TypeId, b: TypeId) -> TypeId {
+        let key = (a.min(b), a.max(b));
+        if let Some(met) = self.meets.get(&key) {
+            return *met;
+        }
+        let met = TypeLattice::meet(&mut self.arena, a, b);
+        self.meets.insert(key, met);
+        met
+    }
 }
 
 #[derive(Debug)]
@@ -116,8 +213,8 @@ impl<K: SolverNode> NodeInterner<K> {
         id
     }
 
-    fn len(&self) -> usize {
-        self.nodes.len()
+    fn get(&self, node: &K) -> Option<VarId> {
+        self.ids.get(node).copied()
     }
 
     fn into_nodes(self) -> Vec<K> {
@@ -154,10 +251,11 @@ impl NodeClasses {
         root
     }
 
-    fn union(&mut self, a: VarId, b: VarId) {
+    /// Merge two classes; the root that stands for both.
+    fn union(&mut self, a: VarId, b: VarId) -> VarId {
         let (a, b) = (self.find(a), self.find(b));
         if a == b {
-            return;
+            return a;
         }
         let (high, low) = if self.rank[a] < self.rank[b] {
             (b, a)
@@ -168,6 +266,7 @@ impl NodeClasses {
         if self.rank[high] == self.rank[low] {
             self.rank[high] = self.rank[high].saturating_add(1);
         }
+        high
     }
 }
 

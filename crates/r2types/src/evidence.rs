@@ -14,14 +14,14 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::constraint::{Constraint, ConstraintSource, SolverNode};
+use crate::constraint::SolverNode;
 use crate::context::{ExternalStackBase, StackSlotKey};
 use crate::convert::{CTypeLike, to_c_type_like};
 use crate::facts::FunctionType;
 use crate::model::{Signedness, Type, TypeArena, TypeId};
 
 use crate::signedness::{ScalarSignednessEvidence, scalar_signedness_of};
-use crate::solver::{SolvedTypes, solve_constraints};
+use crate::solver::IncrementalSolver;
 
 /// A node of the recovered type graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -87,13 +87,11 @@ pub fn solve_evidence_types(
     // argument: a round continues only by inserting a pair into `asserted`,
     // and the pairs it can insert are (an operand of a certified access's
     // address sum, the pointee of that access's width) -- at most two per
-    // certified memory access. So there are at most 2A + 1 solves for A
-    // accesses, and the loop stops at its fixpoint rather than at a count.
-    let mut solved = builder.solve();
-    while builder.gather_indexed_pointer_bases(&solved) {
-        solved = builder.solve();
-    }
-    builder.read_back(&solved)
+    // certified memory access. So there are at most 2A + 1 rounds for A
+    // accesses, each adding its bounds to the one solver, and the loop stops at
+    // its fixpoint rather than at a count.
+    while builder.gather_indexed_pointer_bases() {}
+    builder.read_back()
 }
 
 /// Interning that keeps the lattice structural and the spelling intact.
@@ -111,15 +109,12 @@ struct SpelledType {
 struct EvidenceBuilder<'a> {
     source: &'a r2ssa::SsaArtifact,
     ptr_bits: u32,
-    arena: TypeArena,
-    constraints: Vec<Constraint<EvidenceNode>>,
+    /// The classes and their types as the evidence arrives; its arena interns every type.
+    solver: IncrementalSolver<EvidenceNode>,
     /// Spellings asserted on a node, kept to name the solved type.
     spellings: Vec<(EvidenceNode, TypeId, CTypeLike)>,
     /// Bounds already asserted, so a refinement round can tell what is new.
     asserted: HashSet<(EvidenceNode, TypeId)>,
-    /// Same union-find the solver runs, so a spelling asserted on one member of
-    /// an equality class can name the whole class.
-    classes: NodeClasses,
 }
 
 impl<'a> EvidenceBuilder<'a> {
@@ -127,11 +122,9 @@ impl<'a> EvidenceBuilder<'a> {
         Self {
             source,
             ptr_bits,
-            arena: TypeArena::default(),
-            constraints: Vec::new(),
+            solver: IncrementalSolver::new(TypeArena::default()),
             spellings: Vec::new(),
             asserted: HashSet::new(),
-            classes: NodeClasses::default(),
         }
     }
 
@@ -162,45 +155,24 @@ impl<'a> EvidenceBuilder<'a> {
         if self.value_size(a) != self.value_size(b) {
             return;
         }
-        let a = EvidenceNode::Value(a);
-        let b = EvidenceNode::Value(b);
-        self.classes.union(a, b);
-        self.constraints.push(Constraint::Equal {
-            a,
-            b,
-            source: ConstraintSource::Inferred,
-        });
+        self.solver
+            .equal(&EvidenceNode::Value(a), &EvidenceNode::Value(b));
     }
 
     fn equate_nodes(&mut self, a: EvidenceNode, b: EvidenceNode) {
-        self.classes.union(a, b);
-        self.constraints.push(Constraint::Equal {
-            a,
-            b,
-            source: ConstraintSource::Inferred,
-        });
+        self.solver.equal(&a, &b);
     }
 
     /// Record an upper bound, and report whether it was not already recorded.
-    fn bound(
-        &mut self,
-        node: EvidenceNode,
-        spelled: SpelledType,
-        source: ConstraintSource,
-    ) -> bool {
+    fn bound(&mut self, node: EvidenceNode, spelled: SpelledType) -> bool {
         if !self.asserted.insert((node, spelled.ty)) {
             return false;
         }
-        self.classes.ensure(node);
         self.spellings.push((node, spelled.ty, spelled.spelling));
         // An upper bound, not an assignment: two prototypes that both describe
         // one value must intersect, so the more specific one survives whatever
-        // order the worklist reaches them in.
-        self.constraints.push(Constraint::Subtype {
-            var: node,
-            ty: spelled.ty,
-            source,
-        });
+        // order the evidence reaches them in.
+        self.solver.bound(&node, spelled.ty);
         true
     }
 
@@ -267,11 +239,7 @@ impl<'a> EvidenceBuilder<'a> {
                 let Some(spelled) = self.intern_spelled(&ty) else {
                     continue;
                 };
-                self.bound(
-                    EvidenceNode::Value(value),
-                    spelled,
-                    ConstraintSource::Inferred,
-                );
+                self.bound(EvidenceNode::Value(value), spelled);
             }
         }
     }
@@ -315,7 +283,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&declared) else {
                 continue;
             };
-            self.bound(node, spelled, ConstraintSource::SignatureRegistry);
+            self.bound(node, spelled);
         }
     }
 
@@ -357,7 +325,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&elem) else {
                 continue;
             };
-            self.bound(node, spelled, ConstraintSource::Inferred);
+            self.bound(node, spelled);
         }
         for (value, object) in cell_pairs {
             self.equate_nodes(value, object);
@@ -438,7 +406,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&elem) else {
                 continue;
             };
-            self.bound(node, spelled, ConstraintSource::Inferred);
+            self.bound(node, spelled);
         }
     }
 
@@ -450,9 +418,10 @@ impl<'a> EvidenceBuilder<'a> {
     /// treated this way: a constant displacement reaches a field of one object,
     /// which says nothing about an element type and would contradict the struct
     /// the field belongs to. Returns whether anything new was learned.
-    fn gather_indexed_pointer_bases(&mut self, solved: &SolvedTypes<EvidenceNode>) -> bool {
+    fn gather_indexed_pointer_bases(&mut self) -> bool {
         let mut discovered = Vec::new();
-        for access in self.source.certificates().memory_accesses.values() {
+        let source = self.source;
+        for access in source.certificates().memory_accesses.values() {
             if access.space != r2il::SpaceId::Ram {
                 continue;
             }
@@ -462,8 +431,8 @@ impl<'a> EvidenceBuilder<'a> {
             let Some((left, right)) = self.address_sum_operands(access.address) else {
                 continue;
             };
-            let left_pointer = self.solved_is_pointer(solved, left);
-            let right_pointer = self.solved_is_pointer(solved, right);
+            let left_pointer = self.solved_is_pointer(left);
+            let right_pointer = self.solved_is_pointer(right);
             // Exactly one side has been shown to be a pointer; the other is the
             // index. Two pointers, or none, decides nothing.
             let base = match (left_pointer, right_pointer) {
@@ -483,7 +452,7 @@ impl<'a> EvidenceBuilder<'a> {
             let Some(spelled) = self.intern_spelled(&elem) else {
                 continue;
             };
-            added |= self.bound(node, spelled, ConstraintSource::Inferred);
+            added |= self.bound(node, spelled);
         }
         added
     }
@@ -523,11 +492,9 @@ impl<'a> EvidenceBuilder<'a> {
         None
     }
 
-    fn solved_is_pointer(&self, solved: &SolvedTypes<EvidenceNode>, value: r2ssa::ValueId) -> bool {
-        solved
-            .var_types
-            .get(&EvidenceNode::Value(value))
-            .is_some_and(|ty| matches!(solved.arena.get(*ty), Type::Ptr(_)))
+    fn solved_is_pointer(&mut self, value: r2ssa::ValueId) -> bool {
+        let ty = self.solver.type_of(&EvidenceNode::Value(value));
+        ty.is_some_and(|ty| matches!(self.solver.arena().get(ty), Type::Ptr(_)))
     }
 
     /// Memory objects that hold exactly one value of one width.
@@ -643,50 +610,63 @@ impl<'a> EvidenceBuilder<'a> {
             | CTypeLike::BitVector(_)
             | CTypeLike::Function { .. }
             | CTypeLike::UnprototypedFunction(_) => None,
-            CTypeLike::Bool => Some(self.arena.bool_ty()),
-            CTypeLike::Int { bits, signedness } => Some(self.arena.int(*bits, *signedness)),
-            CTypeLike::Float(bits) => Some(self.arena.float(*bits)),
+            CTypeLike::Bool => Some(self.solver.arena().bool_ty()),
+            CTypeLike::Int { bits, signedness } => {
+                Some(self.solver.arena_mut().int(*bits, *signedness))
+            }
+            CTypeLike::Float(bits) => Some(self.solver.arena_mut().float(*bits)),
             CTypeLike::Pointer(inner) => {
-                let inner = self
-                    .intern_structural(inner)
-                    .unwrap_or_else(|| self.arena.top());
-                Some(self.arena.ptr(inner))
+                let inner = match self.intern_structural(inner) {
+                    Some(inner) => inner,
+                    None => self.solver.arena().top(),
+                };
+                Some(self.solver.arena_mut().ptr(inner))
             }
             CTypeLike::Array(inner, len) => {
                 let inner = self.intern_structural(inner)?;
-                Some(self.arena.array(inner, *len, None))
+                Some(self.solver.arena_mut().array(inner, *len, None))
             }
-            CTypeLike::Struct(name) => Some(self.arena.unknown_alias(format!("struct {name}"))),
-            CTypeLike::Union(name) => Some(self.arena.unknown_alias(format!("union {name}"))),
-            CTypeLike::Enum(name) => Some(self.arena.unknown_alias(format!("enum {name}"))),
+            CTypeLike::Struct(name) => Some(
+                self.solver
+                    .arena_mut()
+                    .unknown_alias(format!("struct {name}")),
+            ),
+            CTypeLike::Union(name) => Some(
+                self.solver
+                    .arena_mut()
+                    .unknown_alias(format!("union {name}")),
+            ),
+            CTypeLike::Enum(name) => Some(
+                self.solver
+                    .arena_mut()
+                    .unknown_alias(format!("enum {name}")),
+            ),
             CTypeLike::Typedef { name, .. } => {
                 let resolved = crate::parse_c_type_like(name, self.ptr_bits)?;
                 if matches!(resolved, CTypeLike::Typedef { .. }) {
-                    return Some(self.arena.unknown_alias(name.clone()));
+                    return Some(self.solver.arena_mut().unknown_alias(name.clone()));
                 }
                 self.intern_structural(&resolved)
             }
         }
     }
 
-    fn solve(&self) -> SolvedTypes<EvidenceNode> {
-        solve_constraints(self.arena.clone(), &self.constraints)
-    }
-
-    fn read_back(&mut self, solved: &SolvedTypes<EvidenceNode>) -> EvidenceTypes {
+    fn read_back(&mut self) -> EvidenceTypes {
         // A spelling names the solved type only when it is that type. The class
         // carries it because every member of an equality class is one variable.
-        let mut class_spellings: HashMap<EvidenceNode, CTypeLike> = HashMap::new();
-        for (node, ty, spelling) in &self.spellings {
-            if solved.var_types.get(node) != Some(ty) {
+        let mut class_spellings: HashMap<usize, CTypeLike> = HashMap::new();
+        for (node, ty, spelling) in std::mem::take(&mut self.spellings) {
+            if self.solver.type_of(&node) != Some(ty) {
                 continue;
             }
-            let root = self.classes.root(*node);
+            let Some(root) = self.solver.class_of(&node) else {
+                continue;
+            };
             match class_spellings.get(&root) {
                 None => {
-                    class_spellings.insert(root, spelling.clone());
+                    class_spellings.insert(root, spelling);
                 }
-                Some(existing) if existing == spelling => {}
+                Some(existing) if *existing == spelling => {}
                 Some(_) => {
                     // Two names for one type is not a conflict about the type,
                     // but it is no longer evidence for either name.
@@ -697,16 +677,16 @@ impl<'a> EvidenceBuilder<'a> {
 
         let mut types = EvidenceTypes::default();
         let mut object_types: HashMap<r2ssa::ObjectId, CTypeLike> = HashMap::new();
-        for (node, ty) in &solved.var_types {
-            let Some(resolved) = self.spell(solved, &class_spellings, *node, *ty) else {
+        for (node, ty) in self.solver.typed() {
+            let Some(resolved) = self.spell(&class_spellings, node, ty) else {
                 continue;
             };
             match node {
                 EvidenceNode::Value(value) => {
-                    types.value_types.insert(*value, resolved);
+                    types.value_types.insert(value, resolved);
                 }
                 EvidenceNode::Object(object) => {
-                    object_types.insert(*object, resolved);
+                    object_types.insert(object, resolved);
                 }
             }
         }
@@ -738,22 +718,21 @@ impl<'a> EvidenceBuilder<'a> {
 
     fn spell(
         &mut self,
-        solved: &SolvedTypes<EvidenceNode>,
-        class_spellings: &HashMap<EvidenceNode, CTypeLike>,
+        class_spellings: &HashMap<usize, CTypeLike>,
         node: EvidenceNode,
         ty: TypeId,
     ) -> Option<CTypeLike> {
         // A `Bottom` anywhere is contradictory evidence, which is not a type.
-        if type_is_unresolved(&solved.arena, ty) {
+        if type_is_unresolved(self.solver.arena(), ty) {
             return None;
         }
-        let root = self.classes.root(node);
-        if let Some(spelling) = class_spellings.get(&root)
+        let root = self.solver.class_of(&node);
+        if let Some(spelling) = root.and_then(|root| class_spellings.get(&root))
             && !matches!(spelling, CTypeLike::Unknown)
         {
             return Some(spelling.clone());
         }
-        let structural = structural_type_like(&solved.arena, ty);
+        let structural = structural_type_like(self.solver.arena(), ty);
         (!matches!(structural, CTypeLike::Unknown)).then_some(structural)
     }
 }
@@ -862,45 +841,6 @@ fn pointee_type_for_width(width: u32) -> Option<CTypeLike> {
     })
 }
 
-/// The equality classes the solver will build, mirrored so a spelling asserted
-/// on one member can name the class it belongs to.
-#[derive(Debug, Default)]
-struct NodeClasses {
-    parent: HashMap<EvidenceNode, EvidenceNode>,
-}
-
-impl NodeClasses {
-    fn ensure(&mut self, node: EvidenceNode) {
-        self.parent.entry(node).or_insert(node);
-    }
-
-    fn root(&mut self, node: EvidenceNode) -> EvidenceNode {
-        self.ensure(node);
-        let mut current = node;
-        while let Some(parent) = self.parent.get(&current).copied()
-            && parent != current
-        {
-            current = parent;
-        }
-        let root = current;
-        let mut walk = node;
-        while let Some(parent) = self.parent.insert(walk, root)
-            && parent != walk
-        {
-            walk = parent;
-        }
-        root
-    }
-
-    fn union(&mut self, a: EvidenceNode, b: EvidenceNode) {
-        let ra = self.root(a);
-        let rb = self.root(b);
-        if ra != rb {
-            self.parent.insert(rb, ra);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -916,17 +856,6 @@ mod tests {
         );
         assert_eq!(pointee_type_for_width(3), None);
         assert_eq!(pointee_type_for_width(0), None);
-    }
-
-    #[test]
-    fn node_classes_merge_transitively() {
-        let mut classes = NodeClasses::default();
-        let a = EvidenceNode::Value(r2ssa::ValueId(1));
-        let b = EvidenceNode::Value(r2ssa::ValueId(2));
-        let c = EvidenceNode::Object(r2ssa::ObjectId(3));
-        classes.union(a, b);
-        classes.union(b, c);
-        assert_eq!(classes.root(a), classes.root(c));
     }
 
     fn empty_artifact() -> r2ssa::SsaArtifact {
@@ -966,11 +895,11 @@ mod tests {
         let void_ptr = builder
             .intern_structural(&CTypeLike::Pointer(Box::new(CTypeLike::Void)))
             .expect("void* resolves");
-        let top = builder.arena.top();
-        let expected = builder.arena.ptr(top);
+        let top = builder.solver.arena().top();
+        let expected = builder.solver.arena_mut().ptr(top);
         assert_eq!(void_ptr, expected);
         assert_eq!(
-            structural_type_like(&builder.arena, void_ptr),
+            structural_type_like(builder.solver.arena(), void_ptr),
             CTypeLike::Pointer(Box::new(CTypeLike::Void))
         );
     }
@@ -985,13 +914,13 @@ mod tests {
 
         let constraints = [byte_ptr, word]
             .into_iter()
-            .map(|ty| Constraint::Subtype {
+            .map(|ty| crate::Constraint::Subtype {
                 var: node,
                 ty,
-                source: ConstraintSource::SignatureRegistry,
+                source: crate::ConstraintSource::SignatureRegistry,
             })
             .collect::<Vec<_>>();
-        let solved = solve_constraints(arena, &constraints);
+        let solved = crate::solve_constraints(arena, &constraints);
         let solved_ty = solved.var_types.get(&node).copied().expect("node visited");
         assert!(type_is_unresolved(&solved.arena, solved_ty));
     }
@@ -1008,13 +937,13 @@ mod tests {
         for order in [[void_ptr, byte_ptr], [byte_ptr, void_ptr]] {
             let constraints = order
                 .into_iter()
-                .map(|ty| Constraint::Subtype {
+                .map(|ty| crate::Constraint::Subtype {
                     var: node,
                     ty,
-                    source: ConstraintSource::SignatureRegistry,
+                    source: crate::ConstraintSource::SignatureRegistry,
                 })
                 .collect::<Vec<_>>();
-            let solved = solve_constraints(arena.clone(), &constraints);
+            let solved = crate::solve_constraints(arena.clone(), &constraints);
             let solved_ty = solved.var_types.get(&node).copied().expect("node typed");
             assert_eq!(
                 structural_type_like(&solved.arena, solved_ty),
