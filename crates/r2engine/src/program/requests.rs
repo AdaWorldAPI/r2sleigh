@@ -83,20 +83,12 @@ struct Shape {
     dispatches: std::collections::BTreeSet<u64>,
 }
 
-fn shape_of(blocks: &[crate::body::BodyBlock], dispatches: impl Iterator<Item = u64>) -> Shape {
-    let blocks = blocks
-        .iter()
-        .map(|block| {
-            let lifted = &block.lifted;
-            (
-                lifted.addr,
-                u64::from(lifted.size),
-                block.successors.clone(),
-            )
-        })
-        .collect();
+fn shape_of(
+    blocks: impl Iterator<Item = (u64, u64, Vec<(r2source::AdvisorySuccessorKind, u64)>)>,
+    dispatches: impl Iterator<Item = u64>,
+) -> Shape {
     Shape {
-        blocks,
+        blocks: blocks.collect(),
         dispatches: dispatches.collect(),
     }
 }
@@ -265,6 +257,17 @@ impl<S: Source + 'static> OpenProgram<S> {
         self.prepare(entry)
     }
 
+    /// One function's walk, dispatches followed, walked again where it was dropped.
+    pub fn walk(&mut self, entry: u64) -> Result<Arc<crate::native::Walk>, String> {
+        self.start_request();
+        self.loaded()?;
+        self.assembled()?;
+        let key = (entry, self.view().thumb_at(entry));
+        let walking =
+            (self.db.get::<super::analysis::Walked>(&key)).map_err(|cycle| format!("{cycle:?}"))?;
+        walking.0.clone().map_err(|refusal| refusal.to_string())
+    }
+
     /// The analysis, within a request already started.
     fn prepare(&self, entry: u64) -> Result<Arc<Prepared>, String> {
         self.loaded()?;
@@ -420,9 +423,14 @@ impl<S: Source + 'static> OpenProgram<S> {
         let target = self.target(entry)?;
         let reason = match self.analysed(entry) {
             // A defect reading what the analysis proved is an analysis defect like any other.
-            Ok(prepared) => match isolated(|| self.proved_listing(&target, &prepared)) {
-                Ok(listing) => {
-                    let shape = shape_of(&prepared.body().blocks, prepared.dispatches());
+            Ok(prepared) => match isolated(|| self.proved_listing(&target, entry, &prepared)) {
+                Ok(Err(reason)) => reason,
+                Ok(Ok(listing)) => {
+                    let blocks = (prepared.outline().blocks.iter()).map(|block| {
+                        let successors = block.successors.clone();
+                        (block.addr, u64::from(block.size), successors)
+                    });
+                    let shape = shape_of(blocks, prepared.dispatches());
                     return Ok((listing, shape));
                 }
                 Err(panicked) => NativeRefusal::from(panicked),
@@ -438,23 +446,28 @@ impl<S: Source + 'static> OpenProgram<S> {
         })
     }
 
-    /// The listing of a function whose analysis stands, each line carrying what it proved.
+    /// The listing of a function whose analysis stands, each line carrying what it proved. The lift
+    /// is the walk's, asked again: the analysis keeps only the walk's outline.
     fn proved_listing(
         &self,
         target: &crate::native::NativeTarget<'_>,
+        entry: u64,
         prepared: &Prepared,
-    ) -> FunctionListing {
-        let lifted = prepared.lifted();
+    ) -> Result<FunctionListing, NativeRefusal> {
+        let key = (entry, self.view().thumb_at(entry));
+        let walking = (self.db.get::<super::analysis::Walked>(&key))
+            .map_err(|cycle| NativeRefusal::Prepare(format!("{cycle:?}")))?;
+        let lifted = walking.0.as_ref().map_err(Clone::clone)?.lifted();
         let body = WalkedBody::new(&lifted, target.arch);
         let proved = Proved::new(prepared);
         let answered = Answered {
             body: Some(&body),
             ..self.answered(Some(&proved))
         };
-        FunctionListing {
+        Ok(FunctionListing {
             lines: listed_by_block(&answered, &lifted),
             refused: None,
-        }
+        })
     }
 
     /// The listing of the plain walk of a function whose analysis was refused.
@@ -475,7 +488,11 @@ impl<S: Source + 'static> OpenProgram<S> {
             .map(|stop| stop.addr)
             .collect();
         // The plain walk reads no table, so it follows no dispatch.
-        let shape = shape_of(&body.blocks, std::iter::empty());
+        let blocks = (body.blocks.iter()).map(|block| {
+            let successors = block.successors.clone();
+            (block.lifted.addr, u64::from(block.lifted.size), successors)
+        });
+        let shape = shape_of(blocks, std::iter::empty());
         let lifted = body
             .blocks
             .into_iter()

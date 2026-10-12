@@ -288,9 +288,7 @@ fn a_patch_that_stops_a_callee_s_callee_returning_makes_the_caller_stale() {
         .write(CALLER, &[0xe8, 0x0b, 0x00, 0x00, 0x00, 0xc3]);
     let ends = |program: &mut OpenProgram<Literal>| {
         let prepared = program.prepared(CALLER).expect("it prepares");
-        let blocks = prepared.lifted();
-        blocks
-            .iter()
+        (prepared.outline().blocks.iter())
             .map(|block| block.addr + u64::from(block.size))
             .max()
     };

@@ -1345,7 +1345,7 @@ fn unresolved_at_the_dispatch(prepared: &r2engine::native::Prepared) {
     assert!(prepared.table_at(0x1020).is_none());
     assert_eq!(
         prepared
-            .body()
+            .outline()
             .unresolved
             .iter()
             .map(|stop| (stop.addr, stop.reason))

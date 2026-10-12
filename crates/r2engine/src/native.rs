@@ -360,12 +360,61 @@ pub(crate) fn analysed_from(
     analyse(target, program, entry, walk)
 }
 
+/// What a prepared function keeps of its walk once preparation has read the lift: each block's
+/// extent and successors, where the walk stopped, and the callees it reached
+/// (doc/adr-memory-model.md, decision 1).
+pub struct Outline {
+    pub name: String,
+    pub blocks: Vec<OutlineBlock>,
+    pub unresolved: Vec<crate::body::Unresolved>,
+    callees: Vec<Callee>,
+}
+
+/// One walked block's extent and where control continues from it.
+pub struct OutlineBlock {
+    pub addr: u64,
+    pub size: u32,
+    pub successors: Vec<(r2source::AdvisorySuccessorKind, u64)>,
+}
+
+impl Outline {
+    fn of(walked: &Walked) -> Self {
+        let blocks = (walked.body.blocks.iter())
+            .map(|block| OutlineBlock {
+                addr: block.lifted.addr,
+                size: block.lifted.size,
+                successors: block.successors.clone(),
+            })
+            .collect();
+        Self {
+            name: walked.name.clone(),
+            blocks,
+            unresolved: walked.body.unresolved.clone(),
+            callees: walked.callees.clone(),
+        }
+    }
+}
+
 /// One function's walk, through the dispatch tables it reads (doc/adr-resolved-bodies.md, P6a).
 #[derive(Clone)]
 pub struct Walk {
     /// Shared with each analysis of the body; the tables stay the walk's.
     root: std::sync::Arc<Walked>,
     tables: Vec<NativePointerTable>,
+}
+
+impl Walk {
+    /// The walked body, dispatches followed.
+    pub fn body(&self) -> &crate::body::Body {
+        &self.root.body
+    }
+
+    /// The lift of each block of the body, dispatches followed.
+    pub fn lifted(&self) -> Vec<r2il::R2ILBlock> {
+        (self.root.body.blocks.iter())
+            .map(|block| block.lifted.clone())
+            .collect()
+    }
 }
 
 /// Walk one function, and where a dispatch stops the walk, read its tables and walk again through them.
@@ -426,9 +475,8 @@ pub fn walk(
 /// about its values used to walk, lift and prepare the same body twice.
 pub struct Prepared {
     artifact: std::sync::Arc<TrustedSsaArtifact>,
-    /// The walked body the query database holds, shared rather than copied; its tables are not
-    /// held here, so they go when the walk does.
-    root: std::sync::Arc<Walked>,
+    /// The walk's outline; its lift, which preparation has read, goes with the walk.
+    outline: Outline,
     facts: Vec<crate::CalleeFacts>,
     declared: Vec<r2types::SourceOwnedCalleeSignature>,
     ptr_bits: u32,
@@ -473,8 +521,8 @@ impl Prepared {
     }
 
     /// The walked body's blocks, dispatches followed, and where the walk could not follow.
-    pub fn body(&self) -> &crate::body::Body {
-        &self.root.body
+    pub const fn outline(&self) -> &Outline {
+        &self.outline
     }
 
     pub fn artifact(&self) -> &std::sync::Arc<TrustedSsaArtifact> {
@@ -483,17 +531,7 @@ impl Prepared {
 
     /// What the program calls the function this analysis is of.
     pub fn name(&self) -> &str {
-        &self.root.name
-    }
-
-    /// The lift of each block of the body this analysis read, dispatches followed.
-    pub fn lifted(&self) -> Vec<r2il::R2ILBlock> {
-        self.root
-            .body
-            .blocks
-            .iter()
-            .map(|block| block.lifted.clone())
-            .collect()
+        &self.outline.name
     }
 
     /// What the program declares about each callee this body calls, where it declares one.
@@ -664,7 +702,7 @@ fn request(
 ) -> EngineFunctionDecompileRequestInput {
     let Prepared {
         artifact,
-        root,
+        outline,
         facts,
         declared,
         ptr_bits,
@@ -673,10 +711,10 @@ fn request(
         tables: _,
     } = prepared;
     let block_count = artifact.source_block_count();
-    let signatures = declared_signatures(target, root, extents);
+    let signatures = declared_signatures(target, &outline.callees, extents);
     EngineFunctionDecompileRequestInput::single_function(
         EngineFunctionInput {
-            function_name: root.name.clone(),
+            function_name: outline.name.clone(),
             function_addr: entry,
             // The artifact owns the lift and the request reads it from there.
             blocks: Vec::new(),
@@ -992,7 +1030,7 @@ fn analyse(
     let tables = walk.tables.iter().map(DispatchTable::of).collect();
     Ok(Prepared {
         artifact,
-        root: std::sync::Arc::clone(&walk.root),
+        outline: Outline::of(&walk.root),
         facts,
         declared,
         ptr_bits,
@@ -1045,7 +1083,7 @@ pub(crate) fn declared_pointers(target: &NativeTarget<'_>, name: &str) -> Vec<Ca
 /// name the call renders with.
 fn declared_signatures(
     target: &NativeTarget<'_>,
-    root: &Walked,
+    callees: &[Callee],
     extents: &r2types::ProgramExtents,
 ) -> r2types::ParsedExternalContext {
     let mut context = r2types::ParsedExternalContext {
@@ -1056,7 +1094,7 @@ fn declared_signatures(
         return context;
     };
     let placement = Placement::new(target, &machine);
-    for callee in &root.callees {
+    for callee in callees {
         let declared = Declared::body(target, callee.address).or_else(|| {
             callee
                 .import

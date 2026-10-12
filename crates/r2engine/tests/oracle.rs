@@ -299,9 +299,9 @@ fn judged(literal: Literal, entry: u64, injected: &[(u64, Injected)]) -> Vec<Fai
         .listing(Listing { start: entry, stop })
         .expect("it lists");
     // The body as the analysis walked it, through each table it read, so a run follows a dispatch into its arms.
-    let prepared = program.prepared(entry).expect("it prepares");
+    let walk = program.walk(entry).expect("it walks");
     let machine = Decoders::at(&program, entry).expect("a decoder");
-    let lift = Lift::of(prepared.body(), machine, program.endian(), program.source());
+    let lift = Lift::of(walk.body(), machine, program.endian(), program.source());
     let mut ledger = Ledger::default();
     ledger.claim("pdf", &pdf);
     ledger.claim("pd", &pd.value);
