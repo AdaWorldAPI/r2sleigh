@@ -1044,21 +1044,10 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
         )]),
     };
     let mut render = FunctionRenderFacts::default();
-    render.certified_exprs.insert(
-        value,
-        CertifiedExpr {
-            id: r2ssa::SemanticId::expression(value),
-            fact: ExpressionRenderFact {
-                value,
-                defining_inst: Some(r2ssa::InstId(4)),
-                width: 8,
-                renderable: true,
-            },
-            inputs: Vec::new(),
-            bindings: BTreeSet::from([r2ssa::SemanticId::Parameter(0)]),
-            guarded_phi: None,
-        },
-    );
+    render.renderable_expressions.insert(value);
+    render
+        .bindings
+        .insert(value, BTreeSet::from([r2ssa::SemanticId::Parameter(0)]));
     let signature = FunctionSignatureSpec {
         ret_type: Some(CTypeLike::Int {
             bits: 64,
@@ -1084,7 +1073,16 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
     .with_callsites(callsites)
     .with_render(render);
 
-    assert_eq!(facts.apply_certified_call_argument_type_constraints(64), 1);
+    // The argument is bound to the parameter itself: no definition to walk.
+    let mut block = R2ILBlock::new(0x401000, 4);
+    block.push(R2ILOp::Return {
+        target: Varnode::register(0x10, 8),
+    });
+    let graph = r2ssa::SsaArtifact::raw(&[block], None).expect("SSA");
+    assert_eq!(
+        facts.apply_certified_call_argument_type_constraints(graph.graph(), 64),
+        1
+    );
     let typed = facts
         .type_facts()
         .render_authorized_signature()
@@ -1407,13 +1405,10 @@ fn prepared_call_results_bind_certified_exprs_to_stable_call_ids() {
         .and_then(|results| results.result_for_value(store_value))
         .expect("canonical call-result fact");
     let binding = r2ssa::SemanticId::call(result.call_site_id);
-    let certified = facts
-        .render()
-        .and_then(|render| render.certified_expr_for_value(store_value))
-        .expect("certified call-result expression");
+    let render = facts.render().expect("render facts");
 
-    assert!(certified.fact.renderable);
-    assert!(certified.bindings.contains(&binding));
+    assert!(render.expression_is_renderable(store_value));
+    assert!(render.bindings_of(store_value).any(|role| *role == binding));
 }
 
 #[test]
@@ -2124,9 +2119,7 @@ fn prepared_render_facts_certify_params_stack_memory_and_returns_by_semantic_id(
         .expect("entry rdi value");
     let param_id = r2ssa::SemanticId::parameter(0).expect("parameter ID");
     assert!(
-        render
-            .certified_expr_for_value(rdi.id)
-            .is_some_and(|expr| expr.bindings.contains(&param_id)),
+        render.bindings_of(rdi.id).any(|role| *role == param_id),
         "entry parameter binding must use ABI slot identity"
     );
     assert!(render.parameter_values(0).any(|value| value == rdi.id));
@@ -2146,8 +2139,8 @@ fn prepared_render_facts_certify_params_stack_memory_and_returns_by_semantic_id(
         .expect("certified parameter-home reload");
     assert!(
         render
-            .certified_expr_for_value(reloaded.value)
-            .is_some_and(|expr| expr.bindings.contains(&param_id)),
+            .bindings_of(reloaded.value)
+            .any(|role| *role == param_id),
         "parameter identity must cross its certified stack-home reload"
     );
     assert!(
@@ -2161,9 +2154,9 @@ fn prepared_render_facts_certify_params_stack_memory_and_returns_by_semantic_id(
     );
     assert!(
         render
-            .certified_exprs
+            .bindings
             .values()
-            .all(|expr| !expr.bindings.contains(&r2ssa::SemanticId::Parameter(1))),
+            .all(|roles| !roles.contains(&r2ssa::SemanticId::Parameter(1))),
         "unused ABI entry registers beyond signature arity must not become parameters"
     );
 
@@ -2373,7 +2366,7 @@ fn parameter_identity_is_distinct_from_single_parameter_dependency() {
     assert_eq!(render.exact_parameter_slot_for_value(copied.id), Some(0));
     assert_eq!(render.exact_parameter_slot_for_value(derived.id), None);
     assert_eq!(
-        render.unique_parameter_dependency_slot_for_value(derived.id),
+        render.unique_parameter_dependency_slot_for_value(prepared.graph(), derived.id),
         Some(0)
     );
 }
@@ -2800,28 +2793,13 @@ fn function_facts_owns_canonical_render_facts() {
         ordinal: 0,
     };
     let object = r2ssa::ObjectId(3);
-    let expression_id = r2ssa::SemanticId::expression(value);
     let memory_id = r2ssa::SemanticId::memory_access(access);
     let return_at = r2ssa::InstId(9);
     let return_id = r2ssa::SemanticId::return_value(return_at);
     let render = FunctionRenderFacts {
-        certified_exprs: [(
-            value,
-            CertifiedExpr {
-                id: expression_id,
-                fact: ExpressionRenderFact {
-                    value,
-                    defining_inst: Some(r2ssa::InstId(8)),
-                    width: 8,
-                    renderable: true,
-                },
-                inputs: Vec::new(),
-                bindings: BTreeSet::new(),
-                guarded_phi: None,
-            },
-        )]
-        .into_iter()
-        .collect(),
+        renderable_expressions: [value].into_iter().collect(),
+        bindings: r2ssa::dense::IdMap::default(),
+        guarded_phis: r2ssa::dense::IdMap::default(),
         certified_entities: BTreeMap::from([(
             r2ssa::SemanticId::stack_slot(object),
             CertifiedEntity::StackSlot {

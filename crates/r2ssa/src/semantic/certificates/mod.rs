@@ -234,15 +234,6 @@ fn switch_guard(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExpressionCertificate {
-    pub value: ValueId,
-    pub defining_inst: Option<InstId>,
-    pub inputs: Vec<ValueId>,
-    pub width: u32,
-    pub renderable: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryAccessCertificate {
     pub access: StructuredAccessId,
     pub space: SpaceId,
@@ -409,7 +400,8 @@ impl<T> ByDirection<T> {
 pub struct PreparedFunctionCertificates {
     pub loops: BTreeMap<LoopId, LoopCertificate>,
     pub switches: BTreeMap<u64, SwitchCertificate>,
-    pub expressions: crate::dense::IdMap<ValueId, ExpressionCertificate>,
+    /// The values a statement may spell; a value's definition, inputs and width are the graph's.
+    pub renderable_expressions: crate::dense::IdSet<ValueId>,
     pub memory_accesses: BTreeMap<StructuredAccessId, MemoryAccessCertificate>,
     /// The accesses each instruction performs, by direction.
     pub memory_accesses_by_inst: crate::dense::IdMap<InstId, ByDirection<Vec<StructuredAccessId>>>,
@@ -835,27 +827,6 @@ pub(crate) fn collect_prepared_function_certificates(
 
     let renderable_expressions =
         collect_renderable_expression_values(function, prep, graph, structured);
-    let expressions = graph
-        .values
-        .iter()
-        .map(|value| {
-            let defining_inst = graph.def_of.get(value.id.0 as usize).and_then(|id| *id);
-            let inputs = defining_inst
-                .and_then(|inst| graph.inst(inst))
-                .map(|inst| graph.inputs(inst.id).to_vec())
-                .unwrap_or_default();
-            (
-                value.id,
-                ExpressionCertificate {
-                    value: value.id,
-                    defining_inst,
-                    inputs,
-                    width: value.var.size,
-                    renderable: renderable_expressions.contains(value.id),
-                },
-            )
-        })
-        .collect();
 
     let mut memory_accesses_by_inst =
         crate::dense::IdMap::<InstId, ByDirection<Vec<StructuredAccessId>>>::default();
@@ -1325,7 +1296,7 @@ pub(crate) fn collect_prepared_function_certificates(
     PreparedFunctionCertificates {
         loops,
         switches,
-        expressions,
+        renderable_expressions,
         memory_accesses,
         memory_accesses_by_inst,
         memory_round_trips,

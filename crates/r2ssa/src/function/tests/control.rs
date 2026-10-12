@@ -237,9 +237,8 @@ fn prepared_expression_certificates_render_only_identity_phis() {
     assert!(
         identity_phi
             .certificates()
-            .expressions
-            .get(identity_value)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(identity_value),
         "identity phi over one renderable ValueId should be renderable"
     );
 
@@ -253,9 +252,8 @@ fn prepared_expression_certificates_render_only_identity_phis() {
     assert!(
         mixed_phi
             .certificates()
-            .expressions
-            .get(mixed_value)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(mixed_value),
         "non-memory phi with sibling values should be renderable; divergence handled by structurer"
     );
 }
@@ -362,9 +360,8 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
     assert!(
         prepared
             .certificates()
-            .expressions
-            .get(carrier.phi)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(carrier.phi),
         "loop-header phi is renderable when the loop certificate proves the backedge and the update is pure modulo that phi"
     );
 }

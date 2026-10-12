@@ -937,7 +937,7 @@ fn prepared_function_ssa_collects_structured_dataflow_facts() {
     let certificates = prepared.certificates();
     assert_eq!(certificates.loops.len(), 1);
     assert!(certificates.switches.is_empty());
-    assert!(!certificates.expressions.is_empty());
+    assert!(!certificates.renderable_expressions.is_empty());
     assert_eq!(
         certificates.memory_accesses.len(),
         structured.memory_accesses.len()
@@ -1475,9 +1475,8 @@ fn prepared_expression_certificates_require_structural_render_proof() {
         .expect("pure expression output");
     assert!(
         pure.certificates()
-            .expressions
-            .get(pure_value)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(pure_value),
         "pure expression outputs should be renderable"
     );
 
@@ -1506,9 +1505,8 @@ fn prepared_expression_certificates_require_structural_render_proof() {
     assert!(
         loaded
             .certificates()
-            .expressions
-            .get(loaded_value)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(loaded_value),
         "memory-load expression outputs require a structured memory-read certificate"
     );
 
@@ -1538,11 +1536,10 @@ fn prepared_expression_certificates_require_structural_render_proof() {
         .and_then(|inst| inst.output)
         .expect("userop output");
     assert!(
-        userop
+        !userop
             .certificates()
-            .expressions
-            .get(userop_value)
-            .is_some_and(|cert| !cert.renderable),
+            .renderable_expressions
+            .contains(userop_value),
         "opaque userop outputs must not be renderable by width alone"
     );
 }

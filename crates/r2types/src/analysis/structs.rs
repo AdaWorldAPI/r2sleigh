@@ -724,9 +724,8 @@ pub(crate) fn prepared_parameter_indexed_accesses(
             || u64::from(access.width) > element_stride - field_offset
             || !prepared
                 .certificates()
-                .expressions
-                .get(index.value)
-                .is_some_and(|certificate| certificate.renderable)
+                .renderable_expressions
+                .contains(index.value)
         {
             continue;
         }

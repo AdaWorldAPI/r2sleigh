@@ -339,50 +339,38 @@ fn prepared_return_register_subpiece_zext_chain_is_renderable() {
         .and_then(|inst| inst.output)
         .expect("zero-extended return-register value");
 
-    let expr_cert = prepared
-        .certificates()
-        .expressions
-        .get(return_value)
-        .expect("return value expression certificate");
-    let input_debug = expr_cert
-        .inputs
+    let graph = prepared.graph();
+    let inputs_of = |value| {
+        graph
+            .def_inst(value)
+            .map_or(&[][..], |inst| graph.inputs(inst))
+    };
+    let renderable = |value| {
+        prepared
+            .certificates()
+            .renderable_expressions
+            .contains(value)
+    };
+    let name = |value| {
+        prepared
+            .value_var(value)
+            .map(|var| var.display_name())
+            .unwrap_or_else(|| "<unknown>".to_string())
+    };
+    let input_debug = inputs_of(return_value)
         .iter()
-        .map(|value| {
-            let name = prepared
-                .value_var(*value)
-                .map(|var| var.display_name())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            let renderable = prepared
-                .certificates()
-                .expressions
-                .get(*value)
-                .is_some_and(|cert| cert.renderable);
-            format!("{name}:{renderable}")
+        .map(|&value| format!("{}:{}", name(value), renderable(value)))
+        .collect::<Vec<_>>();
+    let tmp_debug = inputs_of(return_value)
+        .iter()
+        .flat_map(|&value| {
+            inputs_of(value).iter().map(move |&input| {
+                format!("{}->{}:{}", name(value), name(input), renderable(input))
+            })
         })
         .collect::<Vec<_>>();
-    let mut tmp_debug = Vec::new();
-    for value in &expr_cert.inputs {
-        if let Some(cert) = prepared.certificates().expressions.get(*value) {
-            let value_name = prepared
-                .value_var(*value)
-                .map(|var| var.display_name())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            for input in &cert.inputs {
-                let input_name = prepared
-                    .value_var(*input)
-                    .map(|var| var.display_name())
-                    .unwrap_or_else(|| "<unknown>".to_string());
-                let renderable = prepared
-                    .certificates()
-                    .expressions
-                    .get(*input)
-                    .is_some_and(|cert| cert.renderable);
-                tmp_debug.push(format!("{value_name}->{input_name}:{renderable}"));
-            }
-        }
-    }
     assert!(
-        expr_cert.renderable,
+        renderable(return_value),
         "return-register subpiece/zext chain should be renderable; ret={:?} inputs={:?} tmp_inputs={:?}",
         prepared.value_var(return_value),
         input_debug,
