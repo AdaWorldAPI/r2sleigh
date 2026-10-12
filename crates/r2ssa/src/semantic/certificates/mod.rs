@@ -386,6 +386,33 @@ pub enum CallArgumentLocation {
     },
 }
 
+/// One value for each direction an instruction accesses memory in: a read and a write by one
+/// instruction are different effects.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ByDirection<T> {
+    pub read: T,
+    pub write: T,
+}
+
+impl<T> ByDirection<T> {
+    /// Both directions, the read's first.
+    pub fn each_mut(&mut self) -> [&mut T; 2] {
+        [&mut self.read, &mut self.write]
+    }
+
+    pub const fn get(&self, is_write: bool) -> &T {
+        if is_write { &self.write } else { &self.read }
+    }
+
+    pub fn get_mut(&mut self, is_write: bool) -> &mut T {
+        if is_write {
+            &mut self.write
+        } else {
+            &mut self.read
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedProofFailure {
     pub owner: &'static str,
@@ -401,8 +428,8 @@ pub struct PreparedFunctionCertificates {
     pub if_regions: BTreeMap<PredicateId, IfRegionCertificate>,
     pub expressions: crate::dense::IdMap<ValueId, ExpressionCertificate>,
     pub memory_accesses: BTreeMap<StructuredAccessId, MemoryAccessCertificate>,
-    /// The accesses one instruction performs, by direction.
-    pub memory_accesses_by_inst: BTreeMap<(InstId, bool), Vec<StructuredAccessId>>,
+    /// The accesses each instruction performs, by direction.
+    pub memory_accesses_by_inst: crate::dense::IdMap<InstId, ByDirection<Vec<StructuredAccessId>>>,
     pub stack_slots: BTreeMap<ObjectId, StackSlotCertificate>,
     pub stack_frame_round_trips: BTreeMap<ObjectId, StackFrameRoundTripCertificate>,
     pub stack_frame_round_trip_by_inst: crate::dense::IdMap<InstId, ObjectId>,
@@ -868,14 +895,15 @@ pub(crate) fn collect_prepared_function_certificates(
         })
         .collect();
 
-    let mut memory_accesses_by_inst = BTreeMap::<(InstId, bool), Vec<StructuredAccessId>>::new();
+    let mut memory_accesses_by_inst =
+        crate::dense::IdMap::<InstId, ByDirection<Vec<StructuredAccessId>>>::default();
     let memory_accesses = structured
         .memory_accesses
         .iter()
         .map(|(id, fact)| {
             memory_accesses_by_inst
-                .entry((id.inst, fact.is_write))
-                .or_default()
+                .get_or_insert_with(id.inst, ByDirection::default)
+                .get_mut(fact.is_write)
                 .push(*id);
             (
                 *id,

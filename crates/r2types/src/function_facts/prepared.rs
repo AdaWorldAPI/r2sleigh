@@ -2,10 +2,6 @@
 
 use super::*;
 
-/// One instruction's memory effects in one direction: a read and a write
-/// performed by one instruction are different effects.
-pub type MemoryEffectKey = (r2ssa::InstId, bool);
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallsiteRenderFact {
     pub callsite: InstId,
@@ -1879,15 +1875,17 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
     let memory_effects_by_inst = certificates
         .memory_accesses_by_inst
         .iter()
-        .map(|(op, accesses)| {
-            (
-                *op,
-                accesses
-                    .iter()
-                    .copied()
+        .map(|(inst, accesses)| {
+            let effects = |accesses: &Vec<r2ssa::StructuredAccessId>| {
+                (accesses.iter().copied())
                     .map(r2ssa::SemanticId::memory_access)
-                    .collect(),
-            )
+                    .collect()
+            };
+            let effects = r2ssa::ByDirection {
+                read: effects(&accesses.read),
+                write: effects(&accesses.write),
+            };
+            (inst, effects)
         })
         .collect();
     let certified_return_effects = certificates
@@ -2079,8 +2077,8 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
         return_effects_by_inst,
         memory_effects_by_inst,
         string_literals_by_value: r2ssa::dense::IdMap::default(),
-        member_accesses_by_inst: BTreeMap::new(),
-        array_accesses_by_inst: BTreeMap::new(),
+        member_accesses_by_inst: IdMap::default(),
+        array_accesses_by_inst: IdMap::default(),
     }
 }
 

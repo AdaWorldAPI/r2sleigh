@@ -170,7 +170,7 @@ pub use r2sleigh_lift::{
 };
 pub use r2source::OwnedFunctionSnapshot;
 pub use semantic::{
-    BlockAssumption, CallArgumentCertificate, CallArgumentLocation, CallBoundarySlot,
+    BlockAssumption, ByDirection, CallArgumentCertificate, CallArgumentLocation, CallBoundarySlot,
     CallBoundaryValueFact, CallFrameReach, CallMemoryEffect, CallResultCertificate,
     CallResultValueRelation, CallSiteFact, CallSiteFacts, CallSiteId, CallSiteTransfer,
     CalleeStackAllocationCertificate, CallerSlotSupply, CallerStackSlotCertificate,

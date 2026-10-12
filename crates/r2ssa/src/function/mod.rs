@@ -1575,7 +1575,8 @@ impl SsaArtifact {
         self.facts
             .certificates
             .memory_accesses_by_inst
-            .get(&(inst, is_write))?
+            .get(inst)?
+            .get(is_write)
             .iter()
             .filter_map(|id| certs.memory_accesses.get(id))
             .find(|cert| cert.is_write == is_write)

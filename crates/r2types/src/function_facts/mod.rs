@@ -242,12 +242,12 @@ pub struct FunctionRenderFacts {
     /// Stable return-effect identity for each returning instruction.
     pub return_effects_by_inst: r2ssa::dense::IdMap<r2ssa::InstId, r2ssa::SemanticId>,
     /// Stable memory-effect identities for each instruction, by direction.
-    pub memory_effects_by_inst: BTreeMap<MemoryEffectKey, Vec<r2ssa::SemanticId>>,
+    pub memory_effects_by_inst: IdMap<InstId, r2ssa::ByDirection<Vec<r2ssa::SemanticId>>>,
     /// Value annotations that supplement, rather than duplicate, certified expressions.
     pub string_literals_by_value: r2ssa::dense::IdMap<r2ssa::ValueId, StringLiteralRenderFact>,
     /// Type-owner render projections tied back to canonical memory-effect identities.
-    pub member_accesses_by_inst: BTreeMap<MemoryEffectKey, Vec<MemberAccessRenderFact>>,
-    pub array_accesses_by_inst: BTreeMap<MemoryEffectKey, Vec<ArrayAccessRenderFact>>,
+    pub member_accesses_by_inst: IdMap<InstId, r2ssa::ByDirection<Vec<MemberAccessRenderFact>>>,
+    pub array_accesses_by_inst: IdMap<InstId, r2ssa::ByDirection<Vec<ArrayAccessRenderFact>>>,
 }
 
 impl FunctionRenderFacts {
@@ -380,7 +380,8 @@ impl FunctionRenderFacts {
     ) -> Option<&MemoryAccessRenderFact> {
         let mut matching = self
             .memory_effects_by_inst
-            .get(&(access.inst, is_write))?
+            .get(access.inst)?
+            .get(is_write)
             .iter()
             .filter_map(|id| {
                 self.certified_effects
@@ -400,7 +401,8 @@ impl FunctionRenderFacts {
     ) -> Option<&MemoryAccessRenderFact> {
         let mut matching = self
             .memory_effects_by_inst
-            .get(&(inst, is_write))?
+            .get(inst)?
+            .get(is_write)
             .iter()
             .filter_map(|id| {
                 self.certified_effects
@@ -434,7 +436,8 @@ impl FunctionRenderFacts {
         let memory = self.memory_access(access)?;
         let facts = self
             .member_accesses_by_inst
-            .get(&(memory.access.inst, memory.is_write))?;
+            .get(memory.access.inst)?
+            .get(memory.is_write);
         let mut matching = facts.iter().filter(|fact| {
             fact.access == memory.access
                 && fact.object == memory.object
@@ -535,7 +538,8 @@ impl FunctionRenderFacts {
         access_width: Option<u32>,
     ) -> Option<&MemberAccessRenderFact> {
         self.member_accesses_by_inst
-            .get(&(inst, is_write))?
+            .get(inst)?
+            .get(is_write)
             .iter()
             .find(|fact| {
                 let Some(memory) = self.memory_access(fact.access) else {
@@ -560,7 +564,8 @@ impl FunctionRenderFacts {
         access_width: Option<u32>,
     ) -> Option<&ArrayAccessRenderFact> {
         self.array_accesses_by_inst
-            .get(&(inst, is_write))?
+            .get(inst)?
+            .get(is_write)
             .iter()
             .find(|fact| {
                 let Some(memory) = self.memory_access(fact.access) else {
@@ -1669,7 +1674,8 @@ impl FunctionFacts {
             let indexed = self
                 .render
                 .array_accesses_by_inst
-                .get(&(memory.access.inst, memory.is_write))
+                .get(memory.access.inst)
+                .map(|facts| facts.get(memory.is_write))
                 .and_then(|facts| {
                     facts.iter().find(|fact| {
                         fact.access == memory.access
@@ -1775,8 +1781,9 @@ impl FunctionFacts {
             });
         }
         for fact in member_facts {
-            let key = (fact.access.inst, fact.is_write);
-            let facts = self.render.member_accesses_by_inst.entry(key).or_default();
+            let facts = (self.render.member_accesses_by_inst)
+                .get_or_insert_with(fact.access.inst, r2ssa::ByDirection::default)
+                .get_mut(fact.is_write);
             // The declared name replaces one an external layout guessed: two facts for one
             // access are no fact at all, because the lookup requires exactly one.
             facts.retain(|existing| {
@@ -1825,8 +1832,9 @@ impl FunctionFacts {
             let Some(inst) = prepared.graph().inst_for_op(candidate.op) else {
                 continue;
             };
-            let key = (inst, candidate.is_write);
-            let Some(effect_ids) = self.render.memory_effects_by_inst.get(&key) else {
+            let Some(effect_ids) = (self.render.memory_effects_by_inst.get(inst))
+                .map(|effects| effects.get(candidate.is_write))
+            else {
                 continue;
             };
             for effect_id in effect_ids {
@@ -1861,14 +1869,15 @@ impl FunctionFacts {
         }
 
         for fact in member_facts {
-            let key = (fact.access.inst, fact.is_write);
-            let facts = self.render.member_accesses_by_inst.entry(key).or_default();
+            let facts = (self.render.member_accesses_by_inst)
+                .get_or_insert_with(fact.access.inst, r2ssa::ByDirection::default)
+                .get_mut(fact.is_write);
             if !facts.contains(&fact) {
                 facts.push(fact);
             }
         }
 
-        for facts in self.render.member_accesses_by_inst.values_mut() {
+        for facts in (self.render.member_accesses_by_inst.values_mut()).flat_map(|d| d.each_mut()) {
             facts.sort_by(|a, b| {
                 (
                     a.is_write,
@@ -1941,8 +1950,9 @@ impl FunctionFacts {
             let Some(inst) = prepared.graph().inst_for_op(candidate.op) else {
                 continue;
             };
-            let key = (inst, candidate.is_write);
-            let Some(effect_ids) = self.render.memory_effects_by_inst.get(&key) else {
+            let Some(effect_ids) = (self.render.memory_effects_by_inst.get(inst))
+                .map(|effects| effects.get(candidate.is_write))
+            else {
                 continue;
             };
             let effect_ids = effect_ids.clone();
@@ -1976,14 +1986,16 @@ impl FunctionFacts {
                     base: Some(base),
                     index: Some(index),
                 };
-                let facts = self.render.array_accesses_by_inst.entry(key).or_default();
+                let facts = (self.render.array_accesses_by_inst)
+                    .get_or_insert_with(inst, r2ssa::ByDirection::default)
+                    .get_mut(fact.is_write);
                 if !facts.contains(&fact) {
                     facts.push(fact);
                 }
             }
         }
 
-        for facts in self.render.array_accesses_by_inst.values_mut() {
+        for facts in (self.render.array_accesses_by_inst.values_mut()).flat_map(|d| d.each_mut()) {
             facts.sort_by_key(|fact| {
                 (
                     fact.is_write,

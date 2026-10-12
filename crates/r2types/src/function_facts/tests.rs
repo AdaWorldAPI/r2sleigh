@@ -1617,7 +1617,7 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
                 source: StringLiteralRenderSource::TypedFunctionFacts,
             },
         )]),
-        member_accesses_by_inst: BTreeMap::from([(member_op, vec![member_access])]),
+        member_accesses_by_inst: by_direction([(member_op, vec![member_access])]),
         ..FunctionRenderFacts::default()
     };
     let mut facts = FunctionFacts::default()
@@ -1655,7 +1655,7 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
     assert!(
         facts
             .render()
-            .and_then(|render| render.member_accesses_by_inst.get(&member_op))
+            .and_then(|render| render.member_accesses_by_inst.get(member_op.0))
             .is_none(),
         "an unvalidated detached member projection must be removed during source rebuild"
     );
@@ -2873,7 +2873,7 @@ fn function_facts_owns_canonical_render_facts() {
             ),
         ]),
         return_effects_by_inst: r2ssa::dense::IdMap::from_iter([(return_at, return_id)]),
-        memory_effects_by_inst: BTreeMap::from([((r2ssa::InstId(7), true), vec![memory_id])]),
+        memory_effects_by_inst: by_direction([((r2ssa::InstId(7), true), vec![memory_id])]),
         string_literals_by_value: r2ssa::dense::IdMap::from_iter([(
             value,
             StringLiteralRenderFact {
@@ -2883,7 +2883,7 @@ fn function_facts_owns_canonical_render_facts() {
                 source: StringLiteralRenderSource::TypedFunctionFacts,
             },
         )]),
-        member_accesses_by_inst: BTreeMap::from([(
+        member_accesses_by_inst: by_direction([(
             (r2ssa::InstId(7), true),
             vec![MemberAccessRenderFact {
                 access,
@@ -2897,7 +2897,7 @@ fn function_facts_owns_canonical_render_facts() {
                 source: MemberAccessSource::ExternalLayout,
             }],
         )]),
-        array_accesses_by_inst: BTreeMap::from([(
+        array_accesses_by_inst: by_direction([(
             (r2ssa::InstId(7), true),
             vec![ArrayAccessRenderFact {
                 access,
@@ -2998,8 +2998,8 @@ fn function_render_facts_require_exact_array_access_identity() {
                 },
             },
         )]),
-        memory_effects_by_inst: BTreeMap::from([((r2ssa::InstId(7), false), vec![memory_id])]),
-        array_accesses_by_inst: BTreeMap::from([(
+        memory_effects_by_inst: by_direction([((r2ssa::InstId(7), false), vec![memory_id])]),
+        array_accesses_by_inst: by_direction([(
             (r2ssa::InstId(7), false),
             vec![ArrayAccessRenderFact {
                 access,
@@ -3055,8 +3055,9 @@ fn function_render_facts_require_exact_array_access_identity() {
     let mut wrong_object = render.clone();
     wrong_object
         .array_accesses_by_inst
-        .get_mut(&(r2ssa::InstId(7), false))
+        .get_mut(r2ssa::InstId(7))
         .expect("array fact")
+        .get_mut(false)
         .first_mut()
         .expect("array fact")
         .object = r2ssa::ObjectId(9);
@@ -3070,8 +3071,9 @@ fn function_render_facts_require_exact_array_access_identity() {
     let mut wrong_access = render;
     wrong_access
         .array_accesses_by_inst
-        .get_mut(&(r2ssa::InstId(7), false))
+        .get_mut(r2ssa::InstId(7))
         .expect("array fact")
+        .get_mut(false)
         .first_mut()
         .expect("array fact")
         .access = other_access;
@@ -3121,7 +3123,7 @@ fn memory_access_lookup_requires_exact_address_space() {
             effect(ram_access, r2il::SpaceId::Ram),
             effect(custom_access, r2il::SpaceId::Custom(7)),
         ]),
-        memory_effects_by_inst: BTreeMap::from([(
+        memory_effects_by_inst: by_direction([(
             (r2ssa::InstId(7), false),
             vec![ram_id, custom_id],
         )]),
@@ -3569,4 +3571,15 @@ fn a_packed_aggregate_is_refused() {
     assert!(!aggregate_is_definable(&graph, "pair"));
     let tail = pair_graph(32, 128, 64).expect("a pair padded past its alignment");
     assert_eq!(aggregate_members(&tail, "pair"), None);
+}
+
+/// Facts by instruction and direction, as the render facts hold them.
+fn by_direction<T>(
+    entries: impl IntoIterator<Item = ((r2ssa::InstId, bool), Vec<T>)>,
+) -> r2ssa::dense::IdMap<r2ssa::InstId, r2ssa::ByDirection<Vec<T>>> {
+    let mut map = r2ssa::dense::IdMap::default();
+    for ((inst, is_write), facts) in entries {
+        *(map.get_or_insert_with(inst, r2ssa::ByDirection::default)).get_mut(is_write) = facts;
+    }
+    map
 }
