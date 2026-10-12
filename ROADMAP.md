@@ -381,8 +381,15 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          inference still keys maps by spelled names, in six rounds that
          keep a partial result when they run out: T deletes it (below).
          Left, largest first:
-         1. **MM.6** one numbering (16.6 MB function and value table, 13.0
-            MB graph): each variable and operation held twice, F2's plan.
+         1. **MM.6** one encoding of each operation after the seal: the
+            graph owns it and the function's blocks, as the builder's, are
+            dropped at the seal (0pack's render peak at #179: the
+            function's operations, arena and table 14.4 MB beside the
+            graph's 19.3); 30 post-seal reader files re-key, 3 readers
+            named for a decision ([one-ir](doc/adr-one-ir.md), "The op
+            after the seal", amended 2026-10-12: the plan had the graph
+            index the function's operations, which hands 216 graph-only
+            signatures a handle back).
          2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
             symbols 7.6, names 4.2), PF's.
          3. **MM.7** compact identities: a disposition (48 B per

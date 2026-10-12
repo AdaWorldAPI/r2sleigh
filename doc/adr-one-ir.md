@@ -75,40 +75,43 @@ disagree.
 - F2.4: the builder with an incremental def-use. The seal still builds the graph twice when the demand pass releases a base (`function/stage.rs`), and the optimiser rebuilds its definition maps once per pass, O(n), until a pass measurably needs better. Measured (2026-10-05): the second build happens in 179 of 1261 census seals and costs at most 10 ms of a 2.7 s `pdd` on the largest pumasim function (92k instructions); interface recovery's duplicate build is gone. Exit: one graph build per function, when a measurement needs it.
 - F2.5: machine projection and term arena as indexes. Exit: no per-round rebuild.
 
-## The op after the seal (plan, 2026-10-12)
+## The op after the seal (plan, 2026-10-12; amended the same day)
 
-Measured (dhat, pumasim `pdd @ 0x23fdf0`, heap peak 216.2 MB after the graph's
-arrays were sized once, which was 5.1 MB): each operation is held three times
-through the analysis.
+Measured (dhat, 0pack `pdd @ 0x58e3d0`, render peak 175.4 MB at #179): each
+operation is held twice through render.
 
 | Encoding | At the peak | Readers after the seal |
 |---|---|---|
-| The lift's `R2ILOp`, retained by the database's walk (`Walked`) | 5.9 MB | the walk's reuse |
-| The function's `SSAOp<VarId>`, its arena and value table | about 14 MB (`block.rs` 3.6, `arena` 5.2, `value_table` 5.4) | 38 r2ssa pass sites, about 20 outside (r2types' named readers) |
-| The graph's `GraphInst` array (`SSAOp<ValueId>`, a `Vec<ValueId>` of inputs) | 10.3 MB, and 4.2 interning | 209 payload readers, 372 input readers |
+| The function's `SSAOp<VarId>` (`block.rs`), its arena (`arena.rs`) and value table | 5.0, 4.6 and 4.8 MB | 30 files (27 read operations or phis): 22 in r2ssa (boundaries 16 lines, shared 14, interproc 16, liveout 7, reaching 6, ...), r2types' one `named_blocks` copy (6 files), r2dec `render/control.rs`, r2engine `native.rs` |
+| The graph's `GraphInst` array (`SSAOp<ValueId>`), inputs and value table | 11.6 and 6.2 MB | 235 payload lines in 55 files and 249 input lines in 52, of which 216 signatures take `&SsaGraph` alone |
 
-Nothing edits the function after the seal (only tests call `edit_block` on
-a sealed function), so the Decision stands and is completed, not reversed:
+The plan as first written (the graph indexes the function's operations) would
+hand every graph-only reader a way back to the function: a shared handle in 55
+files. The graph already states what the function's post-seal readers read
+(operations in order, phis with their sources, block extents and edges, a
+variable's spelling and storage, an instruction's `OpId` and machine
+instruction, the formal projections and roots). So the decision is reversed in
+direction and kept in substance: **after the seal the graph owns each
+operation once, and the function's blocks are the builder's**, dropped at the
+seal. The function keeps what is about the function, not its operations: the
+CFG and its terminators, dominators and loops, the arena's origins, the
+written-lane record, compiler-inserted and supervisor facts, premises and the
+stack pointer.
 
-1. At the seal the function's operations are renumbered once by the dense
-   `VarId -> ValueId` vector, so its blocks hold `SSAOp<ValueId>`; the
-   graph's instruction indexes the function's operation through `op_by_inst`
-   instead of copying it, and its inputs are the operation's sources. The 209
-   payload readers keep their type through `graph.op(inst)`; the 38 pass
-   sites re-key from `VarId` to `ValueId` and stay on the function.
-2. r2types' named readers move with F2.3's transitional accessors, which P9
-   owns; until then `named_blocks` spells `ValueId`s through the value table.
-3. The lift's operations are a retention decision: the database keeps the
-   walk for reuse, so a byte capacity (adr-query-database) or dropping the
-   lift once prepared decides it.
+1. A sealed function exposes no block operations (a type: `Sealed` has no
+   `blocks()`), so the compiler lists every reader. The 30 files re-key from
+   `VarId` to `ValueId` and from (block address, operation index) to `InstId`
+   runs (`insts_between`); r2types' `named_blocks` copy is spelled from the
+   graph (P9 still owns its move off names).
+2. Three readers need a decision first: the validator (`validate_ssa_function`
+   runs on the function's blocks after the final build, `stage.rs:222`) runs
+   before the drop; the integrity check of a phi's storage against the value
+   table (`integrity.rs:508`) compares against the graph's; the lifted-only
+   origin (`reaching.rs:73`) reads the arena, which stays.
+3. The value table goes with the blocks once no `VarId` outlives the seal
+   (the function's `formal_*` maps have graph twins).
 
 Exit: one encoding of each operation live after the seal, the census
-byte-identical at each step. Bound: each step re-keys in O(n), with no
-semantic change.
-
-These buy about 15 of the 216 MB. LX's exit (the pumasim Gui constructor
-under 250 MB, 348 MB today with about 127 MB outside the heap) needs about
-95 MB more of heap, owned elsewhere: the term arena (20 MB) and the machine
-projection (16.8 MB) are F2.5; the semantic facts (17.4 MB) are F2.1's
-index layer; the render facts (12.5 MB) are T's; the open (28.5 MB) and the
-name table (9 MB) are PF's; the allocator's retained pages are D26's.
+byte-identical at each step, about 10 to 14 MB of 0pack's peak (5 to 8%).
+Bound: each step re-keys in `O(n)`. Stop rule: past 40 files or any semantic
+change beyond the three named above, stop and report.
