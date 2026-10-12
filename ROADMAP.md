@@ -331,16 +331,44 @@ maintainer accepts broken renderings on `rebuild` until it merges.
          indexes.
       8. **D26**'s purge delay, the maintainer's (PF row).
       9. **MM**, memory as a linear budget
-         ([memory-model](doc/adr-memory-model.md)): phases consume what
-         only they read, caches budgeted in bytes (GreedyDual-Size), a
-         forced collect at phase boundaries, a typed refusal past the
-         budget, and superlinear shapes replaced when a function shows one.
-         Measured 2026-10-12: about 2.1 KB of heap per SSA operation at the
-         top, `RSS − F` growing as size^0.71 over 148 functions, sessions
-         plateauing at 445 to 869 MB; the only functions over 1 GB were a
-         debug file's zero fill decoded as code (fixed, #166). Exit: heap
-         bytes per operation and session RSS gated, `c ≤ 600 B` then
-         `≤ 300 B`, sessions under a stated budget.
+         ([memory-model](doc/adr-memory-model.md)). Two causes, measured
+         2026-10-12: a session held whole per-function answers (renderings
+         with their facts, analyses and sealings up to 200,000 operations
+         each), and one function's peak holds about ten representations of
+         it at once, about 2 KB of heap per SSA operation. The only
+         functions over 1 GB were a debug file's zero fill decoded as code.
+         Done (stack #165): the walk stops at the file's last byte (#166);
+         a held rendering keeps its text, ledger and premises (#168); a
+         function's walk, analysis, sealing and rendering are held only
+         while newest, program-wide facts (summaries, names, returns) held
+         (#169); a prepared function keeps its walk's outline, not its lift
+         (#170); facts nothing reads are not kept (#171); the ledger holds
+         each obligation once. A 50-function `pdd` session: pumasim 935 to
+         385 MB, 0pack 765 to 386 MB, time unchanged; pumasim
+         `pdd @ 0x23fdf0` heap peak 197.0 to 180.6 MB. Left, by the Gui
+         constructor's peak (180.6 MB, 92,007 operations, about 1.96 KB per
+         operation), largest first:
+         1. **MM.3** facts only sealing reads (memory SSA, predicates,
+            control domains, expression certificates, the bare fold, the
+            provenance snapshot) dropped at the seal: the artifact split
+            into what render reads and what sealing reads. The facts group
+            is 35.7 MB.
+         2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
+            symbols 7.6, names 4.2), PF's.
+         3. **MM.5** the term arena (18.3 MB): a 56-byte node, side tables
+            in hash maps keyed by its own dense ids, a vector grown by
+            doubling.
+         4. **MM.6** one numbering (16.6 MB function and value table, 13.0
+            MB graph): each variable and operation held twice, F2's plan.
+         5. **MM.7** compact identities: a disposition (48 B per
+            instruction) and an imported value carry a 32-byte canonical
+            instruction id the graph already implies.
+         6. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
+            of it the type) and render's own structures (7.6 MB).
+         7. **MM.9** D26: one forced collect at each phase boundary,
+            measured.
+         Exit: heap bytes per operation and the 50-function session RSS
+         gated as ratchets; `c ≤ 600 B` per operation, then `≤ 300 B`.
 6. **LP2 to LP4**, then **I**, **C2, C4**, **P7, P8, P9, P11**.
 7. Beside the path, as small items when a step waits on CI: **L5**, **M6**
    rest.

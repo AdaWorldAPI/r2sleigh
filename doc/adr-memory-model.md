@@ -85,6 +85,26 @@ stays alive until the response is built.
 5. **A budget refuses.** A function whose operations exceed the budget's
    share refuses before its analysis with the count and the budget.
 
+## Done (2026-10-12, stack #165)
+
+| PR | Change | Measured |
+|---|---|---|
+| #166 | The walk stops at the file's last byte | the over-1 GB functions refuse in 0.44 s |
+| #168 | A held rendering keeps text, ledger and premises | 50-function session 935 to 645 MB |
+| #169 | Per-function answers held only while newest | session 441 to 385 MB, time unchanged |
+| #170 | A prepared function keeps its walk's outline | heap peak 194.7 to 193.0 MB |
+| #171 | Facts nothing reads are not kept | heap peak 193.0 to 183.6 MB, 471 lines deleted |
+| ledger | Each obligation held once, columns by place | heap peak 183.4 to 180.6 MB |
+
+## Left
+
+By the Gui constructor's peak (180.6 MB): the facts only sealing reads
+(MM.3, 35.7 MB group), the fixed cost (MM.4, 29.8 MB), the term arena
+(MM.5, 18.3 MB), one numbering (MM.6, 29.6 MB of function, table and
+graph), compact identities (MM.7), the machine projection and render
+structures (MM.8, 21.2 MB), and the allocator's collect (MM.9). The
+ROADMAP (step 8.9) orders them.
+
 ## Gates
 
 - Heap bytes per SSA operation (dhat, `census.py heap`) on pumasim
