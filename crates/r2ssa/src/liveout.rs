@@ -151,7 +151,12 @@ impl FunctionLiveOut {
                 continue;
             };
             let storage_of = |id: &ValueId| graph.value(*id)?.canonical_storage;
-            let ops = || graph.op_insts(block).iter().filter_map(|inst| graph.op(*inst));
+            let ops = || {
+                graph
+                    .op_insts(block)
+                    .iter()
+                    .filter_map(|inst| graph.op(*inst))
+            };
             let mut defined_here = false;
             // Whether a call on this path leaves the return register holding a
             // value this function never defines.

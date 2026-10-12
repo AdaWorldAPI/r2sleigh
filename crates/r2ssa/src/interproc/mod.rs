@@ -1020,11 +1020,7 @@ fn validate_prepared_interproc_block_ranges(
     functions: &[PreparedInterprocFunctionInput<'_>],
 ) -> Result<(), PreparedInterprocSummaryError> {
     validate_interproc_block_ranges(functions.iter().flat_map(|function| {
-        function
-            .prepared
-            .function()
-            .blocks()
-            .iter()
+        (function.prepared.graph().blocks.iter())
             .map(move |block| (function.id, block.addr, block.size))
     }))
 }
@@ -1122,10 +1118,7 @@ impl PreparedCalleeSummary {
         Ok(Self {
             id,
             architecture: prepared.machine_context().architecture().into(),
-            blocks: prepared
-                .function()
-                .named_blocks()
-                .iter()
+            blocks: (prepared.graph().blocks.iter())
                 .map(|block| (block.addr, block.size))
                 .collect(),
             local,
@@ -1298,10 +1291,7 @@ fn attributable_callees(
     root_id: InterprocFunctionId,
     callees: &[PreparedCalleeSummary],
 ) -> Vec<PreparedCalleeSummary> {
-    let mut claimed: Vec<(u64, u64)> = root
-        .function()
-        .named_blocks()
-        .iter()
+    let mut claimed: Vec<(u64, u64)> = (root.graph().blocks.iter())
         .filter_map(|block| {
             block
                 .addr
@@ -1378,9 +1368,7 @@ pub fn solve_prepared_interproc_summary_set_from_callee_summaries(
     // the root as well, which is a whole function for a helper's sake.
     let callees = &attributable_callees(&root, root_id, callees);
     validate_interproc_block_ranges(
-        root.function()
-            .named_blocks()
-            .iter()
+        (root.graph().blocks.iter())
             .map(|block| (root_id, block.addr, block.size))
             .chain(callees.iter().flat_map(|callee| {
                 callee
@@ -2208,8 +2196,13 @@ fn collect_local_summary_facts_with_obligation_authority(
         }
     }
 
-    for block in function.named_blocks() {
-        for (op_id, op) in block.sited() {
+    let graph = prepared.graph();
+    for block in &graph.blocks {
+        for &inst in graph.op_insts(block.id) {
+            let (Some(op), Some(op_id)) = (graph.op(inst), graph.op_for_inst(inst)) else {
+                continue;
+            };
+            let op = &graph.named_op(op);
             match op {
                 SSAOp::Load { addr, dst, space }
                 | SSAOp::LoadLinked {
@@ -2245,7 +2238,7 @@ fn collect_local_summary_facts_with_obligation_authority(
                     let location =
                         classify_memory_access_location(prepared, abi, addr, space, expected.size);
                     out.unplaced_reach |=
-                        unplaced(&location, addr) | bits_of_var(&swap.replacement);
+                        unplaced(&location, addr) | bits_of_var(swap.replacement);
                     mark_location_access(&mut out, location, true, true);
                     out.memory_effects.insert(SummaryMemoryEffect {
                         kind: SummaryMemoryEffectKind::Read,
@@ -2331,7 +2324,7 @@ fn collect_local_summary_facts_with_obligation_authority(
                     has_volatile_or_unknown_effects = true;
                     out.unplaced_reach |= inputs
                         .iter()
-                        .map(&bits_of_var)
+                        .map(|input| bits_of_var(input))
                         .fold(0, |left, right| left | right);
                     let args = inputs
                         .iter()
@@ -2383,7 +2376,7 @@ fn apply_call_carrier_transfer(
     prepared: &SsaArtifact,
     abi: &AbiProfile,
     state: &mut CallCarrierMap,
-    op: &SSAOp<crate::VarId>,
+    op: &SSAOp<ValueId>,
 ) {
     // A user operation writes only its named output.
     let clobbers_every_carrier = !matches!(op, SSAOp::CallOther { .. })
@@ -2393,8 +2386,8 @@ fn apply_call_carrier_transfer(
         state
             .values_mut()
             .for_each(|value| *value = CallCarrierState::Unknown);
-    } else if let Some(dst) = op.dst().and_then(|dst| prepared.graph().value_of(*dst)) {
-        update_call_carrier_state(prepared, abi, state, dst);
+    } else if let Some(dst) = op.dst() {
+        update_call_carrier_state(prepared, abi, state, *dst);
     }
 }
 
@@ -2744,8 +2737,9 @@ fn block_carrier_effect(
     prepared: &SsaArtifact,
     abi: &AbiProfile,
     tracked: &BTreeSet<CallCarrierKey>,
-    block: &crate::SSABlock<crate::VarId>,
+    block: crate::graph::BlockId,
 ) -> CallCarrierMap {
+    let graph = prepared.graph();
     let start = |sentinel: u32| {
         tracked
             .iter()
@@ -2754,14 +2748,15 @@ fn block_carrier_effect(
     };
     let mut runs = [start(u32::MAX), start(u32::MAX - 1)];
     for run in &mut runs {
-        for dst in block
-            .phis()
-            .iter()
-            .filter_map(|phi| prepared.graph().value_of(phi.dst))
-        {
+        let phis = (graph.phi_insts(block).iter()).filter_map(|phi| graph.inst(*phi)?.output);
+        for dst in phis {
             update_call_carrier_state(prepared, abi, run, dst);
         }
-        for op in block.ops() {
+        for op in graph
+            .op_insts(block)
+            .iter()
+            .filter_map(|inst| graph.op(*inst))
+        {
             apply_call_carrier_transfer(prepared, abi, run, op);
         }
     }
@@ -2804,13 +2799,11 @@ fn collect_call_arg_state_of_height(
     // entered with: every event sets a carrier to a content of its own, so a
     // block's effect is the last event per carrier. Computed once per block,
     // so a visit of the fixpoint below costs the carriers, not the block.
-    let effects = function
-        .blocks()
-        .iter()
+    let effects = (prepared.graph().blocks.iter())
         .map(|block| {
             (
                 block.addr,
-                block_carrier_effect(prepared, abi, &tracked, block),
+                block_carrier_effect(prepared, abi, &tracked, block.id),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -2866,7 +2859,7 @@ fn collect_call_arg_state_of_height(
     }
     let mut by_call = BTreeMap::new();
     for (block_addr, calls) in &calls_by_block {
-        let Some(block) = function.get_block(*block_addr) else {
+        let Some(block) = graph.block_id_for_addr(*block_addr) else {
             continue;
         };
         // A block nothing reaches holds nothing known.
@@ -2874,14 +2867,14 @@ fn collect_call_arg_state_of_height(
             .get(block_addr)
             .cloned()
             .unwrap_or_else(|| unknown_state.clone());
-        for dst in block
-            .phis()
-            .iter()
-            .filter_map(|phi| graph.value_of(phi.dst))
-        {
+        let phis = (graph.phi_insts(block).iter()).filter_map(|phi| graph.inst(*phi)?.output);
+        for dst in phis {
             update_call_carrier_state(prepared, abi, &mut state, dst);
         }
-        for (op_id, op) in block.sited() {
+        for &inst in graph.op_insts(block) {
+            let (Some(op), Some(op_id)) = (graph.op(inst), graph.op_for_inst(inst)) else {
+                continue;
+            };
             if let Some(call_id) = calls.get(&op_id) {
                 by_call.insert(*call_id, call_arguments_in(prepared, abi, *call_id, &state));
             }
