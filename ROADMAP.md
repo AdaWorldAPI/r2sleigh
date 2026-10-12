@@ -389,7 +389,15 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             named for a decision ([one-ir](doc/adr-one-ir.md), "The op
             after the seal", amended 2026-10-12: the plan had the graph
             index the function's operations, which hands 216 graph-only
-            signatures a handle back).
+            signatures a handle back). Step 1 done (#182): every
+            post-seal reader of the function's operations (22 r2ssa files,
+            r2types' named copy, now spelled from the graph by
+            `SsaGraph::named_blocks`, r2dec and r2engine) reads the graph;
+            the named copies those passes built per call are gone. `pdd` 2
+            to 6% faster, the 50-function session 3%, allocations 1% fewer,
+            heap peaks unchanged, census byte-identical. Step 2, next: drop
+            the function's blocks at the seal behind a type, the tests that
+            read a sealed function's blocks moved to the graph.
          2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
             symbols 7.6, names 4.2), PF's.
          3. **MM.7** compact identities: a disposition (48 B per
