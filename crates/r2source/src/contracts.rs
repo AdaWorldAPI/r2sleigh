@@ -3539,16 +3539,17 @@ impl SourceCallEffect {
         })
     }
 
-    /// The same effect, with where the platform keeps the stack guard; its base must be reserved.
+    /// The same effect, with where the platform keeps the stack guard, where it states one; its
+    /// base must be reserved.
     pub fn with_stack_guard(
         self,
-        guard: SourceStackGuard,
+        guard: Option<SourceStackGuard>,
     ) -> Result<Self, SourceMachineRolesError> {
-        if !self.reserves(guard.base) {
+        if guard.is_some_and(|guard| !self.reserves(guard.base)) {
             return Err(SourceMachineRolesError::ContradictoryCallEffect);
         }
         Ok(Self {
-            stack_guard: Some(guard),
+            stack_guard: guard,
             ..self
         })
     }
@@ -3558,17 +3559,17 @@ impl SourceCallEffect {
         self.stack_guard.as_ref()
     }
 
-    /// The same effect, with where the convention keeps the stack bound; its base must survive
-    /// every call, preserved or reserved.
+    /// The same effect, with where the convention keeps the stack bound, where it states one; its
+    /// base must survive every call, preserved or reserved.
     pub fn with_stack_bound(
         self,
-        bound: SourceStackGuard,
+        bound: Option<SourceStackGuard>,
     ) -> Result<Self, SourceMachineRolesError> {
-        if !self.reserves(bound.base) && !self.preserves(bound.base) {
+        if bound.is_some_and(|bound| !self.reserves(bound.base) && !self.preserves(bound.base)) {
             return Err(SourceMachineRolesError::ContradictoryCallEffect);
         }
         Ok(Self {
-            stack_bound: Some(bound),
+            stack_bound: bound,
             ..self
         })
     }

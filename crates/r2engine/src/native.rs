@@ -2297,7 +2297,6 @@ pub fn call_effect(
     profile: &LanguageProfile,
     convention: Option<&r2abi::CallingConvention>,
 ) -> Option<SourceCallEffect> {
-    let variadic_count = convention.and_then(|convention| convention.variadic_count_register);
     let prototype = profile.default_prototype()?;
     let place = |name: &str| {
         let placed =
@@ -2361,39 +2360,40 @@ pub fn call_effect(
     // A call may read every input register and the psABI's variadic count;
     // a return hands back every output register.
     let mut call_reads = registers(&mut prototype.inputs.iter().map(|entry| &entry.storage));
-    call_reads.extend(variadic_count.and_then(place));
+    call_reads.extend(
+        convention.and_then(|convention| convention.variadic_count_register.and_then(place)),
+    );
     let return_reads = registers(&mut prototype.outputs.iter().map(|entry| &entry.storage));
     SourceBoundaryReads::new(call_reads, return_reads)
         .and_then(|reads| SourceCallEffect::new(clobbered, preserved, reads))
         .and_then(|effect| effect.with_system_reserved(system_reserved))
-        .and_then(
-            |effect| match r2abi::stack_guard(&arch.name, bits, platform) {
-                Some(guard) => match place(guard.register) {
-                    Some(base) => effect.with_stack_guard(r2source::SourceStackGuard {
-                        base,
-                        offset: guard.offset,
-                        width: guard.width,
-                    }),
-                    None => Ok(effect),
-                },
-                None => Ok(effect),
-            },
-        )
         .and_then(|effect| {
-            let bound = convention.and_then(|convention| convention.stack_bound);
-            match bound.and_then(|bound| Some((bound, place(bound.register)?))) {
-                Some((bound, base)) => effect.with_stack_bound(r2source::SourceStackGuard {
-                    base,
-                    offset: bound.offset,
-                    width: bound.width,
-                }),
-                None => Ok(effect),
-            }
+            effect.with_stack_guard(placed(
+                r2abi::stack_guard(&arch.name, bits, platform),
+                &place,
+            ))
+        })
+        .and_then(|effect| {
+            let bound = convention.and_then(|convention| convention.stack_bound.as_ref());
+            effect.with_stack_bound(placed(bound, &place))
         })
         .inspect_err(|error| {
             r2il::refusal_evidence!("call-effect", "{}: {error:?}", prototype.name);
         })
         .ok()
+}
+
+/// A stated stack guard at the storage its register is placed in; none where it is unplaced.
+fn placed(
+    guard: Option<&r2abi::StackGuard>,
+    place: &dyn Fn(&str) -> Option<CanonicalStorageId>,
+) -> Option<r2source::SourceStackGuard> {
+    let guard = guard?;
+    Some(r2source::SourceStackGuard {
+        base: place(guard.register)?,
+        offset: guard.offset,
+        width: guard.width,
+    })
 }
 
 /// Whether two storages share a byte.

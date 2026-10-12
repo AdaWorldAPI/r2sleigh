@@ -114,8 +114,9 @@ const AARCH64_DARWIN: [PlatformRegister; 1] = [PlatformRegister {
                register x18. Don't use this register.\"",
 }];
 
-/// Where a platform keeps the value a stack protector compares its canary with: memory at a
-/// constant offset from a register the platform reserves.
+/// A word a compiler-inserted stack check reads at a constant offset from a reserved register:
+/// a platform's canary for a stack protector, or a runtime's lowest stack pointer (Go's
+/// `g.stackguard0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StackGuard {
     /// The reserved register, spelled as radare2 spells it.
@@ -181,19 +182,8 @@ pub struct CallingConvention {
     pub entry_stack: Option<EntryStack>,
     /// The lowest stack pointer a function may run with, where the runtime keeps one a prologue
     /// compares against; `None` where the convention states none.
-    pub stack_bound: Option<StackBound>,
+    pub stack_bound: Option<StackGuard>,
     /// The documents that state these.
-    pub citation: &'static str,
-}
-
-/// Memory at a constant offset from a register the convention fixes, holding the stack pointer
-/// below which a function must not run: Go's `g.stackguard0`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StackBound {
-    /// The fixed register, spelled as radare2 spells it.
-    pub register: &'static str,
-    pub offset: u64,
-    pub width: u32,
     pub citation: &'static str,
 }
 
@@ -330,7 +320,7 @@ const GO_AMD64: CallingConvention = CallingConvention {
         alignment: 8,
         residue: 0,
     }),
-    stack_bound: Some(StackBound {
+    stack_bound: Some(StackGuard {
         register: "r14",
         offset: 16,
         width: 8,
@@ -348,7 +338,7 @@ const GO_ARM64: CallingConvention = CallingConvention {
         alignment: 16,
         residue: 0,
     }),
-    stack_bound: Some(StackBound {
+    stack_bound: Some(StackGuard {
         register: "x28",
         offset: 16,
         width: 8,

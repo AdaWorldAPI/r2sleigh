@@ -14,7 +14,7 @@ pub mod types;
 
 pub use declarations::{DataObject, Declarations};
 pub use platform::{
-    CallingConvention, EntryStack, PlatformRegister, RegisterDuty, StackBound, StackGuard,
+    CallingConvention, EntryStack, PlatformRegister, RegisterDuty, StackGuard,
     architecture_registers, calling_convention, go_abi0_convention, go_calling_convention,
     go_unstated_convention, platform_registers, stack_guard,
 };
