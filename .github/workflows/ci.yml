@@ -466,7 +466,7 @@ jobs:
     name: Equivalence aarch64 ${{ matrix.compiler }}-${{ matrix.opt }} ${{ matrix.part.name }}
     runs-on: ubuntu-24.04
     needs: build
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -487,9 +487,17 @@ jobs:
           path: target/ci
       - run: chmod +x target/ci/r2s
       - name: Install the AArch64 cross toolchain and qemu-user
+        # Usually 15 s; a stalled mirror held it 20 minutes twice (2026-10-12), so each try is bounded.
+        timeout-minutes: 7
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+          apt="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20"
+          for attempt in 1 2; do
+            timeout 60 $apt update -qq &&
+              timeout 120 $apt install -y -qq gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user &&
+              exit 0
+            echo "apt try $attempt did not finish; trying again"
+          done
+          exit 1
       - name: Print the compilers
         run: |
           aarch64-linux-gnu-gcc --version | head -n 1
