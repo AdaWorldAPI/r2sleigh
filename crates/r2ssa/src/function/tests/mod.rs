@@ -749,8 +749,7 @@ fn ssa_artifact_exposes_typed_graph_queries() {
     let graph = artifact.graph();
     let value = artifact
         .named_blocks()
-        .iter()
-        .next()
+        .first()
         .and_then(|block| block.ops().first())
         .and_then(|op| op.dst())
         .cloned()

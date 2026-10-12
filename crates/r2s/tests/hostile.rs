@@ -27,6 +27,8 @@ fn finishes_within(fixture: &str, script: &str, limit: Duration) -> Option<i32> 
         std::thread::sleep(Duration::from_millis(20));
     }
     let _ = child.kill();
+    // Reaped, so a killed shell leaves no zombie behind the suite.
+    let _ = child.wait();
     None
 }
 
