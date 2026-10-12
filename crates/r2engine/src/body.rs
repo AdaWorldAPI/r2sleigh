@@ -155,6 +155,9 @@ pub enum UnresolvedReason {
     /// run: data decodes as readily as code, and the mapping is what says
     /// which one it is.
     NotExecutable,
+    /// Control reaches an executable address the file holds no byte for: the loader's zero fill,
+    /// which no file states as code (a debug companion's `.text`, a packer's empty segment).
+    Unbacked,
     /// The bytes there do not decode.
     Undecodable,
     /// The instruction needs more bytes than the image maps at that address.
@@ -168,6 +171,8 @@ pub enum BodyError {
     EntryUnmapped(u64),
     /// The entry is mapped where no instruction can run, so it begins no function.
     EntryNotExecutable(u64),
+    /// The file holds no byte at the entry: the loader fills zeros there, which state no code.
+    EntryUnbacked(u64),
     /// The entry address does not decode, so there is no first instruction.
     EntryUndecodable(u64),
 }
@@ -179,6 +184,10 @@ impl std::fmt::Display for BodyError {
             Self::EntryNotExecutable(addr) => write!(
                 f,
                 "no instruction can run at {addr:#x}: the program maps it without execute permission"
+            ),
+            Self::EntryUnbacked(addr) => write!(
+                f,
+                "the file holds no bytes at {addr:#x}: the loader fills zeros there"
             ),
             Self::EntryUndecodable(addr) => write!(f, "no instruction decodes at {addr:#x}"),
         }
@@ -410,6 +419,7 @@ impl Walk {
             return Err(match walk.unresolved.last().map(|stop| stop.reason) {
                 Some(UnresolvedReason::Unmapped) => BodyError::EntryUnmapped(entry),
                 Some(UnresolvedReason::NotExecutable) => BodyError::EntryNotExecutable(entry),
+                Some(UnresolvedReason::Unbacked) => BodyError::EntryUnbacked(entry),
                 _ => BodyError::EntryUndecodable(entry),
             });
         };
@@ -457,12 +467,17 @@ impl Walk {
         disasm: &Disassembler,
         program: &dyn Program,
     ) -> Option<Instruction> {
-        let Some(window) = program.read(addr, WINDOW) else {
+        let Some(mut window) = program.read(addr, WINDOW) else {
             return self.stop(addr, UnresolvedReason::Unmapped);
         };
-        if !program.region(addr).is_some_and(|region| region.execute) {
+        let Some(region) = program.region(addr).filter(|region| region.execute) else {
             return self.stop(addr, UnresolvedReason::NotExecutable);
+        };
+        if addr >= region.file_end {
+            return self.stop(addr, UnresolvedReason::Unbacked);
         }
+        // An instruction reaching into the zero fill reads only what the file holds, so it is short.
+        window.truncate(usize::try_from(region.file_end - addr).unwrap_or(usize::MAX));
         let available = window.len();
         // Sleigh fetches a whole window whatever the instruction needs, so a
         // short one is padded and the decoded size checked against what is real.
