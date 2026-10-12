@@ -2211,37 +2211,30 @@ impl FunctionFacts {
         // Preserve exact parameter identity through same-width copies. This is
         // an alias relation, unlike the broader expression dependency walk:
         // arithmetic, loads, casts, and phi nodes never inherit the binding.
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for value in &prepared.graph().values {
-                if parameter_slot_by_value.contains(value.id) {
-                    continue;
-                }
-                let Some(inst) = prepared
-                    .graph()
-                    .def_inst(value.id)
-                    .and_then(|inst| prepared.graph().inst(inst))
-                else {
+        // A copy has one source, so one walk forward from the bound values, `O(V + E)`.
+        let graph = prepared.graph();
+        let mut ready = parameter_slot_by_value.keys().collect::<Vec<_>>();
+        while let Some(source) = ready.pop() {
+            let slot = parameter_slot_by_value[source];
+            for site in graph.use_sites(source) {
+                let Some(inst) = graph.inst(site.inst) else {
                     continue;
                 };
                 let r2ssa::InstPayload::Op(r2ssa::SSAOp::Copy { dst, src }) = &inst.payload else {
                     continue;
                 };
-                let graph = prepared.graph();
-                if graph.var(*dst).size != graph.var(*src).size {
+                if *src != source
+                    || graph.var(*dst).size != graph.var(*src).size
+                    || parameter_slot_by_value.contains(*dst)
+                {
                     continue;
                 }
-                let source = *src;
-                let Some(slot) = parameter_slot_by_value.get(source).copied() else {
-                    continue;
-                };
                 self.render
                     .bindings
-                    .get_or_insert_with(value.id, BTreeSet::new)
+                    .get_or_insert_with(*dst, BTreeSet::new)
                     .insert(r2ssa::SemanticId::Parameter(slot));
-                parameter_slot_by_value.insert(value.id, slot);
-                changed = true;
+                parameter_slot_by_value.insert(*dst, slot);
+                ready.push(*dst);
             }
         }
         for (slot, (entry_value, carrier_width)) in entry_value_by_slot {

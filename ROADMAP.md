@@ -401,10 +401,11 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             domains under 0.1 MB. Dropping them at the seal needs the
             analysis and its sealing as one query, since both hold one
             `Arc<SsaArtifact>`: worth it only once the rest are done.
-         7. Follow-up (D11): `populate_certified_parameter_exprs` copies a
+         7. Done (#179, D11): `populate_certified_parameter_exprs` copied a
             parameter's binding along same-width copies in a `while
-            changed` loop over every value, `O(V · chain)`; one pass in
-            definition order states the same set.
+            changed` loop over every value, `O(V · chain)`; one walk forward
+            from the bound values over their uses states the same map,
+            `O(V + E)`, census byte-identical.
          Gates (#177): `census.py time` reports and gates each case's heap
          peak from the `alloc-count` build (1.05x the base) and times a
          50-function pumasim session under the RSS, heap and time budgets;
