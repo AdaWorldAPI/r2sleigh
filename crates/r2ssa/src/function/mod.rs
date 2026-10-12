@@ -1645,6 +1645,18 @@ impl SsaArtifact {
         self.graph().named_block(addr)
     }
 
+    /// The function in the text [`SSAFunction::dump`] prints, its operations read off the graph.
+    pub fn dump(&self) -> String {
+        let function = self.function();
+        dump_blocks(
+            function.name.as_deref(),
+            function.entry,
+            &self.named_blocks(),
+            function,
+            SSAVar::clone,
+        )
+    }
+
     /// The instruction a test names by its block and its place among the
     /// block's operations.
     #[cfg(test)]
@@ -3766,10 +3778,8 @@ impl SSAFunction {
         let mut max_switch_cases = 0usize;
 
         for &addr in &self.block_order {
-            if let Some(crate::cfg::BlockTerminator::Switch { cases, default }) = self
-                .cfg
-                .get_block(addr)
-                .map(|block| &block.terminator)
+            if let Some(crate::cfg::BlockTerminator::Switch { cases, default }) =
+                self.cfg.get_block(addr).map(|block| &block.terminator)
             {
                 switch_block_count += 1;
                 let case_count = cases.len() + usize::from(default.is_some());

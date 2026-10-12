@@ -1067,7 +1067,7 @@ fn the_medium_tier_is_readable_without_rendering() {
         name: "dead_load",
     };
     let artifact = r2engine::native::prepared(&target, &program, BASE).expect("prepared");
-    let dump = artifact.artifact().function().dump();
+    let dump = artifact.artifact().dump();
 
     // The load is in the tier whether or not anything renders it, and the
     // operations are spelled by `SSAOp`'s own Display rather than by Debug.
@@ -2275,7 +2275,7 @@ fn an_entry_with_two_latches_merges_the_caller_and_both_latches() {
         .block_id_for_addr(BASE)
         .and_then(|id| graph.block(id))
         .expect("the entry block");
-    let dump = artifact.function().dump();
+    let dump = artifact.dump();
     assert_eq!(header.predecessors.len(), 3, "{dump}");
     // The counter is written on one latch only, so its merge is the one
     // that has to take the caller's value, the counting latch's and the
@@ -4812,7 +4812,7 @@ fn a_call_reading_the_value_its_copied_argument_carried_reads_it() {
     let r2ssa::SourceCallArgumentValue::Value(passed) = call
         .arguments
         .first()
-        .unwrap_or_else(|| panic!("{call:#?}\n{}", artifact.function().dump()))
+        .unwrap_or_else(|| panic!("{call:#?}\n{}", artifact.dump()))
         .value
     else {
         panic!("the first argument is a value: {call:#?}");
@@ -4832,12 +4832,12 @@ fn a_call_reading_the_value_its_copied_argument_carried_reads_it() {
             )
         })
         .collect::<Vec<_>>();
-    assert!(!call_reads.is_empty(), "{}", artifact.function().dump());
+    assert!(!call_reads.is_empty(), "{}", artifact.dump());
     for site in call_reads {
         assert!(
             !artifact.ignored_reads().contains(site),
             "{site:?} is the argument's read\n{}",
-            artifact.function().dump()
+            artifact.dump()
         );
     }
 }
@@ -4876,16 +4876,16 @@ fn a_loop_header_merges_only_what_the_loop_carries() {
         name: "fnv1a32",
     };
     let prepared = r2engine::native::prepared(&machine.target(), &program, BASE).expect("prepared");
-    let function = prepared.artifact().function();
-    let header = function
-        .get_block(BASE + 0x18)
-        .unwrap_or_else(|| panic!("the loop header\n{}", function.dump()));
+    let artifact = prepared.artifact();
+    let header = artifact
+        .named_block(BASE + 0x18)
+        .unwrap_or_else(|| panic!("the loop header\n{}", artifact.dump()));
     let merged = header
         .phis()
         .iter()
-        .map(|phi| function.var(phi.dst).display_name())
+        .map(|phi| phi.dst.display_name())
         .collect::<Vec<_>>();
-    assert_eq!(merged, ["RAX_2", "RDI_1"], "{}", function.dump());
+    assert_eq!(merged, ["RAX_2", "RDI_1"], "{}", artifact.dump());
 }
 
 /// clang -O1's `classify`: a switch over 0..=7 lowered to a lookup in an

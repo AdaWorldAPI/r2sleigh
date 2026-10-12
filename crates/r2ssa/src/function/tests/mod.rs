@@ -2727,7 +2727,10 @@ fn a_sealed_function_s_operations_are_its_graph_s() {
         .seal(&SourceMachineContext::from_blocks(&[block], None))
         .expect("the sealed function validates");
     let ops = sealed.graph().named_blocks()[0].ops().to_vec();
-    assert!(matches!(ops.as_slice(), [SSAOp::Copy { .. }, SSAOp::Return { .. }]), "{ops:?}");
+    assert!(
+        matches!(ops.as_slice(), [SSAOp::Copy { .. }, SSAOp::Return { .. }]),
+        "{ops:?}"
+    );
 }
 
 /// Reading a sealed function's operations is a defect the debug build names.
