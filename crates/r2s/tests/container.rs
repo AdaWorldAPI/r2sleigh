@@ -17,14 +17,19 @@ fn fixture(name: &str) -> PathBuf {
 
 /// The shell's standard output for one script over one fixture.
 fn run(name: &str, script: &str) -> String {
+    run_at(&fixture(name), script)
+}
+
+fn run_at(path: &std::path::Path, script: &str) -> String {
     let done = Command::new(env!("CARGO_BIN_EXE_r2s"))
         .args(["-q", "-c", script])
-        .arg(fixture(name))
+        .arg(path)
         .output()
         .expect("the shell runs");
     assert!(
         done.status.success(),
-        "`{script}` on {name}: {}",
+        "`{script}` on {}: {}",
+        path.display(),
         String::from_utf8_lossy(&done.stderr)
     );
     String::from_utf8_lossy(&done.stdout).into_owned()
@@ -171,6 +176,46 @@ fn ie_lists_the_program_entry_and_iee_the_arrays_the_loader_runs_around_it() {
         ],
         "{arrays}"
     );
+}
+
+/// A fat file's offsets are the file's: the header field stating the entry is at the slice's base
+/// plus its offset in the slice.
+#[test]
+fn ie_states_a_fat_slice_s_entry_header_where_the_file_holds_it() {
+    let thin = std::fs::read(fixture("manual_limits_O2")).expect("the fixture reads");
+    const BASE: usize = 0x4000;
+    let mut fat = Vec::with_capacity(BASE + thin.len());
+    for word in [
+        0xcafe_babe_u32,
+        1,
+        0x0100_000c,
+        0,
+        BASE as u32,
+        thin.len() as u32,
+        14,
+    ] {
+        fat.extend_from_slice(&word.to_be_bytes());
+    }
+    fat.resize(BASE, 0);
+    fat.extend_from_slice(&thin);
+    let path = std::env::temp_dir().join(format!("r2s-fat-ie-{}", std::process::id()));
+    std::fs::write(&path, &fat).expect("the fat file is written");
+    let sliced = run_at(&path, "ie");
+    std::fs::remove_file(&path).expect("the fat file is removed");
+    let alone = run("manual_limits_O2", "ie");
+    let header = |row: &str| {
+        let field = row.split_whitespace().nth(2).expect("a phaddr column");
+        u64::from_str_radix(field.trim_start_matches("0x"), 16).expect("a hex offset")
+    };
+    let (sliced, alone) = (rows(&sliced), rows(&alone));
+    assert_eq!(sliced.len(), alone.len(), "{sliced:?} {alone:?}");
+    for (sliced, alone) in sliced.iter().zip(&alone) {
+        assert_eq!(
+            header(sliced),
+            header(alone) + BASE as u64,
+            "{sliced} {alone}"
+        );
+    }
 }
 
 #[test]

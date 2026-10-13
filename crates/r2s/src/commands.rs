@@ -537,7 +537,11 @@ fn entries(session: &Session, initialisers: bool) -> Result<String, String> {
             "\n{} {:#010x} {} {} {kind}",
             spelled(file_offset_of(session, entry.vaddr)),
             entry.vaddr,
-            spelled(entry.stated_at.map(|at| at.offset)),
+            spelled(
+                entry
+                    .stated_at
+                    .map(|at| session.image().file_base() + at.offset)
+            ),
             spelled(entry.stated_at.and_then(|at| at.vaddr)),
         ));
     }

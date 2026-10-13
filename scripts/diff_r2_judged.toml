@@ -332,6 +332,13 @@ verdict = "r2s-right"
 reason = "a fat file's offsets are the file's: radare2's iS counts from the slice where its own is and ie count from the file"
 
 [[judged]]
+command = "ie"
+binaries = ["a.out", "AppIOSEntitlements.ios", "BatteryLife", "cat-macos-arm64", "fat-intel", "fatmach0-3true", "hellocxx-osx-fat-intel", "ired", "libexpat.1.dylib", "libswiftCoreFoundation.dylib", "ls-m1", "ls-sequoia", "mac-ls3", "mac-ls4", "modernobjc-noarm64", "TestApp.ios", "TestApp.ios.stripped", "TrollStore"]
+columns = ["phaddr"]
+verdict = "r2s-right"
+reason = "a fat file's offsets are the file's: radare2 states the entry header field's offset from the slice, its paddr from the file"
+
+[[judged]]
 command = "pd"
 binaries = "*"
 r2 = '(lea|mov) r\w+, (qword )?\[?(str|sym|section|segment|loc)\.'
