@@ -2198,7 +2198,9 @@
    "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O0::main": {
-   "status": "equal"
+   "cause": "[#122] Legacy's C for `main` did not compile; staged's compiles and traps at a residual where a term or store is not spelled yet (TermNotSpelled, StoreNotSpelled) or a call's arity is unproven.",
+   "reason": "r2sleigh_residual_void",
+   "status": "residual-trap"
   },
   "tests/gold/review.c::aarch64-clang-O0::mul_div": {
    "status": "equal"
@@ -2445,7 +2447,9 @@
    "status": "equal"
   },
   "tests/gold/review.c::aarch64-gcc-O2::main": {
-   "status": "equal"
+   "cause": "[#122] Legacy's C for `main` did not compile; staged's compiles and traps at a residual where a term or store is not spelled yet (TermNotSpelled, StoreNotSpelled) or a call's arity is unproven.",
+   "reason": "r2sleigh_residual_void",
+   "status": "residual-trap"
   },
   "tests/gold/review.c::aarch64-gcc-O2::mul_div": {
    "status": "equal"
