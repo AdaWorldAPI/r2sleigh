@@ -7,6 +7,7 @@
 
 use std::collections::BTreeSet;
 
+use r2source::confidence::{Basis, Fact};
 use r2types::{CTypeLike, CertifiedEntity, SourceOwnedFunctionFacts};
 
 pub use r2ssa::StackAddressBase as StackBase;
@@ -23,14 +24,13 @@ pub struct FunctionInfo {
     pub convention: Option<String>,
     pub arguments: Vec<Argument>,
     pub locals: Vec<Local>,
-    /// What a definition of it declares it returns, as r2types states it: the
-    /// decided type, or the result carrier where the value is unproven.
-    pub returns: Option<CTypeLike>,
-    /// Whether the boundary proves neither a result nor its absence, so
-    /// `returns` is the carrier a caller reads and not a proven type.
-    pub return_unproven: bool,
-    /// Whether the whole program proves control never comes back from it.
-    pub noreturn: bool,
+    /// What a definition of it declares it returns, and what that rests on: the decided type, or
+    /// the result carrier a caller reads, on the convention alone, where the value is unproven
+    /// (none where C has no carrier that wide). Absent where r2types refuses a type.
+    pub returns: Option<Fact<Option<CTypeLike>>>,
+    /// Whether control never comes back from it, and what that takes for granted: nothing where
+    /// the whole program proves it, a premise where a runtime model says it. `None` where it may.
+    pub noreturn: Option<std::collections::BTreeSet<r2source::Premise>>,
 }
 
 /// One basic block.
@@ -48,7 +48,9 @@ pub struct Argument {
     pub slot: u32,
     /// The storage it arrives in, where the entry value names one.
     pub storage: Option<r2ssa::CanonicalStorageId>,
-    pub ty: CTypeLike,
+    /// Its type, and what that rests on: the interface's types, the body's solve, or only the
+    /// width of the carrier it arrives in.
+    pub ty: Fact<CTypeLike>,
     /// What the source calls it, where the source names it.
     pub name: Option<String>,
 }
@@ -67,7 +69,7 @@ pub struct Local {
 impl Argument {
     /// This parameter declared under a name, as C spells the declaration.
     pub fn declared_as(&self, name: &str) -> String {
-        r2types::c_object_declaration(&self.ty, name)
+        r2types::c_object_declaration(&self.ty.value, name)
     }
 }
 
@@ -77,7 +79,7 @@ impl FunctionInfo {
         entry: u64,
         artifact: &r2ssa::SsaArtifact,
         sealed: &SourceOwnedFunctionFacts,
-        noreturn: bool,
+        noreturn: Option<std::collections::BTreeSet<r2source::Premise>>,
     ) -> Self {
         let facts = sealed.report();
         let certificates = artifact.certificates();
@@ -96,9 +98,6 @@ impl FunctionInfo {
             convention: facts.type_facts().callconv.clone(),
             arguments: arguments(artifact, sealed, &entities),
             returns: returns(artifact, sealed),
-            return_unproven: sealed
-                .return_type()
-                .is_some_and(r2types::ReturnTypeFact::is_unproven),
             locals: locals(artifact, sealed, &entities),
             noreturn,
         }
@@ -219,9 +218,8 @@ fn arguments(
                     .display_names()
                     .parameter(*slot as usize)
                     .map(str::to_owned),
-                ty: sealed
-                    .parameter_declaration(*slot as usize, width_bits)
-                    .unwrap_or_else(|| CTypeLike::machine_bits(width_bits)),
+                ty: (sealed.parameter_declaration_fact(*slot as usize, width_bits))
+                    .unwrap_or_else(|| carrier_typed(width_bits)),
             })
         })
         .collect::<Vec<_>>();
@@ -243,25 +241,33 @@ fn arguments(
                 .display_names()
                 .parameter(slot as usize)
                 .map(str::to_owned),
-            ty: sealed
-                .parameter_declaration(slot as usize, width_bits)
-                .unwrap_or_else(|| CTypeLike::machine_bits(width_bits)),
+            ty: (sealed.parameter_declaration_fact(slot as usize, width_bits))
+                .unwrap_or_else(|| carrier_typed(width_bits)),
         });
     }
     arguments.sort_unstable_by_key(|argument| argument.slot);
     arguments
 }
 
+/// A type that is only the width of the carrier a value arrives in.
+fn carrier_typed(width_bits: u32) -> Fact<CTypeLike> {
+    Fact::new(CTypeLike::machine_bits(width_bits), Basis::CarrierWidth)
+}
+
 /// The decided return, spelled as a rendering declares it.
-fn returns(artifact: &r2ssa::SsaArtifact, sealed: &SourceOwnedFunctionFacts) -> Option<CTypeLike> {
+fn returns(
+    artifact: &r2ssa::SsaArtifact,
+    sealed: &SourceOwnedFunctionFacts,
+) -> Option<Fact<Option<CTypeLike>>> {
     let bits = artifact
         .machine_context()
         .memory_model()
         .default_address_bits();
-    Some(r2types::spellable_c_type_like(
-        sealed.return_type()?.declared()?,
-        bits,
-    ))
+    let fact = sealed.return_type()?;
+    let declared = fact
+        .declared()
+        .map(|ty| r2types::spellable_c_type_like(ty, bits));
+    Some(Fact::new(declared, fact.basis(artifact)?))
 }
 
 /// Every declarable stack object, and every frame slot promotion took out of memory: the frame

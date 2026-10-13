@@ -1275,6 +1275,8 @@ fn recover_interface_inner(
     let no_tail_boundary = matches!(tail, TailResult::NoTailBoundary);
     let mut live_out = crate::liveout::FunctionLiveOut::default();
     let mut result_ambiguous = false;
+    // The argument register handed back untouched as the result, which the return reads.
+    let mut returned_argument = None;
     let mut result_carriers = None;
     // An exact tail-call interface owns this boundary. Looking at the value
     // present before the branch would instead mistake a call argument for the
@@ -1319,6 +1321,56 @@ fn recover_interface_inner(
                     result = RecoveredFunctionResult::Unproven;
                     result_ambiguous = true;
                 }
+            }
+        }
+        // A body whose integer register holds nothing it computed (the caller's value, or none)
+        // and that writes the float one hands back the float one where every reading call reads it
+        // there; unasked, it asks them.
+        let integer_unheld = handed_back || result == RecoveredFunctionResult::Void;
+        let mut float_returned = false;
+        if integer_unheld
+            && let Some((float, float_live_out)) = float_result_written(func, graph, slots)
+        {
+            match carrier_read(result_reads, float) {
+                Some(CarrierRead::Float(observed)) => {
+                    result = RecoveredFunctionResult::Register(RecoveredResult {
+                        slot: observed,
+                        observed,
+                        signed: false,
+                        float: true,
+                    });
+                    result_carriers = None;
+                    candidate_live_out = float_live_out;
+                    float_returned = true;
+                }
+                Some(CarrierRead::Integer) => {}
+                None => result_ambiguous = result_reads.is_none(),
+            }
+        }
+        // Where callers read the integer register beside a written float, the argument it hands back
+        // is still their result.
+        if !float_returned
+            && handed_back
+            && slots
+                .argument_slots()
+                .iter()
+                .any(|argument| argument.location() == candidate.location())
+        {
+            // An argument register the body hands back untouched is its result where every reading
+            // call reads it: AArch64's `ret` of a narrowing function returns its argument in x0.
+            match result_reads.map(|reads| (reads.integer, reads.float)) {
+                Some((1.., 0)) => {
+                    result = RecoveredFunctionResult::Register(RecoveredResult {
+                        slot: candidate,
+                        observed: candidate,
+                        signed: false,
+                        float: false,
+                    });
+                    result_carriers = None;
+                    returned_argument = Some(candidate);
+                }
+                Some(_) => {}
+                None => result_ambiguous = true,
             }
         }
         if !candidate_live_out.is_empty()
@@ -1373,7 +1425,10 @@ fn recover_interface_inner(
     // either case a preserved carrier is a real entry read by the call. Final
     // preparation materializes its source-declared boundary value so every
     // consumer can use the same identity.
-    for storage in passed_through_entry_storages(&facts.boundaries, graph) {
+    for storage in passed_through_entry_storages(&facts.boundaries, graph)
+        .into_iter()
+        .chain(returned_argument)
+    {
         if !reads.contains(&storage) {
             reads.push(storage);
         }

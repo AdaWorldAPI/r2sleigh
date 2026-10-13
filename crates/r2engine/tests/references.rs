@@ -11,11 +11,12 @@ use std::sync::Arc;
 
 use common::{BASE, CALLER, FORKED, JOINED, Literal, ONE, PASSES, SLOT, STEPPED, STUB, TEXT, TWO};
 use r2engine::body::{Unresolved, UnresolvedReason};
+use r2engine::discovery::Basis;
 use r2engine::program::OpenProgram;
-use r2engine::query::{AnnotationKind, Listing, Reference, Role, Stop, Support, Unread};
+use r2engine::query::{AnnotationKind, Listing, Reference, Role, Stop, Unread};
 
 /// Every fact as `(from, to, role, support)`.
-fn listed(facts: &[Reference]) -> Vec<(u64, u64, Role, Support)> {
+fn listed(facts: &[Reference]) -> Vec<(u64, u64, Role, Basis)> {
     facts
         .iter()
         .map(|fact| (fact.from, fact.to, fact.role, fact.support))
@@ -75,7 +76,7 @@ fn each_reference_says_how_its_instruction_uses_the_address_and_what_shows_it() 
     // program; `mov eax, 1` and the return address a call pushes are neither.
     let mut program = OpenProgram::of(Literal::new().importing("strlen"));
     let facts = program.references().expect("the index builds").value;
-    use Support::{Certified, Decoded, Folded};
+    use Basis::{Certified, Decoded, Folded};
     assert_eq!(
         listed(facts.facts()),
         [
@@ -160,17 +161,17 @@ fn a_block_operation_and_a_computed_call_name_the_addresses_their_block_folds() 
                 movsb,
                 BASE + 0x20,
                 Role::Write { width: byte },
-                Support::Folded
+                Basis::Folded
             ),
             (
                 movsb,
                 BASE + 0x30,
                 Role::Read { width: byte },
-                Support::Folded
+                Basis::Folded
             ),
             // lea rax, [callee], which the call takes as it stands; then call rax
-            (CALLS, CALLEE, Role::Value, Support::Folded),
-            (CALLS + 7, CALLEE, Role::Call, Support::Folded),
+            (CALLS, CALLEE, Role::Value, Basis::Folded),
+            (CALLS + 7, CALLEE, Role::Call, Basis::Folded),
         ]
     );
     // The references to one address come back by source, each with the instruction and the function holding it.
@@ -189,7 +190,7 @@ fn a_block_operation_and_a_computed_call_name_the_addresses_their_block_folds() 
         .to(CALLEE)
         .filter_map(|(_, source)| Some(source.line.syntax.as_ref()?.text()))
         .collect::<Vec<_>>();
-    assert_eq!(text, ["lea rax, 0x1050", "call rax"]);
+    assert_eq!(text, ["lea rax, [0x1050]", "call rax"]);
 }
 
 /// `left`: `test edi, edi; je tail; mov eax, 1; ret`; `tail`: `call leaf; ret`; `right`: `jmp tail`; `leaf`: `mov eax, 2; ret`.
@@ -247,8 +248,8 @@ fn a_branch_that_leaves_its_return_address_in_the_link_register_is_a_call() {
     assert_eq!(
         listed(index.facts()),
         [
-            (BASE + 8, BASE + 0x10, Role::Value, Support::Folded),
-            (BASE + 0xc, callee, Role::Call, Support::Folded),
+            (BASE + 8, BASE + 0x10, Role::Value, Basis::Folded),
+            (BASE + 0xc, callee, Role::Call, Basis::Folded),
         ]
     );
 }
@@ -336,8 +337,28 @@ fn declared_callee() -> Literal {
     literal
 }
 
+/// `caller`: `mov ebx, TEXT; mov edi, ebx; call one; mov edi, ebx; call strlen; ret`.
+fn both_callees() -> Literal {
+    let mut literal = Literal::new().with_data().importing("strlen");
+    literal.write(ONE, &[0x8b, 0x07, 0xc3]);
+    let call = |at: u64, to: u64| {
+        let mut bytes = vec![0xe8];
+        bytes.extend((to.wrapping_sub(at + 5) as u32).to_le_bytes());
+        bytes
+    };
+    let mut bytes = vec![0xbb];
+    bytes.extend((TEXT as u32).to_le_bytes());
+    bytes.extend([0x89, 0xdf]);
+    bytes.extend(call(CALLER + 7, ONE));
+    bytes.extend([0x89, 0xdf]);
+    bytes.extend(call(CALLER + 14, STUB));
+    bytes.push(0xc3);
+    literal.write(CALLER, &bytes);
+    literal
+}
+
 /// What the `mov edi, TEXT` line claims about TEXT in `pd`, and the support `ax` holds it on.
-fn claimed_at_caller(literal: Literal) -> (Option<Support>, Option<Support>) {
+fn claimed_at_caller(literal: Literal) -> (Option<Basis>, Option<Basis>) {
     let mut program = OpenProgram::of(literal);
     let listing = Listing {
         start: CALLER,
@@ -360,14 +381,17 @@ fn claimed_at_caller(literal: Literal) -> (Option<Support>, Option<Support>) {
 #[test]
 fn a_number_that_stays_put_is_an_address_only_where_a_callee_takes_one() {
     // The callee's own body loads through the parameter the number arrives in.
-    let dereferenced = Some(Support::Dereferenced);
+    let dereferenced = Some(Basis::Dereferenced);
     assert_eq!(
         claimed_at_caller(reading_callee()),
         (dereferenced, dereferenced)
     );
     // A declaration types the parameter as a pointer.
-    let declared = Some(Support::Declared);
+    let declared = Some(Basis::Declared);
     assert_eq!(claimed_at_caller(declared_callee()), (declared, declared));
+    // Handed to both, the declaration is the stronger reason: the grades put a library's stated
+    // prototype above one callee's observed use (doc/adr-provenance.md, C4).
+    assert_eq!(claimed_at_caller(both_callees()), (declared, declared));
     // `one` returns 1 and never reads its parameter, so the same number is only a number.
     let mut literal = Literal::new().with_data();
     passing_text(&mut literal, ONE);

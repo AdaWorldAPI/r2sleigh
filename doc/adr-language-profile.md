@@ -65,13 +65,30 @@ The profile, owned by r2abi (the cited rows) and selected by r2engine, states:
    The check compares a stack-pointer value
    with `stackguard0`, which r2abi states per architecture (the goroutine
    register, R14 on amd64 and R28 on arm64, and the field's offset in
-   `runtime.g`).
+   `runtime.g`). The compare is the machine's unsigned `<=`, whether the
+   flags spell it as x86's borrow-or-zero or AArch64's `!(b <= a) || zero`.
 4. **Runtime models.** Library and runtime functions per language, in r2abi:
    libc for C, Go's runtime, Rust's `core` and `alloc`, the C++ ABI
    (`__cxa_throw`, operator `new`). A model names a callee's effect and
    whether it returns; it never names semantics a body would have to prove.
+   Go's compiler ends a block after `runtime.throw`, `gopanic` and the
+   `panic*` helpers (`cmd/compile/internal/ssagen/ssa.go`), so their model
+   is that they never return, under `go-runtime`, where the container states
+   the callee is Go. The no-return answer carries the premises it rests on,
+   so discovery, a body's walk, its proof line and `afi` each say what they
+   took for granted.
 5. **Names.** A demangler per scheme, in r2engine's naming, producing a
-   display name. A name stays a hint.
+   display name. A name stays a hint. Planned (2026-10-13): `Name.text`
+   keeps the mangled spelling prototype tables are keyed by, and the
+   demangled form (Itanium, Rust v0 and legacy, by the mangling LP0 reads)
+   is a column beside it, which `is` shows as radare2's `demangled` column
+   does. Which spelling a flag (`afl`, a seek) and a C identifier (`pdd`)
+   take is command and renderer policy, decided with D: radare2's flags
+   filter the demangled form (`r_name_filter`: letters, digits, `.`, `:` and
+   `_` kept, brackets, `~`, `,`, `-`, `/`, `;`, `?`, `@`, quotes and spaces
+   made `_`, the rest dropped), and C has no `::`. The demanglers
+   (`cpp_demangle`, `rustc-demangle`) are dependencies for the maintainer
+   to accept.
 6. **Rendering.** The spelling of the language-neutral render tree.
 
 ## What stays neutral

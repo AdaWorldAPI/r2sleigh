@@ -951,6 +951,7 @@ impl Importer<'_> {
             }
             MachineExprKind::Phi { .. }
             | MachineExprKind::PopulationCount { .. }
+            | MachineExprKind::LeadingZeros { .. }
             | MachineExprKind::Divide { .. }
             | MachineExprKind::Remainder { .. }
             // Whether a conditional store took is not a term the rewriter can
@@ -1668,7 +1669,9 @@ impl Importer<'_> {
     fn try_substitute(&mut self, value: ValueId) -> Option<(TermId, Vec<Substitution>)> {
         let inst = self.artifact.graph().def_inst(value)?;
         let root = self.projection.root_of(inst)?;
-        let producer = self.artifact.obligations().instruction_for_inst(inst)?.id;
+        let producer = (self.artifact.obligations())
+            .instruction_for_inst(self.artifact.graph(), inst)?
+            .id;
         if self.in_progress.contains(&root) {
             return None;
         }

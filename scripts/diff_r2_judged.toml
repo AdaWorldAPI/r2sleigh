@@ -1,0 +1,425 @@
+# Disagreements between radare2 and r2s that are judged: who is right, and why
+# (ROADMAP P11). `diff_r2.py` fails on any disagreement no entry covers and
+# reports an entry nothing matched.
+#
+# command   the verb (`pd`, `px`, `iS`, `is`, `ie`)
+# binaries  a shell pattern over the file name, or a list of them
+# r2, r2s   for a listing: regular expressions each tool's line must match
+#           (`<missing>` where the tool printed no line); an absent one is any
+# values    for a values listing: the values r2s reports and radare2 does not;
+#           none listed covers every value of the binaries
+# verdict   r2s-right: radare2's defect, an upstream candidate
+#           r2-right: r2s's defect, with its owner in the reason
+#           unfilled: r2s does not yet state what radare2 does
+#           deliberate: r2s spells it otherwise on purpose
+
+[[judged]]
+command = "pd"
+binaries = "armeb_hello_static"
+verdict = "r2s-right"
+reason = "e_flags 0x5800202 states BE8: code is little-endian; radare2 decodes it big-endian"
+
+[[judged]]
+command = "pd"
+binaries = "*"
+r2 = '(push|mov r8,|ldr (ip|r0|r3),|lea rsi,) (sym\.__libc_csu_|main$|str\.|loc\.|segment\.)'
+r2s = '(push|mov r8,|ldr (ip|r0|r3),|lea rsi,) (0x|\[0x)'
+verdict = "deliberate"
+reason = "a number is named only where the engine claims it as an address; a pool load is spelled as encoded (listing.rs `held`)"
+
+[[judged]]
+command = "pd"
+binaries = "_Exit (42)"
+r2 = ' ff +invalid$'
+r2s = '^<missing>$'
+verdict = "r2s-right"
+reason = "past the last PT_LOAD (0x8049030) nothing is mapped; radare2 lists its 0xff fill"
+
+[[judged]]
+command = "px"
+binaries = "_Exit (42)"
+r2 = 'ffff ffff ffff ffff'
+r2s = '^<missing>$'
+verdict = "r2s-right"
+reason = "past the last PT_LOAD (0x8049030) nothing is mapped; radare2 dumps its 0xff fill"
+
+[[judged]]
+command = "px"
+binaries = "syscall_x86"
+r2 = '^0x00400104 .*0a00 ffff ffff ffff'
+verdict = "r2s-right"
+reason = ".rodata ends at 0x40010e and nothing is mapped after it; radare2 dumps its 0xff fill"
+
+[[judged]]
+command = "px"
+binaries = "test_o"
+r2 = 'ffff'
+verdict = "r2s-right"
+reason = "a relocatable object's .text ends at 0x08000056 and .comment is not loaded; radare2 dumps its 0xff fill"
+
+[[judged]]
+command = "iS"
+binaries = "*"
+values = ["0x70000001", "0x70000003"]
+verdict = "unfilled"
+reason = "processor-specific types (ARM_EXIDX, ARM_ATTRIBUTES by e_machine): r2s prints the number, radare2 `----`; both owe the name"
+
+[[judged]]
+command = "iS"
+binaries = "*"
+values = ["0x60000002"]
+verdict = "unfilled"
+reason = "an OS-specific type (Android's packed RELA): r2s prints the number, radare2 `----`; both owe the name"
+
+[[judged]]
+command = "is"
+binaries = "arm*"
+values = ["0x1", "0x5f7d7", "0x677d7", "0x61a2d", "0x69a2d"]
+verdict = "r2s-right"
+reason = "STT_OBJECTs at odd addresses (only STT_FUNC carries the Thumb bit; radare2 clears it), and SHN_ABS value 1 (radare2 rebases it to 0x8000)"
+
+[[judged]]
+command = "is"
+binaries = "0pack"
+values = ["0x55078", "0x455078"]
+verdict = "r2s-right"
+reason = "a .plt.got stub, `jmp qword [reloc._ZNSt13runtime_errorD1Ev]`, that radare2 does not name as an import"
+
+[[judged]]
+command = "ie"
+binaries = "libc-2.2*-debug.so"
+values = ["0x18", "0x20be0", "0x212e0"]
+verdict = "r2s-right"
+reason = "a debuginfo file's header states e_entry (field at 0x18); radare2 reports no entry for it"
+
+[[judged]]
+command = "pd"
+binaries = "libc-2.2*-debug.so"
+verdict = "r2s-right"
+reason = "listed at the stated e_entry, which radare2 drops, so the two list different places of a NOBITS .text"
+
+[[judged]]
+command = "px"
+binaries = "libc-2.2*-debug.so"
+verdict = "r2s-right"
+reason = "dumped at the stated e_entry, which radare2 drops, so the two dump different places"
+
+[[judged]]
+command = "pd"
+binaries = "*.ko"
+r2 = 'call (reloc\.|[A-Za-z_])'
+r2s = 'call 0x'
+verdict = "unfilled"
+reason = "a relocatable object's call is resolved by its relocation; r2s does not apply ET_REL relocations to listings yet"
+
+[[judged]]
+command = "pd"
+binaries = "test.ko"
+r2 = 'mov r[ds]i, [A-Za-z_.]'
+r2s = 'mov r[ds]i, 0x'
+verdict = "unfilled"
+reason = "a relocatable object's operand is resolved by its relocation; r2s does not apply ET_REL relocations to listings yet"
+
+[[judged]]
+command = "is"
+binaries = "ls-focal"
+values = ["0x46d0", "0x46e0", "0x46f0"]
+verdict = "r2s-right"
+reason = ".plt.got stubs (endbr64; jmp through the slot) that radare2 does not name as imports"
+
+[[judged]]
+command = "is"
+binaries = "libc-2.3[12].so"
+values = ["0x25320", "0x26330"]
+verdict = "r2s-right"
+reason = "a .plt.got stub that radare2 does not name as an import"
+
+[[judged]]
+command = "is"
+binaries = "*_mod"
+values = ["0x1040"]
+verdict = "r2s-right"
+reason = "a .plt.got stub (__cxa_finalize) that radare2 does not name as an import"
+
+[[judged]]
+command = "is"
+binaries = "dwarf_test_func_patched"
+values = ["0x1040"]
+verdict = "r2s-right"
+reason = "a .plt.got stub (__cxa_finalize) that radare2 does not name as an import"
+
+[[judged]]
+command = "is"
+binaries = "ls-toybox"
+verdict = "r2s-right"
+reason = "its .plt's entries are 24 bytes apart and r2s reads each stub's slot (0x75928 reads strtod's 0x7b498); radare2 assumes 16 and drifts"
+
+[[judged]]
+command = "is"
+binaries = "libarm.so"
+verdict = "r2s-right"
+reason = "objects at odd addresses (radare2 clears the Thumb bit) and stubs radare2 names one entry off (0x3e110 reads 0x41b88, __cxa_finalize's slot)"
+
+[[judged]]
+command = "is"
+binaries = "libflutter.so"
+verdict = "r2s-right"
+reason = "radare2 names each ARM stub one entry off: 0x4e6da0 reads 0x510fbc, __cxa_atexit's slot, which radare2 puts at 0x4e6d90"
+
+[[judged]]
+command = "pd"
+binaries = "libarm.so"
+r2 = 'b sym\.imp\.__cxa_atexit'
+r2s = 'b sym\.imp\.__cxa_finalize'
+verdict = "r2s-right"
+reason = "the stub at 0x3e110 loads pc from 0x41b88, __cxa_finalize's slot; radare2 names the stub one entry off"
+
+[[judged]]
+command = "pd"
+binaries = "glibc-2.34*"
+r2 = 'call sym\.write$'
+r2s = 'call sym\.__write$'
+verdict = "deliberate"
+reason = "two exported WEAK aliases at one address: r2s names the first by name, radare2 the later table entry (__write in 2.31, write in 2.34)"
+
+[[judged]]
+command = "pd"
+binaries = "libarm64.so"
+r2 = 'sym\.imp\.'
+r2s = 'b 0x'
+verdict = "unfilled"
+reason = "no section headers: r2s's stub walk reads code sections, so the .plt's stubs are unnamed; owner r2engine naming"
+
+[[judged]]
+command = "pd"
+binaries = "libverifyPass.so"
+verdict = "r2-right"
+reason = "ARM32 (ungraded): PLT0's literal word (0xed4) does not decode, so the stub walk refuses the .plt and its stubs go unnamed, and a listing steps one byte past an undecodable ARM word; the adr spelling is Sleigh's UAL; owners r2engine naming and the listing"
+
+[[judged]]
+command = "pd"
+binaries = "main.elf"
+r2 = '(ldm r0!|invalid$)'
+r2s = '(ldmia r0!|msr msp, r1$)'
+verdict = "deliberate"
+reason = "Cortex-M (ungraded): Sleigh decodes msr msp, which radare2 calls invalid (r2s right), and spells the pre-UAL ldmia (radare2 right)"
+
+[[judged]]
+command = "pd"
+binaries = "ip-riscv"
+verdict = "unfilled"
+reason = "RISC-V is outside the graded architectures: Sleigh spells compressed forms (c.mv) and names a call to entry.preinit0 where radare2 prints the number"
+
+[[judged]]
+command = "pd"
+binaries = "*_o"
+r2 = 'call [A-Za-z_]'
+r2s = 'call 0x'
+verdict = "unfilled"
+reason = "a relocatable object's call is resolved by its relocation; r2s does not apply ET_REL relocations to listings yet"
+
+[[judged]]
+command = "pd"
+binaries = "*"
+r2 = 'adrp x\d+, (segment|section|reloc|sym)\.'
+r2s = 'adrp x\d+, 0x'
+verdict = "deliberate"
+reason = "a page base is no address the instruction uses, so r2s names none (listing.rs `painted`)"
+
+[[judged]]
+command = "pd"
+binaries = "libstdc++.so.6"
+r2 = 'call qword \[reloc\.'
+r2s = 'call qword \[0x'
+verdict = "unfilled"
+reason = "a call through a relocated slot outside a stub is spelled as a number; r2s claims the slot only in a linkage stub; owner the listing's claims"
+
+[[judged]]
+command = "pd"
+binaries = "libcurl.so*"
+r2 = 'b loc\.imp\.'
+r2s = 'b sym\.imp\.'
+verdict = "deliberate"
+reason = "0x77cc is a linkage stub reading __gmon_start__'s slot; r2s names every stub sym.imp., whatever the import's binding"
+
+[[judged]]
+command = "pd"
+binaries = "special-sym-with-dot.bin"
+r2 = 'ldr r1, \[0x'
+r2s = 'ldr r1, \[pc, r1\]'
+verdict = "r2s-right"
+reason = "0xe79f1001 is LDR (register), pc plus r1; radare2 spells an immediate pool load"
+
+[[judged]]
+command = "pd"
+binaries = "switch-hello-world.elf"
+verdict = "unfilled"
+reason = "a static-pie whose e_entry is 0, where .crt0 begins: r2s states no entry and radare2 guesses .text's start; neither lists the stated 0x0; owner r2image entries"
+
+[[judged]]
+command = "px"
+binaries = "switch-hello-world.elf"
+verdict = "unfilled"
+reason = "the two seek different entries: r2s states none for e_entry 0, radare2 guesses .text's start"
+
+[[judged]]
+command = "pd"
+binaries = "libshella-*.so"
+verdict = "unfilled"
+reason = "a shared object's e_entry 0 names no entry; at 0 radare2 lists the ELF header as data, r2s decodes it as code"
+
+[[judged]]
+command = "is"
+binaries = "*.obj"
+verdict = "unfilled"
+reason = "a relocatable states no addresses: r2s places a NOBITS .bss at the base, radare2 at its sh_offset (over .rodata); owner r2image placement"
+
+[[judged]]
+command = "iS"
+binaries = "libmemalloc-dump-mem"
+verdict = "r2-right"
+reason = "a memory dump whose section headers are text (sh_offset 0x6568206d, past the file): radare2 drops the table, r2s lists it; owner r2image"
+
+[[judged]]
+command = "pd"
+binaries = "libmemalloc-dump-mem"
+verdict = "unfilled"
+reason = "a memory dump: the two seek different entries (radare2 an unaligned 0x1de1), and r2s reads its garbage section table"
+
+[[judged]]
+command = "px"
+binaries = "libmemalloc-dump-mem"
+verdict = "unfilled"
+reason = "a memory dump: the two seek different entries (radare2 an unaligned 0x1de1)"
+
+[[judged]]
+command = "pd"
+binaries = "libflutter.so"
+verdict = "r2-right"
+reason = "ARM32 (ungraded): e_entry 0x132700 points at text; r2s steps one byte past the undecodable word where an ARM listing steps four; owner the listing"
+
+[[judged]]
+command = "pd"
+binaries = "libflutterapp.so"
+verdict = "unfilled"
+reason = "a shared object's e_entry 0 names no entry, so the two list different places"
+
+[[judged]]
+command = "pd"
+binaries = "r2pay-arm32.so"
+verdict = "unfilled"
+reason = "a shared object's e_entry 0 names no entry, so the two list different places"
+
+[[judged]]
+command = "ie"
+binaries = "*"
+columns = ["vhaddr"]
+verdict = "r2s-right"
+reason = "the address the entry's field is mapped at (Mach-O's LC_MAIN entryoff): r2s states it, radare2 leaves the column empty"
+
+[[judged]]
+command = "iS"
+binaries = "*"
+columns = ["flags"]
+verdict = "r2s-right"
+reason = "a Mach-O section header's flags field (0x80000400: pure and some instructions): r2s states it, radare2 prints 0x0"
+
+[[judged]]
+command = "iS"
+binaries = ["a.out", "AppIOSEntitlements.ios", "BatteryLife", "cat-macos-arm64", "fat-intel", "fatmach0-3true", "hellocxx-osx-fat-intel", "ired", "libexpat.1.dylib", "libswiftCoreFoundation.dylib", "ls-m1", "ls-sequoia", "mac-ls3", "mac-ls4", "modernobjc-noarm64", "TestApp.ios", "TestApp.ios.stripped", "TrollStore"]
+columns = ["paddr"]
+verdict = "r2s-right"
+reason = "a fat file's offsets are the file's: radare2's iS counts from the slice where its own is and ie count from the file"
+
+[[judged]]
+command = "ie"
+binaries = ["a.out", "AppIOSEntitlements.ios", "BatteryLife", "cat-macos-arm64", "fat-intel", "fatmach0-3true", "hellocxx-osx-fat-intel", "ired", "libexpat.1.dylib", "libswiftCoreFoundation.dylib", "ls-m1", "ls-sequoia", "mac-ls3", "mac-ls4", "modernobjc-noarm64", "TestApp.ios", "TestApp.ios.stripped", "TrollStore"]
+columns = ["phaddr"]
+verdict = "r2s-right"
+reason = "a fat file's offsets are the file's: radare2 states the entry header field's offset from the slice, its paddr from the file"
+
+[[judged]]
+command = "pd"
+binaries = "*"
+r2 = '(lea|mov) r\w+, (qword )?\[?(str|sym|section|segment|loc)\.'
+r2s = '(lea|mov) r\w+, (qword )?\[0x'
+verdict = "deliberate"
+reason = "a number is named only where the engine claims it as an address; pd claims no lea or load target radare2 flags"
+
+[[judged]]
+command = "pd"
+binaries = "*"
+r2 = '(lea|mov) r\w+, (qword )?\[?(sym|str|section)\.'
+r2s = '(lea|mov) r\w+, (qword )?\[?(reloc|obj)\.'
+verdict = "deliberate"
+reason = "of several names at one address r2s takes a relocation's before a symbol's, and calls a data symbol obj."
+
+[[judged]]
+command = "pd"
+binaries = "*"
+r2 = 'bl? main$'
+r2s = 'bl? sym\._main$'
+verdict = "deliberate"
+reason = "radare2 names LC_MAIN's target main; r2s names it by its symbol"
+
+[[judged]]
+command = "pd"
+binaries = "*"
+r2 = '^(?!.*_\$s)'
+r2s = '(sym|obj)\.(imp\.)?_?\$s|sym\._\$s'
+verdict = "unfilled"
+reason = "Swift names: radare2 demangles them, r2s spells them mangled until LP3's demangler"
+
+[[judged]]
+command = "pd"
+binaries = "*"
+r2 = 'bl sym\.func\.'
+r2s = 'bl 0x'
+verdict = "unfilled"
+reason = "radare2 names each LC_FUNCTION_STARTS entry sym.func.*; r2s names no function start in a listing"
+
+[[judged]]
+command = "pd"
+binaries = ["TestRTTI-armv7", "arm-or-thumb", "arm16-ofp.lzh", "arm32-ofp.lzh", "hello-objc-arm", "ired-thumb", "misaligned_data-iOS-armv7", "test-thumb", "thumb-test", "BatteryLife.arm_32.0"]
+verdict = "r2-right"
+reason = "ARMv7 (ungraded): r2s decodes ARM at a Mach-O entry radare2 reads as Thumb (mov r7, sp); owner r2image's entry mode"
+
+[[judged]]
+command = "pd"
+binaries = ["fat-intel", "hellocxx-osx-fat-intel", "libexpat.1.dylib"]
+verdict = "deliberate"
+reason = "a fat file of i386 and x86-64: r2s reads the 64-bit slice, radare2 the first"
+
+[[judged]]
+command = "pd"
+binaries = ["ansi", "emoji"]
+r2 = 'call sym\.'
+r2s = 'call sym\.'
+verdict = "r2-right"
+reason = "a symbol's flag keeps characters radare2's flag filter drops (#, an emoji); owner r2engine names"
+
+[[judged]]
+command = "pd"
+binaries = "Alamofire-stripped"
+r2 = 'b 0x'
+r2s = 'b sym\.imp\.'
+verdict = "r2s-right"
+reason = "a branch to a linkage stub r2s names by the slot it reads; radare2 leaves the number"
+
+[[judged]]
+command = "is"
+binaries = ["fat-intel", "hellocxx-osx-fat-intel", "libexpat.1.dylib"]
+verdict = "deliberate"
+reason = "a fat file of i386 and x86-64: r2s reads the 64-bit slice, radare2 the first, so their symbols' addresses differ"
+
+[[judged]]
+command = "is"
+binaries = "TrollStore"
+verdict = "deliberate"
+reason = "a fat file of arm64 and arm64e: r2s reads the arm64 slice, radare2 the arm64e one"
+
+[[judged]]
+command = "pd"
+binaries = "TrollStore"
+verdict = "deliberate"
+reason = "a fat file of arm64 and arm64e: r2s reads the arm64 slice, radare2 the arm64e one, so their entries differ"

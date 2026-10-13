@@ -8,6 +8,7 @@
 
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
 mod debug;
+mod held;
 mod language;
 mod loader;
 mod platform;
@@ -332,7 +333,9 @@ fn states_instructions<'a>(section: &impl object::read::ObjectSection<'a>) -> bo
 /// A parsed binary, with its bytes retained for address reads.
 #[derive(Debug, Clone)]
 pub struct Image {
-    data: Vec<u8>,
+    data: held::Held,
+    /// Where these bytes begin in the file: a fat Mach-O's slice, zero for any other.
+    file_base: u64,
     /// What the container states, read once: nothing after the parse changes
     /// which sections, symbols or relocations exist.
     container: Container,
@@ -381,19 +384,25 @@ fn next_identity() -> u64 {
 }
 
 impl Image {
+    /// The binary at `path`, its bytes mapped from the file rather than copied into the heap.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ImageError> {
         let path = path.as_ref();
-        let data = std::fs::read(path).map_err(|source| ImageError::Io {
+        let io = |source| ImageError::Io {
             path: path.display().to_string(),
             source,
-        })?;
-        Self::parse(data)
+        };
+        let file = std::fs::File::open(path).map_err(io)?;
+        Self::held(held::Held::map(&file).map_err(io)?)
     }
 
     pub fn parse(data: Vec<u8>) -> Result<Self, ImageError> {
-        let data = match select_fat_slice(&data)? {
-            Some(range) => data[range].to_vec(),
-            None => data,
+        Self::held(held::Held::Owned(data))
+    }
+
+    fn held(data: held::Held) -> Result<Self, ImageError> {
+        let (data, file_base) = match select_fat_slice(&data)? {
+            Some(range) => (data.narrowed(range.clone()), range.start as u64),
+            None => (data, 0),
         };
         let file = object::File::parse(&*data).map_err(|e| ImageError::Parse(e.to_string()))?;
 
@@ -531,8 +540,8 @@ impl Image {
             Some(Symbol {
                 // An import is named by the C identifier it binds.
                 name: match (format, import) {
-                    (Format::MachO, true) => macho_identifier(name).to_owned(),
-                    _ => name.to_owned(),
+                    (Format::MachO, true) => macho_identifier(name).into(),
+                    _ => name.into(),
                 },
                 vaddr: match symbol.kind() {
                     object::SymbolKind::Text => code_address(&arch, address),
@@ -616,7 +625,7 @@ impl Image {
             relocations,
             writes: loader_writes,
             import_stubs,
-        } = loader::read(&file, data.as_slice(), &placed, u64::from(arch.bits / 8));
+        } = loader::read(&file, &data[..], &placed, u64::from(arch.bits / 8));
 
         let sealed = loader::sealed(&file);
         let platform = platform::evidence(&file);
@@ -630,7 +639,7 @@ impl Image {
         let mut entries = Vec::new();
         let declared_entry = file.entry();
         let entry = code_address(&arch, declared_entry);
-        let c_main = macho_c_main(&file, data.as_slice());
+        let c_main = macho_c_main(&file, &data[..]);
         // Where the header states the entry: ELF's `e_entry`, Mach-O's `LC_MAIN`.
         let entry_field = match format {
             Format::Elf => Some(ELF_ENTRY_FIELD),
@@ -667,12 +676,7 @@ impl Image {
                 });
             }
         }
-        entries.extend(initialisers(
-            &sections,
-            &loader_writes,
-            data.as_slice(),
-            &arch,
-        ));
+        entries.extend(initialisers(&sections, &loader_writes, &data[..], &arch));
         if let Some((vaddr, field)) = c_main
             && executable(vaddr)
         {
@@ -688,7 +692,7 @@ impl Image {
         }
         // The linker wrote one entry per function it laid out, so a body no
         // symbol names and nothing calls is still stated here.
-        for vaddr in macho_function_starts(&file, data.as_slice()) {
+        for vaddr in macho_function_starts(&file, &data[..]) {
             if executable(vaddr) {
                 entries.push(Entry {
                     vaddr,
@@ -703,6 +707,7 @@ impl Image {
 
         Ok(Self {
             data,
+            file_base,
             container: Container {
                 format,
                 arch,
@@ -779,6 +784,12 @@ impl Image {
         self.container.segment_at(vaddr)
     }
 
+    /// Where the image's bytes begin in the file it was read from: a fat Mach-O's slice is
+    /// one range of it, and a file offset the image states is from the slice's start.
+    pub const fn file_base(&self) -> u64 {
+        self.file_base
+    }
+
     /// The file's own bytes at a file offset, whether or not the loader maps them.
     pub fn file_bytes(&self, offset: u64, len: u64) -> Option<&[u8]> {
         let start = usize::try_from(offset).ok()?;
@@ -790,7 +801,7 @@ impl Image {
     ///
     /// A range reaching past a segment's file extent reads as zero, which is how
     /// `.bss` and any other zero-filled tail answers. The borrowed case is the
-    /// common one; only a read crossing into a zero-filled tail allocates.
+    /// common one; only a read crossing into a zero-filled tail or another segment allocates.
     pub fn read(&self, vaddr: u64, len: usize) -> Option<Cow<'_, [u8]>> {
         if len == 0 {
             return Some(Cow::Borrowed(&[]));
@@ -800,9 +811,13 @@ impl Image {
         if !segment.permissions.read {
             return None;
         }
-        let offset_in_segment = vaddr - segment.vaddr;
-        if (len as u64) > segment.vsize - offset_in_segment {
-            return None;
+        let here = segment.vsize - (vaddr - segment.vaddr);
+        if (len as u64) > here {
+            // Memory runs on into a segment that begins where this one ends.
+            let mut bytes = self.read(vaddr, here as usize)?.into_owned();
+            let rest = self.read(segment.vaddr + segment.vsize, len - here as usize)?;
+            bytes.extend_from_slice(&rest);
+            return Some(Cow::Owned(bytes));
         }
 
         // A patched range is answered from the layer, which means an owned
@@ -849,15 +864,23 @@ impl Image {
         Some(Cow::Owned(bytes))
     }
 
-    /// As much of `max` bytes at `vaddr` as the containing segment holds.
+    /// As much of `max` bytes at `vaddr` as is mapped without a gap.
     ///
     /// A decoder wants a window rather than an exact length, since it does not
     /// know an instruction's size until it has read it, and a window at the end
-    /// of a segment is short rather than absent.
+    /// of mapped memory is short rather than absent.
     pub fn read_upto(&self, vaddr: u64, max: usize) -> Option<Cow<'_, [u8]>> {
         let segment = self.segment_at(vaddr)?;
-        let available = (segment.vsize - (vaddr - segment.vaddr)).min(max as u64) as usize;
-        self.read(vaddr, available)
+        let wanted = vaddr.saturating_add(max as u64);
+        let mut end = segment.vaddr + segment.vsize;
+        // The window runs on through readable segments that each begin where the last ends.
+        while end < wanted {
+            match self.segment_at(end) {
+                Some(next) if next.vaddr == end && next.permissions.read => end += next.vsize,
+                _ => break,
+            }
+        }
+        self.read(vaddr, (end.min(wanted) - vaddr) as usize)
     }
 
     /// Write bytes over what the file holds, in a layer.
@@ -919,9 +942,8 @@ impl Image {
 
     /// Which state of the image's bytes this is.
     ///
-    /// Two reads at one revision see the same bytes. Anything derived from the
-    /// bytes and held beside the image records the revision it was derived at,
-    /// and is derived again when they differ.
+    /// Two reads at one revision see the same bytes the image itself wrote; a write to the file from
+    /// outside it is seen as the mapped file shows it (`held.rs`). Derived facts record the revision.
     pub const fn byte_revision(&self) -> u64 {
         self.byte_revision
     }
@@ -1259,7 +1281,8 @@ mod tests {
 
     fn image_with(segments: Vec<Segment>, data: Vec<u8>) -> Image {
         Image {
-            data,
+            data: held::Held::Owned(data),
+            file_base: 0,
             container: Container {
                 format: Format::Elf,
                 arch: Arch {
@@ -1303,6 +1326,23 @@ mod tests {
         let image = image_with(vec![segment(0x1000, 8, 0, 2)], vec![0xaa, 0xbb]);
         assert_eq!(image.read(0x1000, 4).unwrap().as_ref(), &[0xaa, 0xbb, 0, 0]);
         assert_eq!(image.read(0x1004, 2).unwrap().as_ref(), &[0, 0]);
+    }
+
+    #[test]
+    fn reads_on_into_a_segment_that_begins_where_its_own_ends() {
+        let segments = vec![segment(0x1000, 4, 0, 4), segment(0x1004, 4, 4, 4)];
+        let image = image_with(segments, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(image.read(0x1002, 4).unwrap().as_ref(), &[3, 4, 5, 6]);
+        assert_eq!(
+            image.read_upto(0x1002, 64).unwrap().as_ref(),
+            &[3, 4, 5, 6, 7, 8]
+        );
+        let gapped = image_with(
+            vec![segment(0x1000, 4, 0, 4), segment(0x1008, 4, 4, 4)],
+            vec![1, 2, 3, 4, 5, 6, 7, 8],
+        );
+        assert!(gapped.read(0x1002, 4).is_none());
+        assert_eq!(gapped.read_upto(0x1002, 64).unwrap().as_ref(), &[3, 4]);
     }
 
     #[test]
@@ -1451,7 +1491,7 @@ mod dynamic_symbol_tests {
         let named = image
             .symbols()
             .iter()
-            .find(|symbol| symbol.name == "pick")
+            .find(|symbol| &*symbol.name == "pick")
             .expect("the dynamic table names it");
         assert_eq!(named.vaddr, 0x1000);
         assert_eq!(named.kind, SymbolKind::Function);

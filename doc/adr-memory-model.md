@@ -31,6 +31,7 @@ product of two sizes. A function past the budget refuses with a typed reason
 | `F` | 68 MB (0pack) to 90 MB (pumasim): a 5-byte function's whole RSS |
 | `P(f)` growth | over 148 functions in six binaries (pumasim, 0pack, ts3server, vim, libstdc++, dwarf_rust_bubble), `RSS − F` grows as size^0.71 and time as size^0.67: no real function is superlinear |
 | `c` | about 2.1 KB of heap per SSA operation at the top (pumasim `0x23fdf0`: 194.7 MB heap peak, 92,007 operations) |
+| `F` and `c`, 2026-10-13 (#188) | `F`: 38.0 MB heap and 93.4 MB RSS (pumasim's 6-byte stub `0x1c3030`); pumasim `0x23fdf0`: 136.3 MB heap, so `c = (136.3 − 38.0) MB / 92,007` = 1.07 KB per operation. The cuts sized and left (the type interned 2.3 MiB, value geometries 3.4, obligation identities about 3, native spans 1.7) reach about 950 B: the 600 B exit is F2.5's single numbering (`GraphInst` and `GraphValue` are 64 bytes each, 12 MiB on 0pack) |
 | largest real function | ts3server `fcn.004430b0`, 107 KB of code: 598 MB, 2.3 s |
 | `R`, one session | 25 to 97 medium pumasim functions plateau at 445 to 484 MB; 50 functions including the largest reach 869 MB (heap 778.5 MB: render facts 52, liveness 48, graphs 48, value tables 43, ledgers 37, obligations 46) |
 | program survey | `afl` on pumasim: 1.3 s and 156 MB, once per session; a 100-byte function whose indirect call asks the call graph's returns pays all of it (`init_fpri`) |
@@ -105,6 +106,9 @@ stays alive until the response is built.
 | #185 | The machine projection holds one root per instruction; an entity's output and producer are read from the graph and the obligations | heap peak 0pack 162.4 to 159.2 MB, pumasim 143.8 to 141.1 |
 | #186 | The seal drops the value table and the operation origins; the reaching scan groups by the graph's instruction column | heap peak 0pack 159.1 to 158.3 MB, session 187.5 to 179.6 |
 | #187 | A written-lane record of data throughout is its size; the pass keeps one copy | heap peak 0pack 158.3 to 148.2 MB, pumasim 139.9 to 133.1, session 179.6 to 168.5 |
+| #188 | A graph instruction's disposition is its state and its run of the table; its identity is the graph's | heap peak 0pack 148.2 to 144.2 MB, pumasim 133.1 to 130.0, session 168.5 to 163.4 |
+| #189 | The image maps its file rather than copying it into the heap | heap peak pumasim `afl` 95.4 to 86.4 MB, 0pack `afl` 57.5 to 50.0, session 163.4 to 154.3 |
+| #191 | A relocation boxes its symbol; a symbol's name is one string shared by the name table and its seeks | `F` (pumasim's stub) 28.46 to 25.00 MB of heap |
 
 ## Left
 

@@ -537,7 +537,11 @@ fn entries(session: &Session, initialisers: bool) -> Result<String, String> {
             "\n{} {:#010x} {} {} {kind}",
             spelled(file_offset_of(session, entry.vaddr)),
             entry.vaddr,
-            spelled(entry.stated_at.map(|at| at.offset)),
+            spelled(
+                entry
+                    .stated_at
+                    .map(|at| session.image().file_base() + at.offset)
+            ),
             spelled(entry.stated_at.and_then(|at| at.vaddr)),
         ));
     }
@@ -861,7 +865,7 @@ pub(crate) fn strings(session: &Session) -> Result<Table, String> {
         .names()
         .iter()
         .filter(|(_, name)| name.namespace == r2engine::names::Namespace::String)
-        .map(|(vaddr, name)| (vaddr, name.text.clone()))
+        .map(|(vaddr, name)| (vaddr, name.text.to_string()))
         .collect();
     Ok(string_table(session, &found))
 }
@@ -902,7 +906,8 @@ fn every_string(session: &Session) -> Result<String, String> {
     out.push_str(&"-".repeat(66));
     for (nth, (paddr, vaddr, text)) in found.iter().enumerate() {
         out.push_str(&format!(
-            "\n{nth:<3} {paddr:#010x} {vaddr:#010x} {:<3} {:<4} {:<15} {:<5} {}",
+            "\n{nth:<3} {:#010x} {vaddr:#010x} {:<3} {:<4} {:<15} {:<5} {}",
+            image.file_base() + paddr,
             text.chars().count(),
             text.len() + 1,
             section_of(session, *paddr, true),
@@ -1039,7 +1044,7 @@ pub(crate) fn sections(session: &Session) -> Table {
             section.loaded.then_some(section.vaddr),
             format!(
                 "{nth:<3} {:#010x} {:>6} {:#010x} {:>6} -{}{}{} {:<5} {kind:<11} {name}",
-                section.file_offset,
+                session.image().file_base() + section.file_offset,
                 format!("{:#x}", section.file_size),
                 section.vaddr,
                 format!("{:#x}", section.vsize),
@@ -1183,7 +1188,7 @@ pub(crate) fn symbols(session: &Session) -> Result<Table, String> {
     let linkage = session.program.imports();
     let stubs = &linkage.stubs;
     for symbol in imports {
-        let stub = stubs.iter().find(|(_, stub)| stub.symbol == symbol.name);
+        let stub = stubs.iter().find(|(_, stub)| *stub.symbol == *symbol.name);
         let at = stub.map(|(at, _)| *at);
         table.row(
             at,
@@ -1234,8 +1239,11 @@ fn hexdump(session: &Session, argument: &str) -> Result<String, String> {
 
     // The header counts columns from the address's own low byte, two hex
     // digits wide, and the legend starts at its low nibble rather than at zero.
+    // It is padded to the widest row's address, as radare2 pads it past ten digits.
     let low = addr as u8;
-    let mut out = String::from("- offset -  ");
+    let last = addr + (bytes.len().saturating_sub(1) / 16 * 16) as u64;
+    let width = format!("{last:#010x}").len();
+    let mut out = format!("- offset -{}", " ".repeat(width - 8));
     for column in 0..8u8 {
         out.push_str(&format!(
             "{:2X}{:2X} ",
@@ -1304,7 +1312,7 @@ pub(crate) fn relocations(session: &Session) -> Table {
         let mut name = relocation
             .symbol
             .as_ref()
-            .map(|symbol| symbol.name.clone())
+            .map(|symbol| symbol.name.to_string())
             .unwrap_or_default();
         match relocation.addend {
             Some(addend) if addend < 0 => name.push_str(&format!(" - {:#010x}", -addend)),
@@ -1399,8 +1407,11 @@ fn obligations(session: &mut Session, argument: &str) -> Result<String, String> 
     Ok(out)
 }
 
+/// The offset in the file of what `vaddr` holds: in a fat Mach-O, past the slice's own start.
 fn file_offset_of(session: &Session, vaddr: u64) -> Option<u64> {
-    let segment = session.image().segment_at(vaddr)?;
+    let image = session.image();
+    let segment = image.segment_at(vaddr)?;
     let offset_in_segment = vaddr - segment.vaddr;
-    (offset_in_segment < segment.file_size).then(|| segment.file_offset + offset_in_segment)
+    (offset_in_segment < segment.file_size)
+        .then(|| image.file_base() + segment.file_offset + offset_in_segment)
 }

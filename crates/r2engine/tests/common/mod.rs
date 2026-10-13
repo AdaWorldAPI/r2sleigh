@@ -179,6 +179,19 @@ const PLT_CET: [u8; 0x36] = [
     0xc3, // ret
 ];
 
+/// A Mach-O `__stub_helper`: a header jumping through the binder's bound slot, and two lazy
+/// entries jumping to the header.
+const STUB_HELPER: [u8; 0x24] = [
+    0x4c, 0x8d, 0x1d, 0x01, 0x10, 0x00, 0x00, // lea r11, [rip + 0x1001]
+    0x41, 0x53, // push r11
+    0xff, 0x25, 0xf1, 0x0f, 0x00, 0x00, // jmp qword [rip + 0xff1], the binder's slot
+    0x90, // nop
+    0x68, 0x00, 0x00, 0x00, 0x00, // push 0
+    0xe9, 0xe6, 0xff, 0xff, 0xff, // jmp the header
+    0x68, 0x01, 0x00, 0x00, 0x00, // push 1
+    0xe9, 0xdc, 0xff, 0xff, 0xff, // jmp the header
+];
+
 /// Where [`PLT_CET`]'s `.plt.sec` stub begins.
 pub const PLT_SEC_STUB: u64 = BASE + 0x20;
 
@@ -388,10 +401,10 @@ pub fn import_slot(vaddr: u64, import: &str) -> Relocation {
         vaddr,
         ntype: 7,
         width: 8,
-        symbol: Some(RelocationSymbol {
-            name: import.to_owned(),
+        symbol: Some(Box::new(RelocationSymbol {
+            name: import.into(),
             ..RelocationSymbol::default()
-        }),
+        })),
         applies: Applies::Symbol,
         ..Relocation::default()
     }
@@ -435,7 +448,7 @@ pub struct Literal {
 impl Literal {
     pub fn new() -> Self {
         let function = |name: &str, vaddr, size| Symbol {
-            name: name.to_owned(),
+            name: name.into(),
             vaddr,
             size,
             kind: SymbolKind::Function,
@@ -487,7 +500,7 @@ impl Literal {
         program.container.symbols = functions
             .iter()
             .map(|(name, vaddr, size)| Symbol {
-                name: (*name).to_owned(),
+                name: (*name).into(),
                 vaddr: *vaddr,
                 size: *size,
                 kind: SymbolKind::Function,
@@ -507,7 +520,7 @@ impl Literal {
         program.container.segments = vec![code_segment(BASE, ARM_THUMB.len() as u64)];
         program.container.sections[0].vsize = ARM_THUMB.len() as u64;
         let symbol = |name: &str, vaddr, kind, thumb| Symbol {
-            name: name.to_owned(),
+            name: name.into(),
             vaddr,
             size: 0,
             kind,
@@ -606,6 +619,17 @@ impl Literal {
         program
     }
 
+    /// A Mach-O stub helper whose header reads `dyld_stub_binder`'s slot.
+    pub fn stub_helper() -> Self {
+        let mut program = Self::plt_importing("dyld_stub_binder");
+        program.code = &STUB_HELPER;
+        program.container.segments = vec![code_segment(BASE, STUB_HELPER.len() as u64)];
+        program.container.sections.truncate(1);
+        "__stub_helper".clone_into(&mut program.container.sections[0].name);
+        program.container.sections[0].vsize = STUB_HELPER.len() as u64;
+        program
+    }
+
     /// [`Self::plt`] as ld lays it out for CET: the stub in `.plt.sec`, PLT0 and the lazy entry in `.plt`.
     pub fn plt_cet() -> Self {
         let mut program = Self::plt();
@@ -658,14 +682,16 @@ impl Literal {
 
     /// The same program with one symbol stripped from the container.
     pub fn stripped_of(mut self, name: &str) -> Self {
-        self.container.symbols.retain(|symbol| symbol.name != name);
+        self.container
+            .symbols
+            .retain(|symbol| &*symbol.name != name);
         self
     }
 
     /// The same program with one more function stated, wherever it points.
     pub fn stating(mut self, name: &str, vaddr: u64) -> Self {
         self.container.symbols.push(Symbol {
-            name: name.to_owned(),
+            name: name.into(),
             vaddr,
             size: 0,
             kind: SymbolKind::Function,

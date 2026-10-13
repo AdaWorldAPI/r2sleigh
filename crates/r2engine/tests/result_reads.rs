@@ -292,3 +292,80 @@ fn callers_declare_a_two_carrier_body_as_its_header_does() {
         assert!(caller.contains(&format!(" f({ty});")), "{f}\n{caller}");
     }
 }
+
+/// clang's `double avg(...)` shape: `cvtsi2sd xmm0, edi; ret` writes only XMM0 and leaves RAX as
+/// the caller left it, and the caller stores XMM0 with `movsd [rdi], xmm0`.
+const ONLY_XMM0_WRITTEN: &[u8] = &[
+    0xf2, 0x0f, 0x2a, 0xc7, // 1000 cvtsi2sd xmm0, edi
+    0xc3, // 1004 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1005 padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0xf2, 0x0f, 0x11, 0x07, // 1015 movsd [rdi], xmm0
+    0xc3, // 1019 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 101a padding
+];
+
+/// RAX handed back as the caller left it is no result where every reading call reads XMM0: the
+/// float register is, at the width the reads take. With no call, nothing says so.
+#[test]
+fn a_float_result_beside_an_untouched_integer_register_is_the_one_callers_read() {
+    let program =
+        |functions: &[(&'static str, u64, u64)]| Literal::of_code(ONLY_XMM0_WRITTEN, functions);
+    let text = rendered(program(&[("f", BASE, 5), ("caller", BASE + 0x10, 0x0a)]));
+    assert!(text.starts_with("double f("), "{text}");
+    assert!(!text.contains("r2sleigh_residual"), "{text}");
+    let unread = rendered(program(&[("f", BASE, 5)]));
+    assert!(unread.contains("return r2sleigh_residual_"), "{unread}");
+}
+
+/// AArch64's `uint8_t narrow8(int q) { return q; }` at -O1 is a bare `ret`: x0 is both the argument
+/// and the result, and `caller` is `bl f; str w0, [x1]; ret`.
+const A64_RETURNS_ITS_ARGUMENT: &[u8] = &[
+    0xc0, 0x03, 0x5f, 0xd6, // 1000 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, // 1004 padding
+    0xfc, 0xff, 0xff, 0x97, // 1010 bl 0x1000
+    0x20, 0x00, 0x00, 0xb9, // 1014 str w0, [x1]
+    0xc0, 0x03, 0x5f, 0xd6, // 1018 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03,
+    0xd5, // 101c padding
+];
+
+/// An argument register handed back untouched is the result where every reading call reads it, and
+/// the return reads it as the parameter it is. With no call, nothing says so.
+#[test]
+fn an_argument_register_handed_back_untouched_is_the_result_callers_read() {
+    let program = |functions: &[(&'static str, u64, u64)]| {
+        Literal::of_code(A64_RETURNS_ITS_ARGUMENT, functions).in_aarch64()
+    };
+    let text = rendered(program(&[("f", BASE, 4), ("caller", BASE + 0x10, 0x0c)]));
+    assert!(text.contains("return (uint64_t)arg0;"), "{text}");
+    assert!(!text.contains("r2sleigh_residual"), "{text}");
+    let unread = rendered(program(&[("f", BASE, 4)]));
+    assert!(unread.contains("r2sleigh_residual_"), "{unread}");
+}
+
+/// AArch64 `fmov d0, #1.0; ret` hands x0 back untouched beside the float it writes, and a caller
+/// `bl f; str w0, [x1]` reads x0: the handed-back argument is the result.
+const A64_FLOAT_BESIDE_ITS_ARGUMENT: &[u8] = &[
+    0x00, 0x10, 0x6e, 0x1e, // 1000 fmov d0, #1.0
+    0xc0, 0x03, 0x5f, 0xd6, // 1004 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, // 1008 padding
+    0xfc, 0xff, 0xff, 0x97, // 1010 bl 0x1000
+    0x20, 0x00, 0x00, 0xb9, // 1014 str w0, [x1]
+    0xc0, 0x03, 0x5f, 0xd6, // 1018 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03,
+    0xd5, // 101c padding
+];
+
+#[test]
+fn an_argument_handed_back_beside_a_written_float_is_the_result_callers_read() {
+    let program = Literal::of_code(
+        A64_FLOAT_BESIDE_ITS_ARGUMENT,
+        &[("f", BASE, 8), ("caller", BASE + 0x10, 0x0c)],
+    )
+    .in_aarch64();
+    let text = rendered(program);
+    assert!(text.contains("return (uint64_t)arg0;"), "{text}");
+    assert!(!text.contains("r2sleigh_residual"), "{text}");
+}

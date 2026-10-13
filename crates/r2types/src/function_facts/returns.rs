@@ -101,6 +101,30 @@ impl ReturnTypeFact {
         Self::Unproven { carrier }
     }
 
+    /// What this return type rests on (doc/adr-provenance.md, C2); none where it is refused. A type
+    /// the interface's graph states rests on what the interface's types are read from.
+    pub fn basis(&self, source: &r2ssa::SsaArtifact) -> Option<r2source::confidence::Basis> {
+        use r2source::confidence::Basis;
+        Some(match self {
+            Self::Decided { by, .. } => match by {
+                ReturnTypeEvidence::ExactSource => {
+                    source.machine_context().function_interface()?.types().basis
+                }
+                // The function's own prototype, as its debug information spells it.
+                ReturnTypeEvidence::Declared => Basis::DebugInfo,
+                // Every exit proven to hand back no value.
+                ReturnTypeEvidence::VoidBoundary => Basis::Certified,
+                // One type agreed by every exit: true of each, exact of none.
+                ReturnTypeEvidence::Exits => Basis::Solved,
+                // Only the width of the storage word every return certifies.
+                ReturnTypeEvidence::Carrier => Basis::CarrierWidth,
+            },
+            // The convention's result slot, which no exit is proven to fill.
+            Self::Unproven { .. } => Basis::Convention,
+            Self::Refused(_) => return None,
+        })
+    }
+
     /// Decide in order: the declared graph, the declaration, a void boundary, the recovered carrier, what every exit agrees on.
     pub(crate) fn decide(
         source: &r2ssa::SsaArtifact,

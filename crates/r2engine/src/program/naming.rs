@@ -11,11 +11,22 @@ use std::collections::BTreeMap;
 
 use super::source::{EntryKind, Section, Source, Symbol, SymbolKind};
 use crate::names::{Name, NameDb, Namespace};
+use crate::program::Binding;
 use r2il::R2ILOp;
 use r2sleigh_lift::Disassembler;
 
 /// Sleigh fetches a whole window whatever the instruction needs.
 const DECODE_WINDOW: usize = 16;
+
+/// How strongly a binding names its address: a global before a weak alias before a local one.
+const fn binding_strength(binding: Binding) -> u8 {
+    match binding {
+        Binding::Global => 0,
+        Binding::Weak => 1,
+        Binding::Local => 2,
+        Binding::Other(_) => 3,
+    }
+}
 
 /// Every address this binary names, as the container states it.
 pub fn of(source: &impl Source) -> NameDb {
@@ -32,16 +43,19 @@ pub fn of(source: &impl Source) -> NameDb {
         db.insert(
             section.vaddr,
             Name {
-                text: section.name.clone(),
+                text: section.name.as_str().into(),
                 namespace: Namespace::Section,
                 size: section.vsize,
             },
         );
     }
-    for symbol in &image.symbols {
-        if !names_an_address(symbol) {
-            continue;
-        }
+    // Of several symbols at one address the strongest binding names it (`_exit` over its WEAK
+    // alias `_Exit`, `write` over a LOCAL `__GI___libc_write`); a stable sort keeps names' order.
+    let mut symbols = (image.symbols.iter())
+        .filter(|symbol| names_an_address(symbol))
+        .collect::<Vec<_>>();
+    symbols.sort_by_key(|symbol| (symbol.vaddr, binding_strength(symbol.binding)));
+    for symbol in symbols {
         db.insert(
             symbol.vaddr,
             Name {
@@ -100,7 +114,7 @@ pub fn of(source: &impl Source) -> NameDb {
         db.insert(
             entry.vaddr,
             Name {
-                text,
+                text: text.into(),
                 namespace: Namespace::Entry,
                 size: 0,
             },
@@ -168,7 +182,7 @@ pub fn name_strings(db: &mut NameDb, source: &impl Source) {
                 db.insert(
                     start + (at + offset) as u64,
                     Name {
-                        text: text.to_owned(),
+                        text: text.into(),
                         namespace: Namespace::String,
                         // The terminator belongs to the string: it is what a
                         // reader has to step over to reach the next one.
@@ -223,7 +237,7 @@ pub fn name_imports(db: &mut NameDb, imports: &BTreeMap<u64, Stub>) {
         db.insert(
             *stub,
             Name {
-                text: symbol.clone(),
+                text: symbol.as_str().into(),
                 namespace: Namespace::Import,
                 size: *size,
             },
@@ -261,7 +275,7 @@ pub fn name_slots(
         db.insert(
             *slot,
             Name {
-                text: symbol.clone(),
+                text: symbol.as_str().into(),
                 namespace: Namespace::Reloc,
                 size,
             },
@@ -398,6 +412,10 @@ fn section_stubs(
     let mut transfers: Vec<u64> = Vec::new();
     // Whether any run left as linkage code leaves: through a loader word or within the section.
     let mut left = false;
+    // Where the section's own entries jump: the resolver they share, which no import's stub is.
+    let mut entered = std::collections::BTreeSet::new();
+    // Where each reader's run began, beside it in `readers`.
+    let mut runs: Vec<u64> = Vec::new();
     let mut run = fresh_run(section.vaddr);
     // Where each instruction of the run begins, and its first operation.
     let mut starts: Vec<(u64, usize)> = Vec::new();
@@ -440,6 +458,15 @@ fn section_stubs(
             .ops
             .iter()
             .any(|op| matches!(op, R2ILOp::BranchInd { .. }));
+        let section_range = section.vaddr..end;
+        entered.extend(lifted.ops.iter().filter_map(|op| match op {
+            R2ILOp::Branch { target }
+                if target.space == r2il::SpaceId::Ram && section_range.contains(&target.offset) =>
+            {
+                Some(target.offset)
+            }
+            _ => None,
+        }));
         starts.push((pc, run.ops.len()));
         run.ops.extend(lifted.ops);
         run.size = (pc + u64::from(lifted.size) - run.addr) as u32;
@@ -478,10 +505,15 @@ fn section_stubs(
         if let Some(found) = slot.and_then(|slot| slots.get(&slot)) {
             let start = stub_start(&run, &starts, section.align);
             readers.push((leaving_at, start, (*found).to_owned()));
+            runs.push(run.addr);
         }
         run = fresh_run(pc);
         starts.clear();
     }
+    // Mach-O's __stub_helper header jumps through dyld_stub_binder's bound slot, as each lazy
+    // entry jumps to it: it is the section's resolver, and names no import.
+    let mut ran = runs.into_iter();
+    readers.retain(|_| ran.next().is_none_or(|addr| !entered.contains(&addr)));
     // A section that is all linkage code holds no function, whether or not it names a stub.
     left.then(|| cells(readers, &transfers, end))
 }
@@ -660,7 +692,7 @@ mod tests {
         db.insert(
             0x100000340,
             Name {
-                text: "_add_two".to_owned(),
+                text: "_add_two".into(),
                 namespace: Namespace::Symbol,
                 size: 0x20,
             },
@@ -736,7 +768,7 @@ mod tests {
         // address zero: radare2 puts none of them on an operand.
         for (name, vaddr) in [("$d", 0x1000), ("a/b.c", 0x1000), ("zero", 0)] {
             let symbol = Symbol {
-                name: name.to_owned(),
+                name: name.into(),
                 vaddr,
                 size: 0,
                 kind: SymbolKind::Function,

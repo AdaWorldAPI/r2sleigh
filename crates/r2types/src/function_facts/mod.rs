@@ -1086,16 +1086,36 @@ impl SourceOwnedFunctionFacts {
 
     /// The type parameter `slot` is declared with at this width: the signature's where it fits, else the certified entity's.
     pub fn parameter_declaration(&self, slot: usize, width_bits: u32) -> Option<CTypeLike> {
+        self.parameter_declaration_fact(slot, width_bits)
+            .map(|fact| fact.value)
+    }
+
+    /// [`Self::parameter_declaration`], with what it rests on (doc/adr-provenance.md, C2): the
+    /// signature's on the interface's types, the certified entity's on the body's type solve.
+    pub fn parameter_declaration_fact(
+        &self,
+        slot: usize,
+        width_bits: u32,
+    ) -> Option<r2source::confidence::Fact<CTypeLike>> {
+        use r2source::confidence::{Basis, Confidence, Fact};
         let ptr_bits = self
             .source
             .machine_context()
             .memory_model()
             .default_address_bits();
+        let types = (self.source.machine_context().function_interface()).map_or_else(
+            || Confidence::of(Basis::Convention),
+            |interface| interface.types().clone(),
+        );
+        // A slot a step rewrote rests on that step's basis; the rest on the interface's types.
+        let types = (self.report.type_facts().parameter_bases.get(&slot))
+            .map_or(types, |basis| Confidence::of(*basis));
         let signed = self
             .report
             .type_facts()
             .render_authorized_signature()
-            .and_then(|signature| signature.params.get(slot)?.ty.clone());
+            .and_then(|signature| signature.params.get(slot)?.ty.clone())
+            .map(|ty| (ty, types));
         let certified = u32::try_from(slot).ok().and_then(|slot| {
             match self
                 .report
@@ -1107,10 +1127,14 @@ impl SourceOwnedFunctionFacts {
                 _ => None,
             }
         });
+        let certified = certified.map(|ty| (ty, Confidence::of(Basis::Solved)));
         signed
             .into_iter()
             .chain(certified)
-            .find_map(|ty| admissible_declaration_type(ty, width_bits, ptr_bits))
+            .find_map(|(ty, confidence)| {
+                admissible_declaration_type(ty, width_bits, ptr_bits)
+                    .map(|ty| Fact::new(ty, confidence))
+            })
     }
 
     pub(crate) fn stamp_report_decompile_route(
@@ -2085,6 +2109,7 @@ impl FunctionFacts {
         };
         self.types.merged_signature = Some(signature);
         self.types.signature_certificate = override_facts.signature_certificate;
+        self.types.parameter_bases = override_facts.parameter_bases;
         true
     }
 
@@ -2534,6 +2559,10 @@ impl FunctionFacts {
             if replace {
                 param.ty = Some(hint.clone());
                 applied.insert(slot, hint);
+                // A callee's prototype through the call that hands it the parameter.
+                self.types
+                    .parameter_bases
+                    .insert(slot, r2source::Basis::Solved);
             }
         }
         if applied.is_empty() {
@@ -2634,6 +2663,7 @@ impl FunctionFacts {
             spelled_types
         );
         let mut params = Vec::with_capacity(logical.len());
+        let mut bases = BTreeMap::new();
         for (index, value) in logical.iter().enumerate() {
             // An exact signature is exact in every parameter. One the capture
             // could not place leaves the signature to radare2's spelling,
@@ -2668,9 +2698,13 @@ impl FunctionFacts {
                 .and_then(|pointers| pointers.get(&index))
             {
                 Some(pointer) if declaration_type_width_bits(&ty, ptr_bits) == Some(ptr_bits) => {
+                    bases.insert(index, r2source::Basis::Dereferenced);
                     pointer.clone()
                 }
-                _ => ty,
+                _ => {
+                    bases.insert(index, interface.types().basis);
+                    ty
+                }
             };
             let name = names
                 .as_ref()
@@ -2712,6 +2746,7 @@ impl FunctionFacts {
         };
         self.types.merged_signature = Some(signature);
         self.types.signature_certificate = Some(certificate);
+        self.types.parameter_bases = bases;
         true
     }
 
@@ -2832,6 +2867,9 @@ impl FunctionFacts {
             if replace {
                 param.ty = Some(candidate.clone());
                 changed = true;
+                self.types
+                    .parameter_bases
+                    .insert(index, r2source::Basis::Solved);
             }
         }
         if changed {

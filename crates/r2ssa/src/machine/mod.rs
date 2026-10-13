@@ -414,7 +414,7 @@ impl MachineValueUse {
             .map(|inst| {
                 artifact
                     .obligations()
-                    .instruction_for_inst(inst)
+                    .instruction_for_inst(artifact.graph(), inst)
                     .map(|instruction| instruction.id)
                     .ok_or(MachineBuildError::MissingInstructionDisposition(inst))
             })
@@ -948,6 +948,10 @@ pub enum MachineExprKind {
     PopulationCount {
         input: MachineExprId,
     },
+    /// `LZCOUNT`: the zeros above the highest set bit, the input's width at zero.
+    LeadingZeros {
+        input: MachineExprId,
+    },
     Bitwise {
         op: MachineBitwiseOp,
         left: MachineExprId,
@@ -1070,6 +1074,7 @@ impl MachineExprKind {
             | Self::BooleanNot { input }
             | Self::Negate { input, .. }
             | Self::PopulationCount { input }
+            | Self::LeadingZeros { input }
             | Self::Cast { input, .. }
             | Self::FloatUnary { input, .. }
             | Self::Extract { input, .. } => vec![*input],
@@ -1322,10 +1327,10 @@ impl MachineProjection {
                 write_dispositions.push(None);
                 continue;
             };
-            let disposition = artifact
-                .obligations()
-                .instruction_for_inst(inst.id)
-                .ok_or(MachineBuildError::MissingInstructionDisposition(inst.id))?;
+            let disposed = artifact.obligations().state_of(inst.id).is_some();
+            if !disposed {
+                return Err(MachineBuildError::MissingInstructionDisposition(inst.id));
+            }
             let graph_value = graph
                 .value(output_id)
                 .ok_or(MachineBuildError::MissingGraphValue(output_id))?;
@@ -1352,7 +1357,10 @@ impl MachineProjection {
                     )));
                     failures.push(MachineProjectionFailure {
                         output: output_id,
-                        producer: disposition.id,
+                        producer: (artifact.obligations())
+                            .instruction_for_inst(graph, inst.id)
+                            .ok_or(MachineBuildError::MissingInstructionDisposition(inst.id))?
+                            .id,
                         error,
                     });
                 }
@@ -1584,7 +1592,7 @@ impl MachineProjection {
             }
             let disposition = artifact
                 .obligations()
-                .instruction_for_inst(inst_id)
+                .instruction_for_inst(graph, inst_id)
                 .ok_or(MachineBuildError::MissingInstructionDisposition(inst_id))?;
             if disposition.id != failure.producer {
                 return Err(MachineBuildError::EntityMismatch(inst_id));
@@ -2577,7 +2585,7 @@ impl MachineFunction {
                 .ok_or(MachineBuildError::MissingGraphValue(output))?;
             artifact
                 .obligations()
-                .instruction_for_inst(inst.id)
+                .state_of(inst.id)
                 .ok_or(MachineBuildError::MissingInstructionDisposition(inst.id))?;
             if self.arena.get(root).is_none() {
                 r2il::refusal_evidence!("machine-entity", "{:?}: no node at {root:?}", inst.id);
@@ -2814,7 +2822,8 @@ impl MachineFunction {
                     )
                     && child(*input)?.ty == expr.ty
             }
-            MachineExprKind::PopulationCount { input } => {
+            MachineExprKind::PopulationCount { input }
+            | MachineExprKind::LeadingZeros { input } => {
                 let input_bits = child(*input)?.ty.width_bits();
                 let required_output_bits = u32::BITS - input_bits.leading_zeros();
                 matches!(
@@ -3948,6 +3957,7 @@ fn machine_kind_matches_op<V>(op: &SSAOp<V>, kind: &MachineExprKind) -> bool {
                 SSAOp::PopCount { .. },
                 MachineExprKind::PopulationCount { .. }
             )
+            | (SSAOp::Lzcount { .. }, MachineExprKind::LeadingZeros { .. })
             | (
                 SSAOp::IntCarry { .. },
                 MachineExprKind::ArithmeticFlag {
@@ -4301,6 +4311,7 @@ fn machine_type_matches_op<V>(op: &SSAOp<V>, ty: &MachineType, output_bits: u32)
         | SSAOp::IntRem { .. }
         | SSAOp::IntNegate { .. }
         | SSAOp::PopCount { .. }
+        | SSAOp::Lzcount { .. }
         | SSAOp::IntAnd { .. }
         | SSAOp::IntOr { .. }
         | SSAOp::IntXor { .. }

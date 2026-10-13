@@ -11,9 +11,13 @@ Two comparison modes, because the two tools do not yet fill the same columns:
           canonicalised because the two spell the same value differently.
           Used where r2s already claims radare2's layout, such as `px`, `pd`.
   values  compares the set of values each tool reports. A value r2s reports and
-          radare2 does not is a defect and fails; a value radare2 reports and
-          r2s does not is an unfilled column, reported but not failed. Used for
+          radare2 does not is a disagreement; a value radare2 reports and r2s
+          does not is an unfilled column, reported but not failed. Used for
           the listing commands until their columns are complete.
+
+Every disagreement is either judged in `diff_r2_judged.toml` (who is right,
+and why) or fails the run; a judgment nothing matches any more is reported, so
+the table cannot outlive what it judged (ROADMAP P11).
 
 Usage:
   scripts/diff_r2.py                        # default corpus and commands
@@ -22,10 +26,14 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import pathlib
 import re
 import subprocess
 import sys
+import tomllib
+
+VERDICTS = ("r2s-right", "r2-right", "unfilled", "deliberate")
 
 # Command, comparison mode. The seek is issued to both so the cursor agrees.
 COMMANDS = [
@@ -78,6 +86,19 @@ def values(lines):
     return found
 
 
+def columns(lines):
+    """Each value with every (column, row) it appears at; the column is the header's name for it."""
+    header = next((line.split() for line in lines if "vaddr" in line.split()), None)
+    found = {}
+    for line in lines:
+        for index, token in enumerate(line.split()):
+            if not HEX.fullmatch(token):
+                continue
+            column = header[index] if header and index < len(header) else None
+            found.setdefault(int(token, 16), []).append((column, line))
+    return found
+
+
 # `\b` never matches before a minus, so a negative decimal used to lose its
 # sign: radare2's `[sp, -4]` normalised to `-0x4` while Sleigh's `[sp, -0x4]`
 # normalised to the unsigned word, and the same displacement read as two.
@@ -106,8 +127,15 @@ def canonical_numbers(line):
 def run(argv, timeout):
     """Return (stdout, stderr, code); code is None when the tool never ran."""
     try:
+        # A listing of a non-text byte is not UTF-8: each invalid byte keeps its value, so two
+        # different ones still compare different.
         done = subprocess.run(
-            argv, capture_output=True, text=True, timeout=timeout, check=False
+            argv,
+            capture_output=True,
+            text=True,
+            errors="surrogateescape",
+            timeout=timeout,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return "", "timeout", None
@@ -116,42 +144,96 @@ def run(argv, timeout):
     return done.stdout, done.stderr, done.returncode
 
 
-def compare(command, mode, left, right, verbose):
-    """Return a one-line verdict, or None when the two agree."""
+def differences(command, mode, left, right):
+    """Every disagreement of one command on one binary.
+
+    A listing pairs its lines by position, each pair one disagreement, with
+    `None` for a line one tool did not print; a values listing gives each
+    value r2s reports and radare2 does not.
+    """
     # Only the listing carries trailing annotations; a hex dump's ASCII column
     # can hold a semicolon that must not be mistaken for one.
     strip = command.startswith("pd")
     left_lines, right_lines = normalise(left, strip), normalise(right, strip)
     if mode == "values":
-        ours, theirs = values(left_lines), values(right_lines)
-        invented = ours - theirs
-        if not invented:
-            return None
-        sample = ", ".join("{:#x}".format(value) for value in sorted(invented)[:4])
-        return "{} reports {} value(s) radare2 does not: {}".format(
-            command, len(invented), sample
-        )
+        theirs, ours = values(right_lines), columns(left_lines)
+        # One disagreement per occurrence: a judgment of one column must not hide another.
+        return [
+            ("value", (value, column, row))
+            for value in sorted(values(left_lines) - theirs)
+            for column, row in ours.get(value, [(None, "")])
+        ]
+    found = []
+    for index in range(max(len(left_lines), len(right_lines))):
+        ours = left_lines[index] if index < len(left_lines) else None
+        theirs = right_lines[index] if index < len(right_lines) else None
+        if ours != theirs:
+            found.append(("lines", (theirs, ours)))
+    return found
 
-    if left_lines == right_lines:
-        return None
 
-    detail = ""
-    if verbose:
-        for index in range(max(len(left_lines), len(right_lines))):
-            got = left_lines[index] if index < len(left_lines) else None
-            want = right_lines[index] if index < len(right_lines) else None
-            if got != want:
-                detail = "\n      r2  {}\n      r2s {}".format(
-                    want if want is not None else "<missing>",
-                    got if got is not None else "<missing>",
-                )
-                break
-    return "{} differs ({} lines vs {}){}".format(
-        command, len(left_lines), len(right_lines), detail
+def load_judgments(path):
+    """The judged disagreements: each a class of them, with its verdict and reason."""
+    if not path.exists():
+        return []
+    judged = tomllib.loads(path.read_text())["judged"]
+    for judgment in judged:
+        if judgment["verdict"] not in VERDICTS:
+            raise ValueError("unknown verdict {!r}".format(judgment["verdict"]))
+        judgment["values"] = {int(value, 16) for value in judgment.get("values", [])}
+        judgment["columns"] = set(judgment.get("columns", []))
+        judgment["matched"] = 0
+    return judged
+
+
+def judgment_for(judgments, binary, command, difference):
+    """The first judgment that covers this disagreement, or None."""
+    verb = command.split()[0]
+    kind, detail = difference
+    for judgment in judgments:
+        patterns = judgment["binaries"]
+        patterns = [patterns] if isinstance(patterns, str) else patterns
+        if judgment["command"] != verb or not any(fnmatch.fnmatchcase(binary, p) for p in patterns):
+            continue
+        if kind == "value":
+            # No values listed covers every value of those binaries, as no pattern covers any line;
+            # columns listed cover only values r2s prints in them.
+            # An `r2s` pattern is matched against the row r2s prints the value in.
+            value, column, row = detail
+            covered = (
+                "r2" not in judgment
+                and (not judgment["values"] or value in judgment["values"])
+                and (not judgment["columns"] or column in judgment["columns"])
+                and re.search(judgment.get("r2s", ""), row) is not None
+            )
+        else:
+            theirs, ours = detail
+            covered = not judgment["values"] and all(
+                re.search(judgment[side], line if line is not None else "<missing>")
+                for side, line in (("r2", theirs), ("r2s", ours))
+                if side in judgment
+            )
+        if covered:
+            judgment["matched"] += 1
+            return judgment
+    return None
+
+
+def spelled(difference):
+    """One disagreement as the report prints it, indented under its command."""
+    kind, detail = difference
+    if kind == "value":
+        value, column, _ = detail
+        return "      {:#x}{}".format(value, " ({})".format(column) if column else "")
+    theirs, ours = detail
+    return "      r2  {}\n      r2s {}".format(
+        theirs if theirs is not None else "<missing>", ours if ours is not None else "<missing>"
     )
 
 
 def main():
+    # A line holding an invalid byte prints as its escape.
+    sys.stdout.reconfigure(errors="backslashreplace")
     here = pathlib.Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser()
     parser.add_argument("--r2", default=str(here.parent / "radare2/binr/radare2/radare2"))
@@ -160,7 +242,12 @@ def main():
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--only", help="run just the commands whose verb matches this")
-    parser.add_argument("--verbose", action="store_true", help="show the first differing line")
+    parser.add_argument("--verbose", action="store_true", help="show each unjudged disagreement")
+    parser.add_argument(
+        "--judged",
+        default=str(here / "scripts/diff_r2_judged.toml"),
+        help="the judged disagreements",
+    )
     parser.add_argument(
         "--no-build",
         action="store_true",
@@ -198,8 +285,10 @@ def main():
         print("no binaries under {}".format(args.bins), file=sys.stderr)
         return 2
 
+    judgments = load_judgments(pathlib.Path(args.judged))
     agreed = {command: 0 for command, _ in commands}
     differed = {command: 0 for command, _ in commands}
+    judged = {command: 0 for command, _ in commands}
     unsupported = {}
     skipped = 0
 
@@ -234,22 +323,41 @@ def main():
             if not normalise(right) and not normalise(left):
                 continue
 
-            verdict = compare(command, mode, left, right, args.verbose)
-            if verdict is None:
+            found = differences(command, mode, left, right)
+            unjudged = [
+                difference
+                for difference in found
+                if judgment_for(judgments, binary.name, command, difference) is None
+            ]
+            if not found:
                 agreed[command] += 1
+            elif not unjudged:
+                judged[command] += 1
             else:
                 differed[command] += 1
                 if not reported:
                     print(binary.name)
                     reported = True
-                print("    {}".format(verdict))
+                print("    {} differs: {} unjudged of {}".format(command, len(unjudged), len(found)))
+                shown = unjudged if args.verbose else unjudged[:1]
+                for difference in shown:
+                    print(spelled(difference))
 
-    print("\n{:<8} {:>8} {:>8}".format("command", "agree", "differ"))
-    print("-" * 26)
+    print("\n{:<8} {:>8} {:>8} {:>8}".format("command", "agree", "judged", "unjudged"))
+    print("-" * 35)
     total_differ = 0
     for command, _ in commands:
-        print("{:<8} {:>8} {:>8}".format(command, agreed[command], differed[command]))
+        print(
+            "{:<8} {:>8} {:>8} {:>8}".format(
+                command, agreed[command], judged[command], differed[command]
+            )
+        )
         total_differ += differed[command]
+    stale = [judgment for judgment in judgments if judgment["matched"] == 0]
+    if stale:
+        print("\njudgments nothing matched (stale, or outside this corpus):")
+        for judgment in stale:
+            print("  {} {}: {}".format(judgment["command"], judgment["binaries"], judgment["reason"]))
     if skipped:
         print("\n{} runs skipped (timeout or launch failure)".format(skipped))
     if unsupported:

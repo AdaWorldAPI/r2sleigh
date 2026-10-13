@@ -105,7 +105,7 @@ fn span(data: &[u8], offset: u32, size: u64) -> Option<&[u8]> {
 /// A symbol a bind names, by the C identifier it binds.
 fn imported(name: &str, weak: bool) -> RelocationSymbol {
     RelocationSymbol {
-        name: crate::macho_identifier(name).to_owned(),
+        name: crate::macho_identifier(name).into(),
         defined: None,
         size: 0,
         binding: if weak { Binding::Weak } else { Binding::Global },
@@ -324,7 +324,7 @@ impl<'d> Macho<'d> {
                 if symbol.defined.is_none() && matches!(record.addend, None | Some(0)) =>
             {
                 WriteKind::Import {
-                    symbol: symbol.name.clone(),
+                    symbol: symbol.name.to_string(),
                 }
             }
             _ => WriteKind::Unknown,
@@ -837,7 +837,7 @@ fn pointer_entry(vaddr: u64, entry: (u64, u32), width: u64, name: Option<String>
             None if index & macho::INDIRECT_SYMBOL_ABS != 0 => Applies::Unknown,
             None => Applies::Relative,
         },
-        symbol: name.map(|name| imported(&name, false)),
+        symbol: name.map(|name| Box::new(imported(&name, false))),
     }
 }
 
@@ -950,7 +950,7 @@ impl Opcodes<'_> {
                     width: self.width,
                     addend: Some(self.addend),
                     applies: Applies::SymbolPlusAddend,
-                    symbol,
+                    symbol: symbol.map(Box::new),
                 }
             }
         }
@@ -1064,11 +1064,11 @@ impl Chain {
             Fixup::Bind { ordinal, addend } => Relocation {
                 addend: Some(addend + import(ordinal).map_or(0, |(_, _, own)| *own)),
                 applies: Applies::SymbolPlusAddend,
-                symbol: import(ordinal).map(|(name, weak, _)| imported(name, *weak)),
+                symbol: import(ordinal).map(|(name, weak, _)| Box::new(imported(name, *weak))),
                 ..unknown
             },
             Fixup::SignedBind(ordinal) => Relocation {
-                symbol: import(ordinal).map(|(name, weak, _)| imported(name, *weak)),
+                symbol: import(ordinal).map(|(name, weak, _)| Box::new(imported(name, *weak))),
                 ..unknown
             },
             Fixup::Unstated => unknown,
