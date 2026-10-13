@@ -36,7 +36,7 @@
 //! two origins nothing here can tell apart, and neither is rooted.
 
 use super::{StackAddressBase, StackAddressRoot};
-use crate::dense::{Csr, IdMap};
+use crate::dense::{Csr, IdMap, IdSet};
 use crate::fixpoint::Exhausted;
 use crate::graph::{InstPayload, SsaGraph, ValueId};
 use crate::op::SSAOp;
@@ -218,13 +218,47 @@ fn rooted(
             }
         },
     )?;
+    let of = |id: ValueId| value_of(id, views, seeds, &cells);
+    let unsettled = unsettled(flow, &cells, of);
     let mut roots = seeds.clone();
     for (id, cell) in cells.iter() {
-        if let Some(root) = cell.root() {
+        if let Some(root) = cell.root()
+            && !unsettled.contains(id)
+        {
             roots.insert(id, root);
         }
     }
     Ok(roots)
+}
+
+/// Every value a settled `Pending` reaches: a cell left pending, or an input read as two roots,
+/// which `either` leaves pending and a merge's `meet` then skips over the other inputs' root. One
+/// forward walk over the readers, each value taken once: `O(V + E)`.
+fn unsettled(
+    flow: &Flow,
+    cells: &IdMap<ValueId, Rooted>,
+    read: impl Fn(ValueId) -> Rooted,
+) -> IdSet<ValueId> {
+    let mut pending = Vec::new();
+    for &dst in &flow.order {
+        let inputs: &[ValueId] = match &flow.rules[dst] {
+            Rule::Merge(sources) => sources,
+            Rule::Copy(src) => std::slice::from_ref(src),
+            Rule::Add(a, b) | Rule::Sub(a, b) => &[*a, *b],
+        };
+        if cells.get(dst) == Some(&Rooted::Pending)
+            || inputs.iter().any(|input| read(*input) == Rooted::Pending)
+        {
+            pending.push(dst);
+        }
+    }
+    let mut reached = IdSet::default();
+    while let Some(value) = pending.pop() {
+        if reached.insert(value) {
+            pending.extend(flow.readers.get(value).iter().copied());
+        }
+    }
+    reached
 }
 
 /// A root moved by a constant, `sign` saying which way; pending while the
@@ -422,9 +456,17 @@ fn indexed(
             }
         },
     )?;
+    let indexed_of = |id: ValueId| {
+        let own = |id: ValueId| cells.get(id).copied().unwrap_or(Rooted::Not);
+        let representative = views.representative_value(id).map_or(Rooted::Not, own);
+        own(id).either(representative)
+    };
+    let unsettled = unsettled(flow, &cells, indexed_of);
     let mut roots = IdMap::new(exact.len().max(cells.len()));
     for (id, cell) in cells.iter() {
-        if let Some(root) = cell.root() {
+        if let Some(root) = cell.root()
+            && !unsettled.contains(id)
+        {
             roots.insert(id, root);
         }
     }
