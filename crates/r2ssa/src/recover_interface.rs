@@ -2286,6 +2286,12 @@ pub fn mint_recovered_call_site_interface(
             }
             _ => SourceCallResult::Register { storage },
         },
+        // A call that reads only the first register keeps it (doc/adr-language-profile.md).
+        SourceFunctionReturn::Pair { low, .. }
+            if caller_reads.is_some_and(|reads| reads.second == 0) =>
+        {
+            SourceCallResult::Register { storage: low }
+        }
         SourceFunctionReturn::Pair { low, high } => SourceCallResult::Pair { low, high },
         // A body nobody read owns the arguments beside the result: an import
         // thunk forwards every one and reads none, so what its own body proves
@@ -2400,6 +2406,72 @@ mod tests {
         let arch = arch();
         let func = SSAFunction::from_blocks_with_arch(&[block], Some(&arch)).expect("ssa");
         recover_interface(&func, &candidates(), None).expect("recovery")
+    }
+
+    /// A body writing x0 and x1 on every return, proven a pair by a call reading x1, is one register
+    /// at a call reading only x0 (doc/adr-language-profile.md).
+    #[test]
+    fn a_call_reading_only_the_first_register_of_a_pair_takes_that_register() {
+        let mut block = R2ILBlock::new(0x1000, 8);
+        block.push(R2ILOp::IntAdd {
+            dst: Varnode::register(8, 8),
+            a: Varnode::register(0, 8),
+            b: Varnode::constant(2, 8),
+        });
+        block.push(R2ILOp::IntAdd {
+            dst: Varnode::register(0, 8),
+            a: Varnode::register(0, 8),
+            b: Varnode::constant(1, 8),
+        });
+        block.push(R2ILOp::Return {
+            target: Varnode::constant(0, 8),
+        });
+        let func = SSAFunction::from_blocks_with_arch(&[block], Some(&arch())).expect("ssa");
+        let slots = candidates()
+            .with_second_result_slot(Some(register(8, 8)))
+            .expect("x1 beside x0");
+        let reads = |second| r2source::SourceResultReads {
+            integer: 1,
+            second,
+            calls: 1,
+            ..Default::default()
+        };
+        let stated = Stated {
+            loader_role: None,
+            result_reads: Some(reads(1)),
+        };
+        let recovered =
+            recover_interface_inner(&func, None, &slots, None, stated).expect("recovery");
+        let (low, high) = (register(0, 8), register(8, 8));
+        assert_eq!(
+            recovered.result(),
+            RecoveredFunctionResult::Pair { low, high }
+        );
+        let names = r2source::SourceRoleRegisterNames::new(Some("x30"), Some("sp"), None);
+        let roles = SourceMachineRoles::new(Some(register(0x80, 8)), Some(register(0x88, 8)))
+            .expect("machine roles")
+            .with_role_register_names(names);
+        let interface =
+            mint_recovered_interface(&recovered, &roles, b"pair", "aapcs64").expect("a pair");
+        let identity = SourceCallSiteIdentity::new(
+            0x2003,
+            CanonicalStorageId {
+                space: CanonicalStorageSpace::Constant,
+                offset: 0x1000,
+                size: 8,
+            },
+        );
+        let site = |second| {
+            mint_recovered_call_site_interface(&interface, identity, b"pair", Some(reads(second)))
+                .expect("a call site")
+        };
+        assert_eq!(
+            site(0).result(),
+            SourceCallResult::Register { storage: low }
+        );
+        assert_eq!(site(0).exact_callee_interface(), Some(&interface));
+        assert_eq!(site(1).result(), SourceCallResult::Pair { low, high });
+        assert_eq!(site(1).exact_callee_interface(), Some(&interface));
     }
 
     fn call_boundary_with(

@@ -790,6 +790,16 @@ fn call_result_type(
             signedness: crate::Signedness::Unsigned,
         });
     }
+    if let (
+        r2ssa::SourceFunctionReturn::Pair { low, .. },
+        r2ssa::SourceCallResult::Register { storage },
+    ) = (callee.return_kind(), result)
+    {
+        return (low == storage).then_some(CTypeLike::Int {
+            bits: storage.size.checked_mul(8)?,
+            signedness: crate::Signedness::Unsigned,
+        });
+    }
     let carriers = callee.result_carriers()?;
     let r2ssa::SourceCallResult::Register { storage } = result else {
         return None;
@@ -1500,10 +1510,16 @@ impl FunctionFacts {
                 .map(r2ssa::SourceCallSiteInterface::result);
             // A call that takes a pair takes the type of both halves, whatever the callee's own
             // signature says of its first register.
+            let pair_callee = matches!(
+                signature.interface.return_kind(),
+                r2ssa::SourceFunctionReturn::Pair { .. }
+            );
             let return_type = match (site_result, &signature.signature.return_type) {
                 (Some(result @ r2ssa::SourceCallResult::Pair { .. }), _) => {
                     call_result_type(&signature.interface, result)
                 }
+                // A call that reads only a pair's first register takes that half alone.
+                (Some(result), _) if pair_callee => call_result_type(&signature.interface, result),
                 (_, CTypeLike::Unknown) => {
                     site_result.and_then(|result| call_result_type(&signature.interface, result))
                 }
