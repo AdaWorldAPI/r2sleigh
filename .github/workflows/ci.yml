@@ -4,23 +4,27 @@ on:
   push:
     branches: [master]
   # Every pull request, whatever its base: a stacked PR is graded against its parent branch.
-  # An edit or a label matters only where it moves the base or adds `full-ci` (the plan job).
   pull_request:
-    types: [opened, synchronize, reopened, edited, labeled]
   merge_group:
   schedule:
     - cron: "23 2 * * *"
   workflow_dispatch:
+  # `ci-on-request.yml` calls the whole pipeline for a base moved to master or a `full-ci` label.
+  workflow_call:
+    inputs:
+      full:
+        type: boolean
+        default: false
 
 # The jobs read the repository and nothing else: no job writes through the
 # token, so it is granted read access to the contents alone.
 permissions:
   contents: read
 
-# A newer run of the same branch or PR cancels the older. An edit or label the plan ignores gets a
-# group of its own, so it never cancels a run that grades something.
+# A newer run of the same branch or PR cancels the older; a call from `ci-on-request.yml` is its
+# workflow's own group, so it neither cancels nor is cancelled by a push's run.
 concurrency:
-  group: ci-${{ github.ref }}-${{ ((github.event.action == 'edited' && !github.event.changes.base) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) && github.run_id || 'run' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 # GitHub-hosted runners: every job starts from a clean image, so nothing here
@@ -51,45 +55,34 @@ jobs:
   # second tier, both equivalence ratchets and the coverage sweep (30 of 42
   # jobs, 4 of every 5 runner-minutes), runs on master, nightly, by hand, in
   # the merge queue, and on a pull request whose base is master (the next to
-  # merge) or that carries the `full-ci` label. Every gate still runs before a
-  # merge; a restack of a 30-PR stack queues 30 first tiers, not 1,260 jobs.
+  # merge) or that carries the `full-ci` label, and when `ci-on-request.yml`
+  # calls it. Every gate still runs before a merge; a restack of a 30-PR stack
+  # queues 30 first tiers, not 1,260 jobs.
   plan:
     name: Plan
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
-      run: ${{ steps.plan.outputs.run }}
       full: ${{ steps.plan.outputs.full }}
     steps:
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
-          ACTION: ${{ github.event.action }}
+          REQUESTED: ${{ inputs.full }}
           BASE: ${{ github.event.pull_request.base.ref }}
-          BASE_MOVED: ${{ github.event.changes.base != null }}
-          LABEL: ${{ github.event.label.name }}
           LABELED_FULL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
         run: |
-          run=true
           full=true
-          if [ "$EVENT" = pull_request ]; then
-            case "$ACTION" in
-              edited) [ "$BASE_MOVED" = true ] || run=false ;;
-              labeled) [ "$LABEL" = full-ci ] || run=false ;;
-            esac
+          if [ "$EVENT" = pull_request ] && [ "$REQUESTED" != true ]; then
             [ "$BASE" = master ] || [ "$LABELED_FULL" = true ] || full=false
           fi
-          [ "$run" = true ] || full=false
-          echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "full=$full" >> "$GITHUB_OUTPUT"
-          echo "run=$run full=$full ($EVENT ${ACTION:-}, base ${BASE:-none})" >> "$GITHUB_STEP_SUMMARY"
+          echo "full=$full ($EVENT, base ${BASE:-none}, requested ${REQUESTED:-false})" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Quality checks (single compile pipeline) ───────────────────────
   quality:
     name: Format + Clippy + Unit Tests
     runs-on: ubuntu-24.04
-    needs: plan
-    if: needs.plan.outputs.run == 'true'
     timeout-minutes: 20
     steps:
       # The image's preinstalled SDKs are not used here, and the workspace's
@@ -138,8 +131,6 @@ jobs:
   dylint:
     name: Dylint (r2ssa, r2types)
     runs-on: ubuntu-24.04
-    needs: plan
-    if: needs.plan.outputs.run == 'true'
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -168,8 +159,6 @@ jobs:
   build:
     name: Build the shell
     runs-on: ubuntu-24.04
-    needs: plan
-    if: needs.plan.outputs.run == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -410,8 +399,6 @@ jobs:
   equivalence-harness:
     name: Equivalence Harness
     runs-on: ubuntu-24.04
-    needs: plan
-    if: needs.plan.outputs.run == 'true'
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
