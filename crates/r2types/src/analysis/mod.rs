@@ -1082,8 +1082,8 @@ pub fn build_source_owned_type_analysis(
         &callee_facts,
         &callee_signatures,
     );
-    let evidence = calls.solve(source.as_ref());
-    let inferred_signature = crate::infer_signature_from_prepared_ssa(source.as_ref(), &evidence);
+    let solved = calls.solve(source.as_ref());
+    let inferred_signature = crate::infer_signature_from_prepared_ssa(source.as_ref(), &solved);
     let recovered_vars = crate::prepare::recover_vars_from_prepared_ssa(source.as_ref(), ptr_bits);
     let diagnostics = TypeAnalysisDiagnostics::default();
     let local_structs = infer_local_struct_artifacts_from_prepared_ssa(source.as_ref());
@@ -1153,7 +1153,7 @@ pub fn build_source_owned_type_analysis(
         source.as_ref(),
         function_facts,
         calls,
-        &evidence,
+        &solved,
     );
     let analysis = TypeAnalysis {
         source,
