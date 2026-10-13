@@ -8,9 +8,18 @@
 /// calls `runtime.morestack` (`morestack_noctxt` without a closure context) and then jumps to the
 /// function's start; runtime/stack.go `newstack` grows the stack and resumes after the call.
 pub fn reenters_caller(name: &str) -> bool {
+    matches!(
+        routine(name),
+        "runtime.morestack" | "runtime.morestack_noctxt"
+    )
+}
+
+/// The routine a symbol names: radare2's `sym.`, Mach-O's leading underscore on every defined
+/// symbol, and Go's ABI0 wrapper suffix taken off.
+fn routine(name: &str) -> &str {
     let name = name.strip_prefix("sym.").unwrap_or(name);
-    let name = name.strip_suffix(".abi0").unwrap_or(name);
-    matches!(name, "runtime.morestack" | "runtime.morestack_noctxt")
+    let name = name.strip_prefix('_').unwrap_or(name);
+    name.strip_suffix(".abi0").unwrap_or(name)
 }
 
 /// Whether a call to the routine named `name` never comes back: Go's compiler ends the calling
@@ -70,14 +79,14 @@ pub fn exits(name: &str) -> bool {
         "panicunsafestringlen",
         "panicunsafestringnilptr",
     ];
-    let name = name.strip_prefix("sym.").unwrap_or(name);
-    let name = name.strip_suffix(".abi0").unwrap_or(name);
-    name.strip_prefix("runtime.").is_some_and(|routine| {
-        matches!(
-            routine,
-            "throw" | "throwinit" | "panicwrap" | "panicSimdImm"
-        ) || EXITS.binary_search(&routine).is_ok()
-    })
+    routine(name)
+        .strip_prefix("runtime.")
+        .is_some_and(|routine| {
+            matches!(
+                routine,
+                "throw" | "throwinit" | "panicwrap" | "panicSimdImm"
+            ) || EXITS.binary_search(&routine).is_ok()
+        })
 }
 
 #[cfg(test)]
@@ -88,6 +97,9 @@ mod tests {
     fn go_s_compiler_ends_a_block_after_a_runtime_panic() {
         assert!(exits("runtime.throw"));
         assert!(exits("sym.runtime.gopanic"));
+        // Mach-O states every defined symbol with a leading underscore.
+        assert!(exits("_runtime.throw"));
+        assert!(reenters_caller("sym._runtime.morestack_noctxt"));
         assert!(exits("runtime.panicIndex.abi0"));
         assert!(exits("runtime.goPanicSliceAlenU"));
         assert!(exits("runtime.panicBounds"));
