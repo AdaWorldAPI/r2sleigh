@@ -37,9 +37,9 @@ use crate::facts::{
     CalleeMemoryRange, CalleeMemoryRegion, CalleeModelPolicyEvidence, CalleeReturnRelation,
     CalleeSyncEffect, CalleeSyncOp, CalleeTransferEffect, CalleeTransferLength, FunctionParamSpec,
     FunctionSignatureSpec, FunctionTypeFactInputs, FunctionTypeFacts, InterprocFactDiagnostics,
-    LocalFieldAccessFact, OutParamCertificate, OutParamCertificateEvidence,
-    OutParamCertificateSource, ScalarArrayRenderCandidate, SignatureCertificate,
-    SignatureCertificateSource, VisibleBinding, VisibleBindingKind,
+    OutParamCertificate, OutParamCertificateEvidence, OutParamCertificateSource,
+    ScalarArrayRenderCandidate, SignatureCertificate, SignatureCertificateSource, VisibleBinding,
+    VisibleBindingKind,
 };
 use crate::function_facts::{
     FunctionFacts, InterprocSummaryView, ProjectedFacts, SourceOwnedFunctionFacts,
@@ -307,10 +307,6 @@ struct DerivedTypeAnalysisInput<'a> {
     local_structs: LocalStructArtifacts,
     interproc_summary_set: Option<InterprocSummarySet>,
     diagnostics: TypeAnalysisDiagnostics,
-}
-
-struct DerivedTypeAnalysisSemanticInputs<'a> {
-    local_field_accesses: &'a [LocalFieldAccessFact],
 }
 
 #[cfg(test)]
@@ -653,7 +649,6 @@ fn merged_context_and_summary_callee_facts(
 
 fn build_type_analysis_inner(
     mut input: DerivedTypeAnalysisInput<'_>,
-    semantic_inputs: Option<DerivedTypeAnalysisSemanticInputs<'_>>,
     stack: &StackAccesses,
     registers: &crate::RegisterIdentity,
     callee_facts: BTreeMap<u64, CalleeFact>,
@@ -717,7 +712,6 @@ fn build_type_analysis_inner(
         inferred_signature_spec,
     );
     apply_main_signature_override(input.function_name, &mut merged_signature);
-    let role_hint_has_authoritative_empty_params = false;
     let before_interproc_signature = merged_signature.clone();
     apply_interproc_summary_to_signature(
         &mut merged_signature,
@@ -755,54 +749,11 @@ fn build_type_analysis_inner(
     );
     // A structure a parameter's accesses lay out is the solve's (doc/adr-aggregates.md); no
     // scored declaration is generated here.
-    let mut local_structs = input.local_structs;
-    let array_index_field_profiles = local_structs.slot_field_profiles.clone();
-    let indexed_local_struct_refinement_slots = indexed_local_struct_refinement_slots(
-        &local_structs,
-        &signature_certificate_sources,
-        &type_assumption_parameter_slots,
-    );
-    prune_conflicting_local_struct_overrides(
-        &merged_signature,
-        &mut local_structs.struct_decls,
-        &mut local_structs.slot_type_overrides,
-        &mut local_structs.slot_field_profiles,
-        &indexed_local_struct_refinement_slots,
-        &input.parsed_context.external_type_db,
-        input.ptr_bits,
-    );
-
-    let struct_decls = dedup_struct_decls(
-        external_structs
-            .into_iter()
-            .chain(local_structs.struct_decls.clone())
-            .collect(),
-    );
-
+    let local_structs = input.local_structs;
+    let struct_decls = dedup_struct_decls(external_structs);
     let mut type_db = input.parsed_context.external_type_db.clone();
     merge_local_structs_into_type_db(&mut type_db, &struct_decls, input.ptr_bits);
-    let before_slot_signature = merged_signature.clone();
-    let merged_signature = merge_slot_type_overrides_into_signature(
-        merged_signature,
-        &local_structs.slot_type_overrides,
-        &indexed_local_struct_refinement_slots,
-        &type_db,
-        input.ptr_bits,
-        role_hint_has_authoritative_empty_params,
-    );
-    if merged_signature != before_slot_signature {
-        push_signature_certificate_source(
-            &mut signature_certificate_sources,
-            SignatureCertificateSource::SlotTypeOverride,
-        );
-    }
-    let mut array_index_certificates = array_index_certificates_from_struct_artifacts(
-        &local_structs,
-        &array_index_field_profiles,
-        merged_signature.as_ref(),
-        &type_db,
-        input.ptr_bits,
-    );
+    let mut array_index_certificates = Vec::new();
     let mut exact_indexed_access_certificates =
         exact_indexed_access_certificates_from_local_artifacts(
             &local_structs,
@@ -815,9 +766,7 @@ fn build_type_analysis_inner(
     let mut scalar_array_render_candidates = exact_indexed_access_certificates.render_candidates;
     scalar_array_render_candidates.sort();
     scalar_array_render_candidates.dedup();
-    let mut field_access_certificates =
-        field_access_certificates_from_struct_artifacts(&local_structs);
-    field_access_certificates.append(&mut exact_indexed_access_certificates.field_access);
+    let mut field_access_certificates = exact_indexed_access_certificates.field_access;
     field_access_certificates.sort();
     field_access_certificates.dedup();
     let signature_certificate = signature_certificate_from_merged(
@@ -843,7 +792,6 @@ fn build_type_analysis_inner(
     let var_type_ctx = VarTypeCandidateContext {
         current_context_maps: &current_context_maps,
         merged_signature: merged_signature.as_ref(),
-        slot_type_overrides: &local_structs.slot_type_overrides,
         stack_access_widths: &stack.widths,
         stack_access_signedness: &stack.signedness,
         ptr_bits: input.ptr_bits,
@@ -875,12 +823,6 @@ fn build_type_analysis_inner(
         callee_facts,
         external_type_db: type_db,
         program_data_objects: input.parsed_context.program_data_objects.clone(),
-        slot_type_overrides: local_structs.slot_type_overrides.clone(),
-        slot_field_profiles: local_structs.slot_field_profiles.clone(),
-        local_field_accesses: semantic_inputs
-            .as_ref()
-            .map(|semantic| semantic.local_field_accesses.to_vec())
-            .unwrap_or_default(),
         field_access_certificates,
         array_index_certificates,
         scalar_array_render_candidates,
@@ -968,13 +910,7 @@ fn build_type_analysis_with_stack_accesses(
         &input.parsed_context.callee_facts,
         input.interproc_summary_set.as_ref(),
     );
-    build_type_analysis_inner(
-        input,
-        None,
-        stack,
-        &x86_64_register_identity(),
-        callee_facts,
-    )
+    build_type_analysis_inner(input, stack, &x86_64_register_identity(), callee_facts)
 }
 
 #[cfg(test)]
@@ -1038,14 +974,6 @@ pub fn build_source_owned_type_analysis(
     let local_structs = infer_local_struct_artifacts_from_prepared_ssa(source.as_ref());
     // The exact certificates own member naming: one name per (parameter, offset) they certify.
     let exact_source_fields = field_access_certificates_from_source_aggregate_accesses(&source);
-    let source_field_names = exact_source_fields
-        .iter()
-        .map(|certificate| {
-            let key = (certificate.slot, certificate.field_offset);
-            (key, certificate.field_name.clone())
-        })
-        .collect();
-    let local_field_accesses = local_field_accesses_named(&local_structs, &source_field_names);
     let derived_input = DerivedTypeAnalysisInput {
         function_name: &function_name,
         ptr_bits,
@@ -1056,13 +984,9 @@ pub fn build_source_owned_type_analysis(
         interproc_summary_set: interproc_report,
         diagnostics,
     };
-    let semantic_inputs = Some(DerivedTypeAnalysisSemanticInputs {
-        local_field_accesses: &local_field_accesses,
-    });
     let stack = StackAccesses::of(source.as_ref(), &solved.signedness);
     let derived = build_type_analysis_inner(
         derived_input,
-        semantic_inputs,
         &stack,
         &crate::RegisterIdentity::from_prepared(source.as_ref()),
         callee_facts,
@@ -1110,55 +1034,6 @@ fn require_current_interproc_report_for_source_owned(
         .transpose()
         .map(|_| ())
         .map_err(TypeAnalysisError::InterprocSummarySchema)
-}
-
-/// Project advisory local field observations without granting certificates.
-fn local_field_accesses_from_struct_artifacts(
-    local_structs: &LocalStructArtifacts,
-) -> Vec<LocalFieldAccessFact> {
-    local_field_accesses_named(local_structs, &BTreeMap::new())
-}
-
-/// The same observations, naming each field what the source called it when the
-/// source said.
-///
-/// Naming a field after its offset is what you do when nothing told you its
-/// name. When debug info did tell you, using the offset anyway throws the
-/// answer away.
-pub(crate) fn local_field_accesses_named(
-    local_structs: &LocalStructArtifacts,
-    source_field_names: &BTreeMap<(usize, u64), String>,
-) -> Vec<LocalFieldAccessFact> {
-    let mut accesses = Vec::new();
-    for (slot, fields) in &local_structs.slot_field_profiles {
-        for (field_offset, field_type) in fields {
-            accesses.push(LocalFieldAccessFact {
-                slot: *slot,
-                field_offset: *field_offset,
-                field_name: source_field_names
-                    .get(&(*slot, *field_offset))
-                    .cloned()
-                    .unwrap_or_else(|| format!("f_{field_offset:x}")),
-                field_type: Some(field_type.clone()),
-            });
-        }
-    }
-    accesses.sort();
-    accesses
-}
-
-fn field_access_certificates_from_struct_artifacts(
-    local_structs: &LocalStructArtifacts,
-) -> Vec<crate::FieldAccessCertificate> {
-    local_field_accesses_from_struct_artifacts(local_structs)
-        .into_iter()
-        .map(|access| crate::FieldAccessCertificate {
-            slot: access.slot,
-            field_offset: access.field_offset,
-            field_name: access.field_name,
-            field_type: access.field_type,
-        })
-        .collect()
 }
 
 /// One source type as the C model spells it.
@@ -1375,47 +1250,6 @@ fn field_access_certificates_from_source_aggregate_accesses(
     by_location.into_values().flatten().collect::<Vec<_>>()
 }
 
-fn array_index_certificates_from_struct_artifacts(
-    local_structs: &LocalStructArtifacts,
-    slot_field_profiles: &HashMap<usize, BTreeMap<u64, String>>,
-    merged_signature: Option<&FunctionSignatureSpec>,
-    type_db: &ExternalTypeDb,
-    ptr_bits: u32,
-) -> Vec<ArrayIndexCertificate> {
-    let mut certificates = Vec::new();
-
-    let mut slots: Vec<_> = slot_field_profiles.keys().copied().collect();
-    slots.sort_unstable();
-    for slot in slots {
-        let Some(fields) = slot_field_profiles.get(&slot) else {
-            continue;
-        };
-        if fields.is_empty() {
-            continue;
-        }
-
-        let stride =
-            aggregate_stride_for_slot(slot, local_structs, merged_signature, type_db, ptr_bits)
-                .or_else(|| profile_minimum_stride(fields, ptr_bits));
-        let Some(element_stride) = stride.filter(|stride| *stride > 0) else {
-            continue;
-        };
-
-        for field_offset in fields.keys() {
-            certificates.push(ArrayIndexCertificate {
-                slot,
-                base: Some(ArrayIndexBase::Param { index: slot }),
-                field_offset: *field_offset,
-                element_stride,
-            });
-        }
-    }
-
-    certificates.sort();
-    certificates.dedup();
-    certificates
-}
-
 fn exact_indexed_access_certificates_from_local_artifacts(
     local_structs: &LocalStructArtifacts,
     layout_certificates: &[ArrayIndexCertificate],
@@ -1553,47 +1387,6 @@ fn out_param_certificates_from_projection(
     certificates.sort();
     certificates.dedup();
     certificates
-}
-
-fn aggregate_stride_for_slot(
-    slot: usize,
-    local_structs: &LocalStructArtifacts,
-    merged_signature: Option<&FunctionSignatureSpec>,
-    type_db: &ExternalTypeDb,
-    ptr_bits: u32,
-) -> Option<u64> {
-    local_structs
-        .slot_element_strides
-        .get(&slot)
-        .copied()
-        .or_else(|| {
-            local_structs
-                .slot_type_overrides
-                .get(&slot)
-                .into_iter()
-                .flat_map(|raw_ty| aggregate_pointee_type_names_from_str(raw_ty, ptr_bits))
-                .chain(
-                    merged_signature
-                        .and_then(|signature| signature.params.get(slot))
-                        .and_then(|param| param.ty.as_ref())
-                        .into_iter()
-                        .flat_map(aggregate_pointee_type_names_from_type),
-                )
-                .find_map(|name| external_aggregate_size(type_db, &name, ptr_bits))
-        })
-}
-
-fn aggregate_pointee_type_names_from_str(raw_ty: &str, ptr_bits: u32) -> Vec<String> {
-    parse_c_type_like(raw_ty, ptr_bits)
-        .map(|ty| aggregate_pointee_type_names_from_type(&ty))
-        .unwrap_or_default()
-}
-
-fn profile_minimum_stride(fields: &BTreeMap<u64, String>, ptr_bits: u32) -> Option<u64> {
-    fields
-        .iter()
-        .filter_map(|(offset, ty)| offset.checked_add(estimate_c_type_size_bytes(ty, ptr_bits)))
-        .max()
 }
 
 /// What the frame's stack slots are accessed as: every width, and the signedness each accessed

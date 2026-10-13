@@ -204,10 +204,6 @@ fn interproc_summary_name_does_not_prune_generated_surplus_slots() {
         recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts {
-            slot_type_overrides: HashMap::from([(
-                5usize,
-                "struct sla_struct_0e18b2bc34030602 *".to_string(),
-            )]),
             ..Default::default()
         },
         interproc_summary_set: Some(semantic_role_summary_set("dbg.or", Some(2))),

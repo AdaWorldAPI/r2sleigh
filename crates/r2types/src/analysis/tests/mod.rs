@@ -68,13 +68,11 @@ fn unplaceable_recovered_type_produces_no_candidate() {
         reg: None,
     }];
     let context_maps = SignatureContextMaps::default();
-    let slot_type_overrides = HashMap::new();
     let stack_access_widths = BTreeMap::new();
     let stack_access_signedness = BTreeMap::new();
     let context = VarTypeCandidateContext {
         current_context_maps: &context_maps,
         merged_signature: None,
-        slot_type_overrides: &slot_type_overrides,
         stack_access_widths: &stack_access_widths,
         stack_access_signedness: &stack_access_signedness,
         ptr_bits: 64,

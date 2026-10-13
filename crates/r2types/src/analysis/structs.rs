@@ -61,66 +61,6 @@ pub(crate) fn prepared_parameter_indexed_accesses(
     candidates
 }
 
-pub(crate) fn signature_param_blocks_local_struct_override(
-    signature: &Option<FunctionSignatureSpec>,
-    slot: usize,
-    raw_ty: &str,
-    type_db: &ExternalTypeDb,
-    ptr_bits: u32,
-) -> bool {
-    signature_param_blocks_generated_local_struct_override(
-        signature.as_ref().and_then(|sig| sig.params.get(slot)),
-        raw_ty,
-        type_db,
-        ptr_bits,
-    )
-}
-
-pub(crate) fn prune_conflicting_local_struct_overrides(
-    merged_signature: &Option<FunctionSignatureSpec>,
-    struct_decls: &mut Vec<StructDeclCandidate>,
-    slot_type_overrides: &mut HashMap<usize, String>,
-    slot_field_profiles: &mut HashMap<usize, BTreeMap<u64, String>>,
-    indexed_local_struct_refinement_slots: &HashSet<usize>,
-    type_db: &ExternalTypeDb,
-    ptr_bits: u32,
-) {
-    let blocked_slots = slot_type_overrides
-        .iter()
-        .filter_map(|(slot, raw_ty)| {
-            (!indexed_local_struct_refinement_slots.contains(slot)
-                && signature_param_blocks_local_struct_override(
-                    merged_signature,
-                    *slot,
-                    raw_ty,
-                    type_db,
-                    ptr_bits,
-                ))
-            .then_some(*slot)
-        })
-        .collect::<Vec<_>>();
-    if blocked_slots.is_empty() {
-        return;
-    }
-
-    for slot in &blocked_slots {
-        slot_type_overrides.remove(slot);
-        slot_field_profiles.remove(slot);
-    }
-
-    let referenced_local_names = slot_type_overrides
-        .values()
-        .filter_map(|ty| ty.trim().strip_prefix("struct "))
-        .filter_map(|rest| rest.trim_end().strip_suffix(" *"))
-        .map(|name| name.to_ascii_lowercase())
-        .collect::<HashSet<_>>();
-
-    struct_decls.retain(|decl| {
-        decl.source != StructDeclSource::LocalInferred
-            || referenced_local_names.contains(&decl.name.to_ascii_lowercase())
-    });
-}
-
 pub(crate) fn collect_external_struct_candidates_from_db(
     db: &ExternalTypeDb,
     ptr_bits: u32,

@@ -15,14 +15,6 @@ pub struct FunctionType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LocalFieldAccessFact {
-    pub slot: usize,
-    pub field_offset: u64,
-    pub field_name: String,
-    pub field_type: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldAccessCertificate {
     pub slot: usize,
     pub field_offset: u64,
@@ -510,8 +502,6 @@ pub struct FunctionTypeFacts {
     pub callee_facts: BTreeMap<u64, CalleeFact>,
     pub external_type_db: ExternalTypeDb,
     pub program_data_objects: crate::ProgramDataObjectTypeFacts,
-    pub slot_type_overrides: HashMap<usize, String>,
-    pub slot_field_profiles: HashMap<usize, BTreeMap<u64, String>>,
     pub field_access_certificates: Vec<FieldAccessCertificate>,
     pub array_index_certificates: Vec<ArrayIndexCertificate>,
     pub scalar_array_render_candidates: Vec<ScalarArrayRenderCandidate>,
@@ -534,9 +524,6 @@ pub struct FunctionTypeFactInputs {
     pub callee_facts: BTreeMap<u64, CalleeFact>,
     pub external_type_db: ExternalTypeDb,
     pub program_data_objects: crate::ProgramDataObjectTypeFacts,
-    pub slot_type_overrides: HashMap<usize, String>,
-    pub slot_field_profiles: HashMap<usize, BTreeMap<u64, String>>,
-    pub local_field_accesses: Vec<LocalFieldAccessFact>,
     pub field_access_certificates: Vec<FieldAccessCertificate>,
     pub array_index_certificates: Vec<ArrayIndexCertificate>,
     pub scalar_array_render_candidates: Vec<ScalarArrayRenderCandidate>,
@@ -566,8 +553,6 @@ impl FunctionTypeFacts {
             && self.external_type_db.typedefs.is_empty()
             && self.external_type_db.diagnostics.is_empty()
             && self.program_data_objects == crate::ProgramDataObjectTypeFacts::default()
-            && self.slot_type_overrides.is_empty()
-            && self.slot_field_profiles.is_empty()
             && self.field_access_certificates.is_empty()
             && self.array_index_certificates.is_empty()
             && self.scalar_array_render_candidates.is_empty()
@@ -590,9 +575,6 @@ impl FunctionTypeFacts {
             callee_facts: self.callee_facts,
             external_type_db: self.external_type_db,
             program_data_objects: self.program_data_objects,
-            slot_type_overrides: self.slot_type_overrides,
-            slot_field_profiles: self.slot_field_profiles,
-            local_field_accesses: Vec::new(),
             field_access_certificates: self.field_access_certificates,
             array_index_certificates: self.array_index_certificates,
             scalar_array_render_candidates: self.scalar_array_render_candidates,
@@ -979,20 +961,8 @@ impl FunctionTypeFactsBuilder {
     }
 
     pub fn build(mut self) -> FunctionTypeFacts {
-        merge_local_field_accesses(
-            &mut self.inputs.slot_field_profiles,
-            &self.inputs.local_field_accesses,
-        );
         let mut field_access_certificates =
             std::mem::take(&mut self.inputs.field_access_certificates);
-        field_access_certificates.extend(self.inputs.local_field_accesses.iter().map(|access| {
-            FieldAccessCertificate {
-                slot: access.slot,
-                field_offset: access.field_offset,
-                field_name: access.field_name.clone(),
-                field_type: access.field_type.clone(),
-            }
-        }));
         field_access_certificates.sort();
         field_access_certificates.dedup();
         let mut array_index_certificates =
@@ -1020,8 +990,6 @@ impl FunctionTypeFactsBuilder {
             callee_facts,
             external_type_db,
             program_data_objects,
-            slot_type_overrides,
-            slot_field_profiles,
             mut signature_certificate,
             interproc_diagnostics,
             diagnostics,
@@ -1051,8 +1019,6 @@ impl FunctionTypeFactsBuilder {
             callee_facts,
             external_type_db,
             program_data_objects,
-            slot_type_overrides,
-            slot_field_profiles,
             field_access_certificates,
             array_index_certificates,
             scalar_array_render_candidates,
@@ -1100,24 +1066,6 @@ fn canonicalize_generic_param_names(
         if matches!(binding.kind, VisibleBindingKind::Param) {
             binding.name = canonical_generic_param_name(index, &binding.name);
         }
-    }
-}
-
-fn merge_local_field_accesses(
-    slot_field_profiles: &mut HashMap<usize, BTreeMap<u64, String>>,
-    local_field_accesses: &[LocalFieldAccessFact],
-) {
-    for access in local_field_accesses {
-        slot_field_profiles
-            .entry(access.slot)
-            .or_default()
-            .entry(access.field_offset)
-            .or_insert_with(|| {
-                access
-                    .field_type
-                    .clone()
-                    .unwrap_or_else(|| access.field_name.clone())
-            });
     }
 }
 
@@ -1362,109 +1310,6 @@ mod tests {
 
         assert!(facts.render_authorized_signature().is_some());
         assert!(facts.certified_signature().is_none());
-    }
-
-    #[test]
-    fn builder_merges_local_field_accesses_into_slot_profiles() {
-        let facts = FunctionTypeFacts::builder(FunctionTypeFactInputs {
-            local_field_accesses: vec![
-                LocalFieldAccessFact {
-                    slot: 1,
-                    field_offset: 0,
-                    field_name: "first".to_string(),
-                    field_type: None,
-                },
-                LocalFieldAccessFact {
-                    slot: 1,
-                    field_offset: 8,
-                    field_name: "second".to_string(),
-                    field_type: None,
-                },
-            ],
-            ..FunctionTypeFactInputs::default()
-        })
-        .build();
-
-        assert_eq!(
-            facts
-                .slot_field_profiles
-                .get(&1)
-                .and_then(|profile| profile.get(&0)),
-            Some(&"first".to_string())
-        );
-        assert_eq!(
-            facts
-                .slot_field_profiles
-                .get(&1)
-                .and_then(|profile| profile.get(&8)),
-            Some(&"second".to_string())
-        );
-        assert_eq!(
-            facts.field_access_certificates,
-            vec![
-                FieldAccessCertificate {
-                    slot: 1,
-                    field_offset: 0,
-                    field_name: "first".to_string(),
-                    field_type: None,
-                },
-                FieldAccessCertificate {
-                    slot: 1,
-                    field_offset: 8,
-                    field_name: "second".to_string(),
-                    field_type: None,
-                },
-            ],
-            "local field facts should remain as explicit r2types-owned layout certificates"
-        );
-    }
-
-    #[test]
-    fn builder_preserves_explicit_slot_profile_names() {
-        let facts = FunctionTypeFacts::builder(FunctionTypeFactInputs {
-            slot_field_profiles: HashMap::from([(
-                2,
-                BTreeMap::from([(0, "explicit".to_string())]),
-            )]),
-            local_field_accesses: vec![LocalFieldAccessFact {
-                slot: 2,
-                field_offset: 0,
-                field_name: "local".to_string(),
-                field_type: None,
-            }],
-            ..FunctionTypeFactInputs::default()
-        })
-        .build();
-
-        assert_eq!(
-            facts
-                .slot_field_profiles
-                .get(&2)
-                .and_then(|profile| profile.get(&0)),
-            Some(&"explicit".to_string())
-        );
-    }
-
-    #[test]
-    fn builder_prefers_local_field_access_type_when_present() {
-        let facts = FunctionTypeFacts::builder(FunctionTypeFactInputs {
-            local_field_accesses: vec![LocalFieldAccessFact {
-                slot: 3,
-                field_offset: 4,
-                field_name: "f_4".to_string(),
-                field_type: Some("int32_t".to_string()),
-            }],
-            ..FunctionTypeFactInputs::default()
-        })
-        .build();
-
-        assert_eq!(
-            facts
-                .slot_field_profiles
-                .get(&3)
-                .and_then(|profile| profile.get(&4)),
-            Some(&"int32_t".to_string())
-        );
     }
 
     #[test]
