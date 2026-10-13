@@ -501,6 +501,9 @@ pub struct InterprocFactDiagnostics {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionTypeFacts {
     pub merged_signature: Option<FunctionSignatureSpec>,
+    /// What each parameter's type in the merged signature rests on, where a step that wrote the
+    /// slot stated it (doc/adr-provenance.md, C2).
+    pub parameter_bases: BTreeMap<usize, r2source::Basis>,
     pub callconv: Option<String>,
     pub noreturn: bool,
     pub known_function_signatures: HashMap<String, FunctionType>,
@@ -523,6 +526,7 @@ pub struct FunctionTypeFacts {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionTypeFactInputs {
     pub merged_signature: Option<FunctionSignatureSpec>,
+    pub parameter_bases: BTreeMap<usize, r2source::Basis>,
     pub callconv: Option<String>,
     pub noreturn: bool,
     pub known_function_signatures: HashMap<String, FunctionType>,
@@ -577,6 +581,7 @@ impl FunctionTypeFacts {
     pub fn canonicalized(self) -> Self {
         FunctionTypeFacts::builder(FunctionTypeFactInputs {
             merged_signature: self.merged_signature,
+            parameter_bases: self.parameter_bases,
             callconv: self.callconv,
             noreturn: self.noreturn,
             known_function_signatures: self.known_function_signatures,
@@ -1011,6 +1016,7 @@ impl FunctionTypeFactsBuilder {
 
         let FunctionTypeFactInputs {
             mut merged_signature,
+            parameter_bases,
             callconv,
             noreturn,
             known_function_signatures,
@@ -1040,6 +1046,7 @@ impl FunctionTypeFactsBuilder {
 
         FunctionTypeFacts {
             merged_signature,
+            parameter_bases,
             callconv,
             noreturn,
             known_function_signatures,

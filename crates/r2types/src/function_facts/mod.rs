@@ -1107,6 +1107,9 @@ impl SourceOwnedFunctionFacts {
             || Confidence::of(Basis::Convention),
             |interface| interface.types().clone(),
         );
+        // A slot a step rewrote rests on that step's basis; the rest on the interface's types.
+        let types = (self.report.type_facts().parameter_bases.get(&slot))
+            .map_or(types, |basis| Confidence::of(*basis));
         let signed = self
             .report
             .type_facts()
@@ -2106,6 +2109,7 @@ impl FunctionFacts {
         };
         self.types.merged_signature = Some(signature);
         self.types.signature_certificate = override_facts.signature_certificate;
+        self.types.parameter_bases = override_facts.parameter_bases;
         true
     }
 
@@ -2555,6 +2559,10 @@ impl FunctionFacts {
             if replace {
                 param.ty = Some(hint.clone());
                 applied.insert(slot, hint);
+                // A callee's prototype through the call that hands it the parameter.
+                self.types
+                    .parameter_bases
+                    .insert(slot, r2source::Basis::Solved);
             }
         }
         if applied.is_empty() {
@@ -2655,6 +2663,7 @@ impl FunctionFacts {
             spelled_types
         );
         let mut params = Vec::with_capacity(logical.len());
+        let mut bases = BTreeMap::new();
         for (index, value) in logical.iter().enumerate() {
             // An exact signature is exact in every parameter. One the capture
             // could not place leaves the signature to radare2's spelling,
@@ -2689,9 +2698,13 @@ impl FunctionFacts {
                 .and_then(|pointers| pointers.get(&index))
             {
                 Some(pointer) if declaration_type_width_bits(&ty, ptr_bits) == Some(ptr_bits) => {
+                    bases.insert(index, r2source::Basis::Dereferenced);
                     pointer.clone()
                 }
-                _ => ty,
+                _ => {
+                    bases.insert(index, interface.types().basis);
+                    ty
+                }
             };
             let name = names
                 .as_ref()
@@ -2733,6 +2746,7 @@ impl FunctionFacts {
         };
         self.types.merged_signature = Some(signature);
         self.types.signature_certificate = Some(certificate);
+        self.types.parameter_bases = bases;
         true
     }
 
@@ -2853,6 +2867,9 @@ impl FunctionFacts {
             if replace {
                 param.ty = Some(candidate.clone());
                 changed = true;
+                self.types
+                    .parameter_bases
+                    .insert(index, r2source::Basis::Solved);
             }
         }
         if changed {

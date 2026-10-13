@@ -153,3 +153,18 @@ fn afi_and_the_header_declare_an_unproven_return_alike() {
         "{rendered}"
     );
 }
+
+/// `mov eax, [rdi]; ret`: the body reads through `rdi`, so its recovered parameter is a pointer,
+/// and that type rests on the dereference that proves it, not on the carrier's width.
+#[test]
+fn a_parameter_the_body_reads_through_rests_on_the_dereference() {
+    let code: &[u8] = &[0x8b, 0x07, 0xc3];
+    let mut program = OpenProgram::of(Literal::of_code(code, &[("load", BASE, code.len() as u64)]));
+    let info = program.function_info(BASE).expect("it is described");
+    let declared = (info.arguments.iter())
+        .map(|argument| r2types::c_object_declaration(&argument.ty.value, "_"))
+        .collect::<Vec<_>>();
+    assert_eq!(declared, ["uint32_t* _"]);
+    let bases = (info.arguments.iter()).map(|argument| argument.ty.confidence.basis);
+    assert_eq!(bases.collect::<Vec<_>>(), [Basis::Dereferenced]);
+}

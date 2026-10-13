@@ -1135,6 +1135,8 @@ fn build_type_analysis_inner(
     );
     let type_facts = FunctionTypeFacts::builder(FunctionTypeFactInputs {
         merged_signature: merged_signature.clone(),
+        // Enrichment states these as it writes each slot.
+        parameter_bases: BTreeMap::new(),
         callconv: input.parsed_context.callconv.clone(),
         noreturn: input.parsed_context.noreturn,
         known_function_signatures: input.parsed_context.known_function_signatures.clone(),
