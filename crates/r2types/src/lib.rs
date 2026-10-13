@@ -3,6 +3,7 @@
 // at the item that keeps one.
 #![cfg_attr(dylint_lib = "r2sleigh_lints", deny(entity_keyed_map))]
 
+pub(crate) mod aggregates;
 pub(crate) mod analysis;
 pub(crate) mod callee;
 pub(crate) mod constraint;

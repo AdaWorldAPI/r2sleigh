@@ -56,11 +56,13 @@ The accesses give fields `(c, w)`. Two accesses at the same `(c, w)` are one
 field. Its type is the meet of the solved types of the accessed values.
 `Bottom` refuses the parameter, and the reason names both instructions.
 Two fields that overlap but differ in extent refuse. Reason:
-`fields overlap at +c`. A field whose offset is not a multiple of its width
+`fields overlap at +c`. The fields must have at least two widths. Fields of
+one width are as much an array's elements read at constant indices as a
+structure's members; a single field at offset 0 is a scalar pointer, which
+the solve already types. A field whose offset is not a multiple of its width
 refuses. Reason: `field at +c is not aligned`. With every field aligned,
 plain C places each member at its offset, and the declaration is a true
-statement without `packed`. At least two distinct offsets are required. A single
-field at offset 0 is a scalar pointer, and the solve already types it.
+statement without `packed`. 
 
 ### Owners
 
@@ -73,8 +75,9 @@ field at offset 0 is a scalar pointer, and the solve already types it.
 | Definition and spelling | r2dec | `render::tags` defines a tag the type graph states or r2types infers (extended) |
 
 A field's type is the solve's type for the accessed value
-(`EvidenceTypes::value_type`). Without one, it is the integer of that width
-with the solve's signedness. The tag is `fcn_<entry>_arg<slot>`, never a
+(`EvidenceTypes::value_type`), when that is a scalar of the field's width.
+Otherwise it is the unsigned integer of that width, as a certified scalar
+pointee is spelled today. The tag is `fcn_<entry>_arg<slot>`, never a
 hash. Field names are `f_<offset in hex>`. Padding between fields is
 `uint8_t _pad_<offset>[n]`. The layout states nothing past the last field.
 Accesses reach the object only through the pointer, so no `sizeof` and no
@@ -119,6 +122,18 @@ was deleted (doc/adr-access-syntax.md).
 - The census moves on purpose, and each moved line is read. Equivalence must
   keep every cell. `mixed_touch`, `shape_struct_pointer` and
   `shape_struct_value` are equal today, so the check is zero loss.
+
+## Measured (first exit, 2026-10-14)
+
+`mixed_touch` renders `struct fcn_401620_arg0* arg0`, and its definition
+places `f_0`, `f_2`, `f_4` and `f_8` at their accessed offsets. The census
+moves 5 functions, and each one gains a definition and a structure pointer
+parameter: `mixed_touch`, `rec_spread`, `out_param_parse` at `-O0` and
+`-O2`, and Mach-O `_main`.
+
+A first draft required only two offsets. Under it, `_main`'s `argv` (reads
+of `argv[1]` to `argv[3]`) and a 16-byte store split into two `uint64_t`
+became structures. Requiring two widths keeps them pointers.
 
 ## Not decided here
 

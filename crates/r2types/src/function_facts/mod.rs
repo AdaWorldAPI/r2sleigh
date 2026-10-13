@@ -1217,7 +1217,10 @@ impl SourceOwnedFunctionFacts {
         // Exact immutable interface evidence outranks advisory propagation.
         // Apply it after recovered call evidence so the latter cannot rewrite
         // a declared signedness or logical projection through a weak scalar.
-        enriched.apply_exact_source_signature(source);
+        enriched.apply_exact_source_signature(source, &solved.aggregates);
+        enriched.types.inferred_aggregates = (solved.aggregates.values())
+            .map(|aggregate| (aggregate.tag.clone(), aggregate.definition.clone()))
+            .collect();
         enriched.apply_return_type_fact(solved.returns.clone());
         // The types are final here; the projection the seal holds is built from them once.
         enriched.normalize_field_certificates_from_external_layout();
@@ -1353,6 +1356,8 @@ pub(crate) struct SolvedFunction {
         IdMap<r2ssa::ValueId, BTreeSet<crate::signedness::ScalarSignednessEvidence>>,
     pub(crate) evidence: crate::EvidenceTypes,
     pub(crate) returns: ReturnTypeFact,
+    /// Each parameter whose accesses lay out a structure (doc/adr-aggregates.md).
+    pub(crate) aggregates: BTreeMap<usize, crate::aggregates::InferredAggregate>,
 }
 
 impl SolvedFunction {
@@ -1365,10 +1370,12 @@ impl SolvedFunction {
         let evidence =
             crate::evidence::solve_evidence_types(source, signatures, &signedness, ptr_bits);
         let returns = ReturnTypeFact::decide(source, signatures, &evidence);
+        let aggregates = crate::aggregates::parameter_aggregates(source, &evidence);
         Self {
             signedness,
             evidence,
             returns,
+            aggregates,
         }
     }
 }
@@ -2655,7 +2662,11 @@ impl FunctionFacts {
     /// rendered as a machine word and a header parameter disagreed with the
     /// typed local it was stored into. Parameter names are kept from the
     /// spelled signature when it has the same arity.
-    fn apply_exact_source_signature(&mut self, source: &r2ssa::SsaArtifact) -> bool {
+    fn apply_exact_source_signature(
+        &mut self,
+        source: &r2ssa::SsaArtifact,
+        aggregates: &BTreeMap<usize, crate::aggregates::InferredAggregate>,
+    ) -> bool {
         let context = source.machine_context();
         let Some(interface) = context.function_interface() else {
             return false;
@@ -2670,7 +2681,7 @@ impl FunctionFacts {
         // Nothing weaker than that certificate upgrades a width: the evidence
         // solver's own guesses at pointers and signedness are not proof.
         let certified_pointers = (interface.types().basis == r2source::Basis::CarrierWidth)
-            .then(|| crate::signature_infer::certified_parameter_pointers(source));
+            .then(|| crate::signature_infer::certified_parameter_pointers(source, aggregates));
         let logical = interface.parameter_logical_values();
         if logical.len() != interface.parameters().len() {
             return false;
