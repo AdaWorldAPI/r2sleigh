@@ -2223,9 +2223,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::clang-O1::main": {
-   "cause": "[#122] The value `main` stores is the same register value no statement assigns as before, now read at the XMM register's full 128 bits (residual_u128) where legacy read its low 64.",
-   "reason": "r2sleigh_residual_u128",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::clang-O1::mul_div": {
    "status": "equal"
@@ -2276,9 +2274,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::clang-O2::main": {
-   "cause": "[#122] The value `main` stores is the same register value no statement assigns as before, now read at the XMM register's full 128 bits (residual_u128) where legacy read its low 64.",
-   "reason": "r2sleigh_residual_u128",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::clang-O2::mul_div": {
    "status": "equal"
@@ -2372,9 +2368,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::gcc-O1::main": {
-   "cause": "[#122] The value `main` stores is the same register value no statement assigns as before, now read at the XMM register's full 128 bits (residual_u128) where legacy read its low 64.",
-   "reason": "r2sleigh_residual_u128",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::gcc-O1::mul_div": {
    "status": "equal"
