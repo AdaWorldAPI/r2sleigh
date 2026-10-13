@@ -448,7 +448,9 @@ impl<'a> EvidenceBuilder<'a> {
                 continue;
             };
             let node = EvidenceNode::Value(base);
-            if !self.bound(node, spelled) {
+            // Readers ask only whether a class is a pointer: a bound that leaves it one changes
+            // nothing they decide, so each class wakes its readers at most once.
+            if !self.bound(node, spelled) || self.solved_is_pointer(base) {
                 continue;
             }
             let class = self.solver.class_seeing(&node);
