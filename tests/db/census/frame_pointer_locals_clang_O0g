@@ -1,0 +1,304 @@
+# The census of frame_pointer_locals_clang_O0g: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=afl
+EXPECT=<<EOF
+0x00001000    3     27 sym._init
+0x00001030    1      6 sym.imp.__cxa_finalize
+0x00001040    1     37 sym._start
+0x00001070    4     34 sym.deregister_tm_clones
+0x000010a0    4     51 sym.register_tm_clones
+0x000010e0    5     54 sym.__do_global_dtors_aux
+0x00001120    1      9 sym.frame_dummy
+0x00001130    4     70 sym.counter
+0x00001180    1     26 sym.main
+0x0000119c    1     13 sym._fini
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001000
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x00001000
+EXPECT=<<EOF
+uint64_t _init(void)
+{
+    uint64_t rax_1;
+    uint64_t rax_2;
+    uint64_t rax_3;
+
+    /* r2dec proof: no individual construct is marked; 22 source obligations: 12 rendered, 10 elided, 0 refused; 6 statements rendered */
+    {
+        rax_1 = r2sleigh_load_u64((void*)(uint64_t)0x3fd0U);
+        if ((uint8_t)((uint64_t)rax_1 == (uint64_t)0U)) {
+            rax_3 = rax_1;
+        } else {
+            rax_2 = ((uint64_t(*)(void))(uint64_t)rax_1)();
+            rax_3 = rax_2;
+        }
+        {
+            return (uint64_t)rax_3;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00001030
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x00001030
+EXPECT=<<EOF
+/* r2dec refused __cxa_finalize: r2sleigh: import stub at 0x1030; this symbol is the import `__cxa_finalize`, whose prototype nothing states. */
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00001040
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x00001040
+EXPECT=<<EOF
+void _start(void)
+{
+    uint64_t tmp_55400_2;
+    uint64_t tmp_3cb80_1;
+
+    /* r2dec proof: 5 constructs are marked below; 28 source obligations: 2 rendered, 4 elided, 0 refused, 22 residual; 2 statements rendered; 1 held from entry, read as residuals (stack_p0) */
+    {
+        tmp_55400_2 = r2sleigh_residual_u64(1);
+        r2sleigh_residual_void(2); /* r2dec gap: StoreNotSpelled at 0x1040:29 covering 1 op (render::values) */
+        r2sleigh_residual_void(3); /* r2dec gap: StoreNotSpelled at 0x1040:32 covering 1 op (render::values) */
+        tmp_3cb80_1 = r2sleigh_load_u64((void*)(uint64_t)0x3fc0U);
+        r2sleigh_residual_void(4); /* r2dec gap: CallNotRendered at 0x1040:68 covering 1 op (render::values) */
+        r2sleigh_residual_void(5); /* r2dec gap: TailTransferNotRendered at 0x1040 (render::control) */
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00001070
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x00001070
+EXPECT=<<EOF
+uint64_t deregister_tm_clones(void)
+{
+    uint64_t rax_2;
+    uint64_t rax_3;
+
+    /* r2dec proof: 1 construct is marked below; 17 source obligations: 13 rendered, 3 elided, 0 refused, 1 residual; 6 statements rendered */
+    {
+        if ((uint8_t)1U) {
+            rax_3 = 0x4010;
+        } else {
+            rax_2 = r2sleigh_load_u64((void*)(uint64_t)0x3fc8U);
+            if ((uint8_t)((uint64_t)rax_2 == (uint64_t)0U)) {
+                rax_3 = rax_2;
+            } else {
+                r2sleigh_residual_void(1); /* r2dec gap: UnresolvedIndirectBranch at 0x108f (render::control) */
+            }
+        }
+        {
+            return (uint64_t)rax_3;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x000010a0
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x000010a0
+EXPECT=<<EOF
+uint64_t register_tm_clones(void)
+{
+    uint64_t rax_3;
+    uint64_t rax_4;
+
+    /* r2dec proof: 1 construct is marked below; 23 source obligations: 19 rendered, 3 elided, 0 refused, 1 residual; 6 statements rendered */
+    {
+        if ((uint8_t)1U) {
+            rax_4 = 0;
+        } else {
+            rax_3 = r2sleigh_load_u64((void*)(uint64_t)0x3fd8U);
+            if ((uint8_t)((uint64_t)rax_3 == (uint64_t)0U)) {
+                rax_4 = rax_3;
+            } else {
+                r2sleigh_residual_void(1); /* r2dec gap: UnresolvedIndirectBranch at 0x10d0 (render::control) */
+            }
+        }
+        {
+            return (uint64_t)rax_4;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x000010e0
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x000010e0
+EXPECT=<<EOF
+uint64_t __do_global_dtors_aux(void)
+{
+    void __cxa_finalize(uint64_t);
+    uint64_t deregister_tm_clones(void);
+    extern char __dso_handle[];
+    extern char __TMC_END__[];
+
+    uint8_t tmp_3e180_1;
+    uint64_t tmp_3ea80_1;
+    uint64_t rdi_1;
+
+    /* r2dec proof: 2 constructs are marked below; 39 source obligations: 19 rendered, 16 elided, 0 refused, 4 residual; 10 statements rendered; 2 data object types refused */
+    {
+        tmp_3e180_1 = r2sleigh_load_u8((void*)&__TMC_END__);
+        if ((uint8_t)((uint8_t)tmp_3e180_1 != (uint8_t)0U)) {
+            return r2sleigh_residual_u64(1);
+        } else {
+            tmp_3ea80_1 = r2sleigh_load_u64((void*)(uint64_t)0x3fe0U);
+            if ((uint8_t)((uint64_t)tmp_3ea80_1 == (uint64_t)0U)) {
+            } else {
+                rdi_1 = r2sleigh_load_u64((void*)&__dso_handle);
+                __cxa_finalize(rdi_1);
+            }
+            {
+                deregister_tm_clones();
+                r2sleigh_store_u8((void*)&__TMC_END__, (uint8_t)1U);
+                return r2sleigh_residual_u64(2);
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00001120
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x00001120
+EXPECT=<<EOF
+uint64_t frame_dummy(void)
+{
+    uint64_t register_tm_clones(void);
+
+    /* r2dec proof: no individual construct is marked; 3 source obligations: 2 rendered, 1 elided, 0 refused; 1 statements rendered */
+    {
+        return register_tm_clones();
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00001130
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x00001130
+EXPECT=<<EOF
+int32_t counter(void)
+{
+    uint32_t tmp_11f00_1;
+    uint32_t tmp_6a80_3;
+    uint32_t tmp_11f00_2;
+    uint64_t tmp_11f80_3;
+    uint32_t tmp_11f00_3;
+    uint64_t tmp_11f80_4;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: no individual construct is marked; 44 source obligations: 27 rendered, 17 elided, 0 refused; 15 statements rendered */
+    {
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)3U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)10U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 12U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_11f00_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+            tmp_6a80_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            if ((uint8_t)((int32_t)tmp_6a80_3 <= (int32_t)tmp_11f00_1)) {
+                break;
+            } else {
+                tmp_11f00_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+                tmp_11f80_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)((uint64_t)(int32_t)tmp_11f00_2 + (uint64_t)tmp_11f80_3));
+                tmp_11f00_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 12U), (uint32_t)((uint32_t)tmp_11f00_3 + (uint32_t)1U));
+            }
+        }
+        {
+            tmp_11f80_4 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+            return (int32_t)tmp_11f80_4;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00001180
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x00001180
+EXPECT=<<EOF
+int32_t main(void)
+{
+    int32_t counter(void);
+
+    uint64_t rax_1;
+
+    /* r2dec proof: no individual construct is marked; 16 source obligations: 5 rendered, 11 elided, 0 refused; 2 statements rendered; 1 callee prototype supplied by the source */
+    {
+        rax_1 = (uint64_t)(uint32_t)counter();
+        return (int32_t)rax_1;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x0000119c
+FILE=tests/fixtures/frame_pointer_locals_clang_O0g
+CMDS=aa; pdd @ 0x0000119c
+EXPECT=<<EOF
+void _fini(void)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 1 rendered, 6 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN

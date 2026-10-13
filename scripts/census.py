@@ -3,6 +3,9 @@
 
   census.py run  --r2s R2S --out DIR [BINARY...]   pdd every function into DIR/<binary>.txt
   census.py diff BASE_DIR HEAD_DIR [--report FILE] summary of moved renderings; the diff to FILE
+  census.py golden --r2s R2S                       write tests/db/census/<binary>, one r2r test per
+                                                   function of each committed binary, expectations
+                                                   empty for `R2S_BLESS=1` to fill (tests/db/README.md)
   census.py sites DIR                              each staged function whose proof line counts a
                                                    residual its text holds no site for; fails on any
   census.py time --r2s BASE --r2s HEAD [--runs N] [--budget R] [--rss-budget R]
@@ -69,9 +72,12 @@ LIBRARY_FRAME = re.compile(r": <?(alloc|core|std|hashbrown)::|\((\?\?\?|dhat-|al
                            r"|hash|sync|rc|option|result|cell|ptr|mem|array|btree|clone|raw)/)")
 
 
-def corpus():
+COMMITTED = ("tests/coverage/pinned", "tests/fixtures")
+
+
+def corpus(directories=(*COMMITTED, "tests/coverage/artifacts/bin")):
     found = []
-    for directory in ("tests/coverage/pinned", "tests/fixtures", "tests/coverage/artifacts/bin"):
+    for directory in directories:
         for path in sorted((ROOT / directory).glob("*")):
             if path.is_file() and os.access(path, os.X_OK) and path.suffix == "":
                 found.append(path)
@@ -102,6 +108,23 @@ def run(args):
     for binary in binaries:
         name, count = census_one(args.r2s, binary, out)
         print(f"{name}: {count} functions")
+
+
+def golden(args):
+    """One r2r file per committed binary: its `afl`, then `aa; pdd` of each function it lists."""
+    out = ROOT / "tests/db/census"
+    out.mkdir(parents=True, exist_ok=True)
+    for binary in corpus(COMMITTED):
+        listing = r2s(binary, "afl", args.r2s)
+        addresses = [line.split()[0] for line in listing.splitlines() if line.startswith("0x")]
+        relative = binary.relative_to(ROOT).as_posix()
+        test = (lambda name, commands: f"NAME={name}\nFILE={relative}\nCMDS={commands}\n"
+                "EXPECT=<<EOF\nEOF\nEXPECT_ERR=<<EOF\nEOF\nRUN\n")
+        header = (f"# The census of {binary.name}: what `aa; pdd` renders for each function `afl` lists.\n"
+                  "# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.\n")
+        tests = [test("afl", "afl")] + [test(address, f"aa; pdd @ {address}") for address in addresses]
+        (out / binary.name).write_text(header + "\n" + "\n".join(tests))
+        print(f"{binary.name}: {len(addresses)} functions")
 
 
 def functions(text):
@@ -400,6 +423,9 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("binaries", nargs="*")
     p.set_defaults(func=run)
+    p = sub.add_parser("golden")
+    p.add_argument("--r2s", required=True)
+    p.set_defaults(func=golden)
     p = sub.add_parser("diff")
     p.add_argument("base")
     p.add_argument("head")

@@ -1,0 +1,121 @@
+# The census of syscalls_static_O2: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/syscalls_static_O2
+CMDS=afl
+EXPECT=<<EOF
+0x00401000    1     12 fcn.00401000
+0x00401010    2     19 fcn.00401010
+0x00401030    1     26 fcn.00401030
+0x00401050    1     10 fcn.00401050
+0x00401060    1     44 entry0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00401000
+FILE=tests/fixtures/syscalls_static_O2
+CMDS=aa; pdd @ 0x00401000
+EXPECT=<<EOF
+uint64_t fcn_401000(void)
+{
+    /* r2dec proof: 2 constructs are marked below; 7 source obligations: 0 rendered, 4 elided, 0 refused, 3 residual; 1 statements rendered */
+    {
+        r2sleigh_residual_void(1); /* r2dec gap: UserOperation(syscall) at 0x401000:13 covering 1 op (render::values) */
+        return r2sleigh_residual_u64(2);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00401010
+FILE=tests/fixtures/syscalls_static_O2
+CMDS=aa; pdd @ 0x00401010
+EXPECT=<<EOF
+uint64_t fcn_401010(void)
+{
+    /* r2dec proof: 2 constructs are marked below; 8 source obligations: 1 rendered, 4 elided, 0 refused, 3 residual; 1 statements rendered */
+    {
+        {
+            r2sleigh_residual_void(1); /* r2dec gap: UserOperation(syscall) at 0x401019:13 covering 1 op (render::values) */
+            return r2sleigh_residual_u64(2);
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00401030
+FILE=tests/fixtures/syscalls_static_O2
+CMDS=aa; pdd @ 0x00401030
+EXPECT=<<EOF
+uint64_t fcn_401030(void)
+{
+    /* r2dec proof: 2 constructs are marked below; 7 source obligations: 0 rendered, 4 elided, 0 refused, 3 residual; 1 statements rendered */
+    {
+        r2sleigh_residual_void(1); /* r2dec gap: UserOperation(syscall) at 0x401030:20 covering 1 op (render::values) */
+        return r2sleigh_residual_u64(2);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00401050
+FILE=tests/fixtures/syscalls_static_O2
+CMDS=aa; pdd @ 0x00401050
+EXPECT=<<EOF
+uint64_t fcn_401050(void)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 3 rendered, 4 elided, 0 refused; 1 statements rendered */
+    {
+        return 0x50f;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00401060
+FILE=tests/fixtures/syscalls_static_O2
+CMDS=aa; pdd @ 0x00401060
+EXPECT=<<EOF
+uint64_t entry0(void)
+{
+    uint64_t fcn_401000(uint64_t);
+    uint64_t fcn_401010(uint64_t);
+    uint64_t fcn_401030(void);
+    uint64_t fcn_401050(void);
+
+    /* r2dec proof: 2 constructs are marked below; 35 source obligations: 16 rendered, 16 elided, 0 refused, 3 residual; 5 statements rendered */
+    {
+        fcn_401000(102);
+        fcn_401010(3);
+        fcn_401030();
+        fcn_401050();
+        r2sleigh_residual_void(1); /* r2dec gap: UserOperation(syscall) at 0x401060:65 covering 1 op (render::values) */
+        return r2sleigh_residual_u64(2);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN

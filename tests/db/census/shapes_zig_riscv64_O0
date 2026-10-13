@@ -1,0 +1,1861 @@
+# The census of shapes_zig_riscv64_O0: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=afl
+EXPECT=<<EOF
+0x01001ca4    1     52 sym._start
+0x01001cda    1     10 entry.preinit0
+0x01001ce4    4    372 sym.shape_variadic
+0x01001e58    9    178 sym.vfold
+0x01001f0a    1    222 sym.shape_variadic_local
+0x01001fe8    1     50 sym.shape_step
+0x0100201a    1     34 sym.shape_stash
+0x0100203c    4    268 sym.shape_call_chain
+0x01002148    1    100 sym.mixed_touch
+0x010021ac    1     52 sym.mixed_fold
+0x010021e0    4    166 sym.shape_struct_pointer
+0x01002286    1     72 sym.mixed_from
+0x010022ce    1    128 sym.shape_struct_value
+0x0100234e   14    278 sym.shape_struct_array
+0x01002464   14    254 sym.shape_stack_buffer
+0x01002562    5    102 sym.shape_recurse_direct
+0x010025c8    5     92 sym.shape_mutual_even
+0x01002624    5     92 sym.shape_mutual_odd
+0x01002680    1     78 sym.shape_recurse_mutual
+0x010026ce   19    356 sym.shape_signed_divmod
+0x01002832    1     88 sym.wide_make
+0x0100288a    1     94 sym.shape_multiword_return
+0x010028e8    1     40 sym.indirect_load
+0x01002910    1     48 sym.indirect_store
+0x01002940   14    364 sym.shape_pointer_to_pointer
+0x01002aac    1     34 sym.op_add
+0x01002ace    1     40 sym.op_xor
+0x01002af6    1     40 sym.op_mul
+0x01002b1e    9    224 sym.shape_function_pointer
+0x01002bfe   18    588 sym.shape_byte_indexed_buffer
+0x01002e4a    1     32 sym.shape_bool_probe
+0x01002e6a    7     98 sym.shape_bool_caller
+0x01002ecc    1    516 sym.main
+0x010030d0    4     92 sym.__libc_csu_init
+0x0100312c    1     16 sym.__libc_csu_fini
+0x01003160    1     12 sym.imp.__libc_start_main
+0x01003170    1     12 sym.imp.snprintf
+0x01003180    1     12 sym.imp.__stack_chk_fail
+0x01003190    1     12 sym.imp.printf
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x01001ca4
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01001ca4
+EXPECT=<<EOF
+void _start(void)
+{
+    uint64_t entry_preinit0(void);
+
+    uint64_t a0_1;
+
+    /* r2dec proof: 2 constructs are marked below; 25 source obligations: 3 rendered, 0 elided, 0 refused, 22 residual; 1 statements rendered; 1 callee prototype supplied by the source */
+    {
+        a0_1 = entry_preinit0();
+        r2sleigh_residual_void(1); /* r2dec gap: CallNotRendered at 0x1001ca4:77 covering 1 op (render::values) */
+        r2sleigh_residual_void(2); /* r2dec gap: TransferNotFollowed at 0x1001ca4 (render::control) */
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001cda
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01001cda
+EXPECT=<<EOF
+uint64_t entry_preinit0(void)
+{
+    /* r2dec proof: 1 construct is marked below; 2 source obligations: 0 rendered, 0 elided, 0 refused, 2 residual; 1 statements rendered */
+    {
+        return r2sleigh_residual_u64(1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001ce4
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01001ce4
+EXPECT=<<EOF
+uint64_t shape_variadic(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+    int32_t snprintf(char*, uint64_t, const char*, ...);
+
+    uint64_t a2_2;
+    uint64_t a3_1;
+    uint64_t a0_4;
+    uint64_t a1_3;
+    uint64_t a0_5;
+    uint64_t a2_7;
+    uint32_t tmp_3380_1;
+    uint8_t tmp_2d80_1;
+    uint64_t a0_6;
+    uint64_t a1_5;
+    uint64_t a3_8;
+    uint64_t a0_7;
+    uint64_t a2_15;
+    uint32_t tmp_3380_2;
+    uint8_t tmp_2d80_2;
+    uint64_t a3_11;
+    uint64_t a4_4;
+    uint64_t a0_8;
+    uint64_t a1_7;
+    uint64_t a3_13;
+    uint64_t a0_9;
+    uint64_t a2_23;
+    uint32_t tmp_3380_3;
+    uint8_t tmp_2d80_3;
+    uint64_t a3_16;
+    uint64_t a4_6;
+    uint64_t a0_10;
+    uint64_t a2_30;
+    uint64_t a0_11;
+    uint64_t a1_10;
+    uint32_t tmp_3380_4;
+    uint8_t tmp_2d80_4;
+    uint64_t a2_32;
+    uint64_t a0_12;
+    uint64_t a1_15;
+    _Alignas(16) uint8_t frame[272];
+
+    /* r2dec proof: no individual construct is marked; 223 source obligations: 126 rendered, 54 elided, 0 refused, 43 assumed (frame extent unproven); 55 statements rendered; 5 callee prototypes supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)a2_2);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 88U) + (uint64_t)160U), (uint64_t)r2sleigh_load_u64((void*)a2_2));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 80U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 72U), (uint64_t)arg1);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 64U), (uint64_t)0U);
+        a3_1 = r2sleigh_load_u64((void*)(uint64_t)(frame + 80U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)(frame + 88U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)160U);
+        a0_4 = (uint64_t)(uint32_t)snprintf((char*)(uint64_t)(frame + 88U), 160, "%llu", a3_1);
+        a1_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+        a0_5 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 60U), (uint32_t)((uint64_t)a0_4 >> 0U));
+        a2_7 = r2sleigh_load_u64((void*)(uint64_t)(frame + 64U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)131U);
+        tmp_3380_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+        tmp_2d80_1 = r2sleigh_load_u8((void*)(uint64_t)(frame + 88U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 64U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)a2_7 * (uint64_t)131U) + (uint64_t)(int32_t)tmp_3380_1) + (uint64_t)(uint8_t)tmp_2d80_1));
+        a0_6 = (uint64_t)(uint32_t)snprintf((char*)a0_5, a1_3, "%llu:%llu", r2sleigh_load_u64((void*)(uint64_t)(frame + 80U)), r2sleigh_load_u64((void*)(uint64_t)(frame + 72U)));
+        a1_5 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+        a3_8 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+        a0_7 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 56U), (uint32_t)((uint64_t)a0_6 >> 0U));
+        a2_15 = r2sleigh_load_u64((void*)(uint64_t)(frame + 64U));
+        tmp_3380_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 56U));
+        tmp_2d80_2 = r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)1U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 64U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)a2_15 * (uint64_t)a3_8) + (uint64_t)(int32_t)tmp_3380_2) + (uint64_t)(uint8_t)tmp_2d80_2));
+        a3_11 = r2sleigh_load_u64((void*)(uint64_t)(frame + 80U));
+        a4_4 = r2sleigh_load_u64((void*)(uint64_t)(frame + 72U));
+        a0_8 = (uint64_t)(uint32_t)snprintf((char*)a0_7, a1_5, "%llu:%llu:%llu", a3_11, a4_4, (uint64_t)((uint64_t)a3_11 ^ (uint64_t)a4_4));
+        a1_7 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+        a3_13 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+        a0_9 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 52U), (uint32_t)((uint64_t)a0_8 >> 0U));
+        a2_23 = r2sleigh_load_u64((void*)(uint64_t)(frame + 64U));
+        tmp_3380_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 52U));
+        tmp_2d80_3 = r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)2U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 64U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)a2_23 * (uint64_t)a3_13) + (uint64_t)(int32_t)tmp_3380_3) + (uint64_t)(uint8_t)tmp_2d80_3));
+        a3_16 = r2sleigh_load_u64((void*)(uint64_t)(frame + 80U));
+        a4_6 = r2sleigh_load_u64((void*)(uint64_t)(frame + 72U));
+        a0_10 = (uint64_t)(uint32_t)snprintf((char*)a0_9, a1_7, "%llu-%llu-%llu-%llu-%llu", a3_16, a4_6, (uint64_t)((uint64_t)a3_16 ^ (uint64_t)a4_6), (uint64_t)((uint64_t)a3_16 + (uint64_t)a4_6), (uint64_t)((uint64_t)a3_16 | (uint64_t)a4_6));
+        a2_30 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+        a0_11 = r2sleigh_load_u64((void*)(uint64_t)(frame + 32U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 48U), (uint32_t)((uint64_t)a0_10 >> 0U));
+        a1_10 = r2sleigh_load_u64((void*)(uint64_t)(frame + 64U));
+        tmp_3380_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 48U));
+        tmp_2d80_4 = r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)3U));
+        a2_32 = (uint64_t)(uint8_t)tmp_2d80_4;
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 64U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)a1_10 * (uint64_t)a2_30) + (uint64_t)(int32_t)tmp_3380_4) + (uint64_t)a2_32));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 64U)));
+        a0_12 = r2sleigh_load_u64((void*)a0_11);
+        a1_15 = r2sleigh_load_u64((void*)((uint64_t)(frame + 88U) + (uint64_t)160U));
+        if ((uint8_t)((uint64_t)a0_12 != (uint64_t)a1_15)) {
+            __stack_chk_fail();
+        } else {
+            {
+                return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001e58
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01001e58
+EXPECT=<<EOF
+uint64_t vfold(uint32_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6, uint64_t arg7)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+
+    uint64_t a1_2;
+    uint32_t tmp_3380_1;
+    uint32_t tmp_3380_2;
+    uint64_t a0_6;
+    uint64_t a1_6;
+    uint64_t a1_7;
+    uint32_t tmp_3380_3;
+    uint64_t a0_13;
+    uint64_t a0_14;
+    uint64_t a1_8;
+    _Alignas(16) uint8_t frame[128];
+
+    /* r2dec proof: no individual construct is marked; 102 source obligations: 70 rendered, 32 elided, 0 refused; 32 statements rendered; 1 callee prototype supplied by the source */
+    {
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 72U) + (uint64_t)48U), (uint64_t)arg7);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 72U) + (uint64_t)40U), (uint64_t)arg6);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 72U) + (uint64_t)32U), (uint64_t)arg5);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 72U) + (uint64_t)24U), (uint64_t)arg4);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 72U) + (uint64_t)16U), (uint64_t)arg3);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 72U) + (uint64_t)8U), (uint64_t)arg2);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 72U), (uint64_t)arg1);
+        a1_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)r2sleigh_load_u64((void*)a1_2));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)0x1234U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)(frame + 72U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 12U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_3380_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+            tmp_3380_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            if ((uint8_t)((uint64_t)(int32_t)tmp_3380_2 <= (uint64_t)(int32_t)tmp_3380_1)) {
+                break;
+            } else {
+                {
+                    a0_6 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+                    a1_6 = r2sleigh_load_u64((void*)(uint64_t)(frame + 32U));
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)((uint64_t)a1_6 + (uint64_t)8U));
+                    a1_7 = r2sleigh_load_u64((void*)a1_6);
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)((uint64_t)((uint64_t)a0_6 * (uint64_t)131U) + (uint64_t)a1_7));
+                    {
+                        tmp_3380_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+                        r2sleigh_store_u32((void*)(uint64_t)(frame + 12U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_3 + (uint64_t)1U) >> 0U));
+                    }
+                }
+            }
+        }
+        {
+            r2sleigh_store_u64((void*)(uint64_t)(frame + 0U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 16U)));
+            a0_13 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+            a0_14 = r2sleigh_load_u64((void*)a0_13);
+            a1_8 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+            if ((uint8_t)((uint64_t)a0_14 != (uint64_t)a1_8)) {
+                __stack_chk_fail();
+            } else {
+                {
+                    return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 0U));
+                }
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001f0a
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01001f0a
+EXPECT=<<EOF
+uint64_t shape_variadic_local(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6, uint64_t arg7)
+{
+    uint64_t vfold(uint32_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+
+    uint64_t a0_5;
+    uint64_t a0_7;
+    uint64_t a0_11;
+    uint64_t a0_13;
+    uint64_t a0_17;
+    uint64_t a0_19;
+    uint64_t a0_23;
+
+    /* r2dec proof: 11 constructs are marked below; 90 source obligations: 45 rendered, 15 elided, 0 refused, 30 residual; 8 statements rendered; 11 never assigned, read as residuals (A3_1, A4_1, A4_2, A5_1, A5_2, A6_1, A6_2, A6_3, A7_1, A7_2, A7_3) */
+    {
+        a0_5 = vfold(1, arg0, arg2, arg3, arg4, arg5, arg6, arg7);
+        a0_7 = a0_5;
+        a0_11 = vfold(2, arg0, arg1, r2sleigh_residual_u64(1), r2sleigh_residual_u64(2), r2sleigh_residual_u64(3), r2sleigh_residual_u64(4), r2sleigh_residual_u64(5));
+        a0_13 = (uint64_t)((uint64_t)((uint64_t)((uint64_t)a0_7 * (uint64_t)8U) + (uint64_t)a0_11) - (uint64_t)a0_7);
+        a0_17 = vfold(3, arg0, arg1, (uint64_t)((uint64_t)arg0 ^ (uint64_t)arg1), r2sleigh_residual_u64(6), r2sleigh_residual_u64(7), r2sleigh_residual_u64(8), r2sleigh_residual_u64(9));
+        a0_19 = (uint64_t)((uint64_t)((uint64_t)((uint64_t)a0_13 * (uint64_t)8U) + (uint64_t)a0_17) - (uint64_t)a0_13);
+        a0_23 = vfold(5, arg0, arg1, (uint64_t)((uint64_t)arg0 ^ (uint64_t)arg1), (uint64_t)((uint64_t)arg0 + (uint64_t)arg1), (uint64_t)((uint64_t)arg0 | (uint64_t)arg1), r2sleigh_residual_u64(10), r2sleigh_residual_u64(11));
+        return (uint64_t)((uint64_t)((uint64_t)((uint64_t)a0_19 * (uint64_t)8U) + (uint64_t)a0_23) - (uint64_t)a0_19);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001fe8
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01001fe8
+EXPECT=<<EOF
+uint64_t shape_step(uint64_t arg0)
+{
+    uint64_t a1_3;
+    uint64_t a1_6;
+
+    /* r2dec proof: no individual construct is marked; 12 source obligations: 8 rendered, 4 elided, 0 refused; 3 statements rendered */
+    {
+        a1_3 = r2sleigh_load_u64((void*)(uint64_t)0x1000568U);
+        a1_6 = r2sleigh_load_u64((void*)(uint64_t)0x1000580U);
+        return (uint64_t)((uint64_t)((uint64_t)arg0 * (uint64_t)a1_3) + (uint64_t)a1_6);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x0100201a
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x0100201a
+EXPECT=<<EOF
+uint64_t shape_stash(uint64_t* arg0, uint64_t arg1)
+{
+    /* r2dec proof: no individual construct is marked; 8 source obligations: 4 rendered, 4 elided, 0 refused; 2 statements rendered */
+    {
+        r2sleigh_store_u64((void*)(uint64_t)arg0, (uint64_t)arg1);
+        return (uint64_t)arg1;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x0100203c
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x0100203c
+EXPECT=<<EOF
+uint64_t shape_call_chain(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+    uint64_t shape_stash(uint64_t, uint64_t);
+    uint64_t shape_step(uint64_t);
+
+    uint64_t a2_2;
+    uint64_t a2_3;
+    uint64_t a0_2;
+    uint64_t a1_3;
+    uint64_t a0_6;
+    uint64_t a0_7;
+    uint64_t a1_7;
+    uint64_t a0_11;
+    uint64_t a0_12;
+    uint64_t a1_11;
+    uint64_t a0_16;
+    uint64_t a0_17;
+    uint64_t a1_16;
+    uint64_t a3_7;
+    uint64_t a3_8;
+    uint64_t a2_14;
+    uint64_t a4_7;
+    uint64_t a3_11;
+    uint64_t a3_12;
+    uint64_t a2_16;
+    uint64_t a0_18;
+    uint64_t a1_20;
+    _Alignas(16) uint8_t frame[112];
+
+    /* r2dec proof: no individual construct is marked; 140 source obligations: 92 rendered, 33 elided, 0 refused, 15 assumed (frame extent unproven); 39 statements rendered; 1 callee prototype supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)a2_2);
+        a2_3 = r2sleigh_load_u64((void*)a2_2);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)24U), (uint64_t)a2_3);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 56U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 48U), (uint64_t)arg1);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)16U), (uint64_t)0U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)8U), (uint64_t)0U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 64U), (uint64_t)0U);
+        a0_2 = r2sleigh_load_u64((void*)(uint64_t)(frame + 56U));
+        a1_3 = r2sleigh_load_u64((void*)(uint64_t)0x1000560U);
+        shape_stash((uint64_t)((uint64_t)(frame + 64U) + (uint64_t)16U), (uint64_t)((uint64_t)a1_3 ^ (uint64_t)a0_2));
+        a0_6 = shape_step(r2sleigh_load_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)16U)));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)a0_6);
+        a0_7 = r2sleigh_load_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)16U));
+        a1_7 = r2sleigh_load_u64((void*)(uint64_t)(frame + 48U));
+        shape_stash((uint64_t)((uint64_t)(frame + 64U) + (uint64_t)8U), (uint64_t)((uint64_t)a1_7 + (uint64_t)a0_7));
+        a0_11 = shape_step(r2sleigh_load_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)8U)));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)a0_11);
+        a0_12 = r2sleigh_load_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)8U));
+        a1_11 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+        shape_stash((uint64_t)(frame + 64U), (uint64_t)((uint64_t)a1_11 ^ (uint64_t)a0_12));
+        a0_16 = shape_step(r2sleigh_load_u64((void*)(uint64_t)(frame + 64U)));
+        a0_17 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)a0_16);
+        a1_16 = r2sleigh_load_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)16U));
+        a3_7 = r2sleigh_load_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)8U));
+        a3_8 = r2sleigh_load_u64((void*)(uint64_t)(frame + 64U));
+        a2_14 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+        a4_7 = r2sleigh_load_u64((void*)(uint64_t)(frame + 32U));
+        a3_11 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+        a3_12 = (uint64_t)((uint64_t)a3_11 * (uint64_t)11U);
+        a2_16 = (uint64_t)((uint64_t)a3_12 + (uint64_t)((uint64_t)((uint64_t)((uint64_t)a4_7 * (uint64_t)4U) + (uint64_t)a4_7) + (uint64_t)a2_14));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)((uint64_t)a2_16 ^ (uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)a3_7 * (uint64_t)2U) + (uint64_t)a3_7) + (uint64_t)a1_16) + (uint64_t)((uint64_t)a3_8 * (uint64_t)8U)) - (uint64_t)a3_8)));
+        a0_18 = r2sleigh_load_u64((void*)a0_17);
+        a1_20 = r2sleigh_load_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)24U));
+        if ((uint8_t)((uint64_t)a0_18 != (uint64_t)a1_20)) {
+            __stack_chk_fail();
+        } else {
+            {
+                return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002148
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002148
+EXPECT=<<EOF
+uint64_t mixed_touch(void* arg0)
+{
+    uint8_t tmp_2d80_1;
+    uint16_t tmp_2f80_1;
+    uint32_t tmp_16680_1;
+    uint64_t a0_7;
+    uint32_t tmp_e480_1;
+    uint16_t tmp_3180_1;
+    uint8_t tmp_2d80_2;
+    uint64_t a0_10;
+
+    /* r2dec proof: no individual construct is marked; 47 source obligations: 43 rendered, 4 elided, 0 refused; 13 statements rendered */
+    {
+        tmp_2d80_1 = r2sleigh_load_u8((void*)(uint64_t)arg0);
+        r2sleigh_store_u8((void*)(uint64_t)arg0, (uint8_t)((uint64_t)((uint64_t)(uint8_t)tmp_2d80_1 + (uint64_t)3U) >> 0U));
+        tmp_2f80_1 = r2sleigh_load_u16((void*)((uint64_t)arg0 + (uint64_t)1U * 2U));
+        r2sleigh_store_u16((void*)((uint64_t)arg0 + (uint64_t)1U * 2U), (uint16_t)((uint64_t)((uint64_t)(int16_t)tmp_2f80_1 ^ (uint64_t)0xbeefU) >> 0U));
+        tmp_16680_1 = r2sleigh_load_u32((void*)((uint64_t)arg0 + (uint64_t)1U * 4U));
+        r2sleigh_store_u32((void*)((uint64_t)arg0 + (uint64_t)1U * 4U), (uint32_t)((uint32_t)tmp_16680_1 * (uint32_t)0x9e3779b1U));
+        a0_7 = r2sleigh_load_u64((void*)((uint64_t)arg0 + (uint64_t)1U * 8U));
+        tmp_e480_1 = r2sleigh_load_u32((void*)((uint64_t)arg0 + (uint64_t)1U * 4U));
+        tmp_3180_1 = r2sleigh_load_u16((void*)((uint64_t)arg0 + (uint64_t)1U * 2U));
+        tmp_2d80_2 = r2sleigh_load_u8((void*)(uint64_t)arg0);
+        a0_10 = (uint64_t)((uint64_t)(uint8_t)tmp_2d80_2 + (uint64_t)((uint64_t)((uint64_t)(uint32_t)tmp_e480_1 + (uint64_t)a0_7) + (uint64_t)(uint16_t)tmp_3180_1));
+        r2sleigh_store_u64((void*)((uint64_t)arg0 + (uint64_t)1U * 8U), (uint64_t)a0_10);
+        return (uint64_t)a0_10;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010021ac
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x010021ac
+EXPECT=<<EOF
+uint64_t mixed_fold(uint64_t arg0, uint64_t arg1)
+{
+    uint8_t tmp_2d80_1;
+    uint16_t tmp_3180_1;
+    uint32_t tmp_e480_1;
+    _Alignas(16) uint8_t frame[32];
+
+    /* r2dec proof: no individual construct is marked; 27 source obligations: 18 rendered, 9 elided, 0 refused; 5 statements rendered */
+    {
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 0U), (uint64_t)arg0);
+        tmp_2d80_1 = r2sleigh_load_u8((void*)(uint64_t)(frame + 0U));
+        tmp_3180_1 = r2sleigh_load_u16((void*)((uint64_t)(frame + 0U) + (uint64_t)2U));
+        tmp_e480_1 = r2sleigh_load_u32((void*)((uint64_t)(frame + 0U) + (uint64_t)4U));
+        return (uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)56U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint8_t)tmp_2d80_1 << (uint64_t)56U)) | (uint64_t)((uint64_t)40U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint16_t)tmp_3180_1 << (uint64_t)40U))) | (uint64_t)((uint64_t)8U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint32_t)tmp_e480_1 << (uint64_t)8U))) ^ (uint64_t)arg1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010021e0
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x010021e0
+EXPECT=<<EOF
+uint64_t shape_struct_pointer(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+    uint64_t mixed_from(uint32_t, uint32_t);
+    uint64_t mixed_touch(uint64_t);
+
+    uint64_t a2_2;
+    uint64_t a2_3;
+    uint64_t a0_2;
+    uint64_t a0_7;
+    uint8_t tmp_2d80_1;
+    uint64_t a2_7;
+    uint16_t tmp_3180_1;
+    uint64_t a3_4;
+    uint32_t tmp_e480_1;
+    uint64_t a3_5;
+    uint64_t a2_12;
+    uint64_t a0_8;
+    uint64_t a1_10;
+    _Alignas(16) uint8_t frame[80];
+
+    /* r2dec proof: 1 construct is marked below; 91 source obligations: 58 rendered, 22 elided, 0 refused, 10 assumed (frame extent unproven), 1 residual; 26 statements rendered; 1 never assigned, read as residuals (A1_2); 1 callee prototype supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)a2_2);
+        a2_3 = r2sleigh_load_u64((void*)a2_2);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 40U) + (uint64_t)16U), (uint64_t)a2_3);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)arg1);
+        a0_2 = mixed_from((uint32_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 32U)), (uint32_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 40U) + (uint64_t)8U), (uint64_t)r2sleigh_residual_u64(1));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)a0_2);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 0U), (uint64_t)(frame + 40U));
+        mixed_touch((uint64_t)(frame + 40U));
+        mixed_touch(r2sleigh_load_u64((void*)(uint64_t)(frame + 0U)));
+        a0_7 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+        tmp_2d80_1 = r2sleigh_load_u8((void*)(uint64_t)(frame + 40U));
+        a2_7 = (uint64_t)(uint8_t)tmp_2d80_1;
+        tmp_3180_1 = r2sleigh_load_u16((void*)((uint64_t)(frame + 40U) + (uint64_t)2U));
+        a3_4 = (uint64_t)(uint16_t)tmp_3180_1;
+        tmp_e480_1 = r2sleigh_load_u32((void*)((uint64_t)(frame + 40U) + (uint64_t)4U));
+        a3_5 = (uint64_t)(uint32_t)tmp_e480_1;
+        a2_12 = r2sleigh_load_u64((void*)((uint64_t)(frame + 40U) + (uint64_t)8U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)a2_7 * (uint64_t)2U) + (uint64_t)a2_7) + (uint64_t)((uint64_t)a3_4 * (uint64_t)4U)) + (uint64_t)a3_4) + (uint64_t)((uint64_t)a3_5 * (uint64_t)8U)) + (uint64_t)a2_12) - (uint64_t)a3_5));
+        a0_8 = r2sleigh_load_u64((void*)a0_7);
+        a1_10 = r2sleigh_load_u64((void*)((uint64_t)(frame + 40U) + (uint64_t)16U));
+        if ((uint8_t)((uint64_t)a0_8 != (uint64_t)a1_10)) {
+            __stack_chk_fail();
+        } else {
+            {
+                return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002286
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002286
+EXPECT=<<EOF
+uint64_t mixed_from(uint32_t arg0, uint32_t arg1)
+{
+    uint64_t a0_1;
+    _Alignas(16) uint8_t frame[32];
+
+    /* r2dec proof: no individual construct is marked; 22 source obligations: 13 rendered, 9 elided, 0 refused; 5 statements rendered */
+    {
+        a0_1 = (uint64_t)(uint32_t)arg0;
+        r2sleigh_store_u8((void*)(uint64_t)(frame + 0U), (uint8_t)((uint64_t)a0_1 >> 0U));
+        r2sleigh_store_u16((void*)((uint64_t)(frame + 0U) + (uint64_t)2U), (uint16_t)((uint64_t)((uint64_t)8U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a0_1 >> (uint64_t)8U)) >> 0U));
+        r2sleigh_store_u32((void*)((uint64_t)(frame + 0U) + (uint64_t)4U), (uint32_t)arg1);
+        return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 0U));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010022ce
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x010022ce
+EXPECT=<<EOF
+uint64_t shape_struct_value(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t mixed_fold(uint64_t, uint64_t);
+    uint64_t mixed_from(uint32_t, uint32_t);
+
+    uint64_t a0_2;
+    uint64_t a0_4;
+    uint64_t a1_5;
+    uint64_t a0_6;
+    uint64_t a1_6;
+    uint64_t a0_11;
+    _Alignas(16) uint8_t frame[64];
+
+    /* r2dec proof: 2 constructs are marked below; 52 source obligations: 33 rendered, 14 elided, 0 refused, 5 residual; 10 statements rendered; 1 never assigned, read as residuals (A1_2) */
+    {
+        a0_2 = mixed_from((uint32_t)arg0, (uint32_t)arg1);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)a0_2);
+        a0_4 = mixed_fold(r2sleigh_load_u64((void*)(uint64_t)(frame + 16U)), r2sleigh_residual_u64(1));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)a0_4);
+        a1_5 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+        a0_6 = (uint64_t)((uint64_t)r2sleigh_residual_u64(2) ^ (uint64_t)a1_5);
+        r2sleigh_store_u32((void*)((uint64_t)(frame + 16U) + (uint64_t)4U), (uint32_t)r2sleigh_load_u32((void*)((uint64_t)(frame + 8U) + (uint64_t)4U)));
+        a1_6 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+        a0_11 = mixed_fold(r2sleigh_load_u64((void*)(uint64_t)(frame + 16U)), a0_6);
+        return (uint64_t)((uint64_t)((uint64_t)((uint64_t)a1_6 * (uint64_t)32U) + (uint64_t)a0_11) - (uint64_t)a1_6);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x0100234e
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x0100234e
+EXPECT=<<EOF
+uint64_t shape_struct_array(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+
+    uint64_t a2_2;
+    uint32_t tmp_3380_1;
+    uint64_t a0_3;
+    uint32_t tmp_e480_1;
+    uint64_t a0_5;
+    uint32_t tmp_e480_2;
+    uint32_t tmp_3380_2;
+    uint32_t tmp_3380_3;
+    uint64_t a0_11;
+    uint32_t tmp_e480_3;
+    uint32_t tmp_e480_4;
+    uint32_t tmp_3380_4;
+    uint32_t tmp_e480_5;
+    uint64_t a0_16;
+    uint32_t tmp_3380_5;
+    uint64_t a0_22;
+    uint64_t a0_23;
+    uint64_t a1_16;
+    _Alignas(16) uint8_t frame[144];
+
+    /* r2dec proof: no individual construct is marked; 154 source obligations: 123 rendered, 31 elided, 0 refused; 40 statements rendered; 1 callee prototype supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)64U), (uint64_t)r2sleigh_load_u64((void*)a2_2));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 48U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)arg1);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 36U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_3380_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 36U));
+            if ((uint8_t)((uint64_t)7U < (uint64_t)(int32_t)tmp_3380_1)) {
+                break;
+            } else {
+                {
+                    a0_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 48U));
+                    tmp_e480_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 36U));
+                    r2sleigh_store_u32((void*)((uint64_t)(frame + 56U) + (uint64_t)((uint64_t)(uint32_t)tmp_e480_1 * (uint64_t)2U) * 4U), (uint32_t)((uint32_t)((uint64_t)a0_3 >> 0U) - (uint32_t)((uint32_t)tmp_e480_1 * (uint32_t)0x61c8864fU)));
+                    a0_5 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+                    tmp_e480_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 36U));
+                    r2sleigh_store_u32((void*)((uint64_t)(frame + 56U) + (uint64_t)((uint64_t)((uint64_t)(uint32_t)tmp_e480_2 * (uint64_t)2U) + (uint64_t)1U) * 4U), (uint32_t)((uint64_t)((uint64_t)(int32_t)((uint32_t)tmp_e480_2 * (uint32_t)0x9e3779b9U) ^ (uint64_t)a0_5) >> 0U));
+                    {
+                        tmp_3380_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 36U));
+                        r2sleigh_store_u32((void*)(uint64_t)(frame + 36U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_2 + (uint64_t)1U) >> 0U));
+                    }
+                }
+            }
+        }
+        {
+            r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)0U);
+            r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)0U);
+            for (; ; ) {
+                tmp_3380_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                if ((uint8_t)((uint64_t)7U < (uint64_t)(int32_t)tmp_3380_3)) {
+                    break;
+                } else {
+                    {
+                        a0_11 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                        tmp_e480_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                        tmp_e480_4 = r2sleigh_load_u32((void*)((uint64_t)(frame + 56U) + (uint64_t)((uint64_t)(uint32_t)tmp_e480_3 * (uint64_t)2U) * 4U));
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)((uint64_t)(uint32_t)tmp_e480_4 + (uint64_t)((uint64_t)a0_11 * (uint64_t)0x100000001b3U)));
+                        tmp_3380_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                        tmp_e480_5 = r2sleigh_load_u32((void*)((uint64_t)(frame + 56U) + (uint64_t)((uint64_t)((uint64_t)((uint64_t)(int32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_4 + (uint64_t)3U) >> 0U) & (uint64_t)7U) * (uint64_t)2U) + (uint64_t)1U) * 4U));
+                        a0_16 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)((uint64_t)((uint64_t)16U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint32_t)tmp_e480_5 << (uint64_t)16U)) ^ (uint64_t)a0_16));
+                        {
+                            tmp_3380_5 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                            r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_5 + (uint64_t)1U) >> 0U));
+                        }
+                    }
+                }
+            }
+            {
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
+                a0_22 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+                a0_23 = r2sleigh_load_u64((void*)a0_22);
+                a1_16 = r2sleigh_load_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)64U));
+                if ((uint8_t)((uint64_t)a0_23 != (uint64_t)a1_16)) {
+                    __stack_chk_fail();
+                } else {
+                    {
+                        return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+                    }
+                }
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002464
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002464
+EXPECT=<<EOF
+uint64_t shape_stack_buffer(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+
+    uint64_t a2_2;
+    uint32_t tmp_3380_1;
+    uint64_t a0_3;
+    uint32_t tmp_e480_1;
+    uint64_t a2_5;
+    uint64_t a1_3;
+    uint32_t tmp_3380_2;
+    uint32_t tmp_3380_3;
+    uint32_t tmp_3380_4;
+    uint8_t tmp_2d80_1;
+    uint64_t a0_17;
+    uint64_t a0_19;
+    uint32_t tmp_3380_5;
+    uint64_t a0_25;
+    uint64_t a0_26;
+    uint64_t a1_14;
+    _Alignas(16) uint8_t frame[144];
+
+    /* r2dec proof: no individual construct is marked; 133 source obligations: 104 rendered, 29 elided, 0 refused; 37 statements rendered; 1 callee prototype supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)64U), (uint64_t)r2sleigh_load_u64((void*)a2_2));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 48U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)arg1);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 36U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_3380_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 36U));
+            if ((uint8_t)((uint64_t)63U < (uint64_t)(int32_t)tmp_3380_1)) {
+                break;
+            } else {
+                {
+                    a0_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 48U));
+                    tmp_e480_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 36U));
+                    a2_5 = (uint64_t)(uint32_t)tmp_e480_1;
+                    a1_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+                    r2sleigh_store_u8((void*)((uint64_t)(frame + 56U) + (uint64_t)a2_5 * 1U), (uint8_t)((uint32_t)((uint32_t)((uint32_t)((uint64_t)a1_3 >> 0U) * (uint32_t)tmp_e480_1) + (uint32_t)((uint64_t)((uint64_t)((uint64_t)a2_5 & (uint64_t)7U) >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a0_3 >> (uint64_t)((uint64_t)a2_5 & (uint64_t)7U))) >> 0U)) >> 0U));
+                    {
+                        tmp_3380_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 36U));
+                        r2sleigh_store_u32((void*)(uint64_t)(frame + 36U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_2 + (uint64_t)1U) >> 0U));
+                    }
+                }
+            }
+        }
+        {
+            r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)0x1000578U));
+            r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)0U);
+            for (; ; ) {
+                tmp_3380_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                if ((uint8_t)((uint64_t)63U < (uint64_t)(int32_t)tmp_3380_3)) {
+                    break;
+                } else {
+                    {
+                        tmp_3380_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                        tmp_2d80_1 = r2sleigh_load_u8((void*)((uint64_t)(frame + 56U) + (uint64_t)((uint64_t)(int32_t)((uint32_t)tmp_3380_4 + (uint32_t)((uint32_t)tmp_3380_4 * (uint32_t)4U)) & (uint64_t)63U) * 1U));
+                        a0_17 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)((uint64_t)(uint8_t)tmp_2d80_1 ^ (uint64_t)a0_17));
+                        a0_19 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)((uint64_t)a0_19 * (uint64_t)0x100000001b3U));
+                        {
+                            tmp_3380_5 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                            r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_5 + (uint64_t)1U) >> 0U));
+                        }
+                    }
+                }
+            }
+            {
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
+                a0_25 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+                a0_26 = r2sleigh_load_u64((void*)a0_25);
+                a1_14 = r2sleigh_load_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)64U));
+                if ((uint8_t)((uint64_t)a0_26 != (uint64_t)a1_14)) {
+                    __stack_chk_fail();
+                } else {
+                    {
+                        return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+                    }
+                }
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002562
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002562
+EXPECT=<<EOF
+uint64_t shape_recurse_direct(uint8_t arg0, uint64_t arg1)
+{
+    uint64_t a0_2;
+    uint64_t a0_7;
+    uint64_t stack_m24_1;
+
+    /* r2dec proof: no individual construct is marked; 30 source obligations: 26 rendered, 4 elided, 0 refused; 6 statements rendered */
+    {
+        a0_2 = (uint64_t)((uint64_t)(uint8_t)arg0 & (uint64_t)15U);
+        if ((uint8_t)((uint64_t)a0_2 != (uint64_t)0U)) {
+            a0_7 = shape_recurse_direct((uint8_t)((uint64_t)a0_2 - (uint64_t)1U), (uint64_t)((uint64_t)a0_2 + (uint64_t)((uint64_t)((uint64_t)arg1 * (uint64_t)2U) + (uint64_t)arg1)));
+            stack_m24_1 = (uint64_t)((uint64_t)a0_7 ^ (uint64_t)((uint64_t)3U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a0_2 << (uint64_t)3U)));
+        } else {
+            {
+                stack_m24_1 = (uint64_t)((uint64_t)arg1 | (uint64_t)1U);
+            }
+        }
+        {
+            return (uint64_t)stack_m24_1;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010025c8
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x010025c8
+EXPECT=<<EOF
+uint64_t shape_mutual_even(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t shape_mutual_odd(uint64_t, uint64_t);
+
+    uint64_t a0_5;
+    uint64_t stack_m24_1;
+
+    /* r2dec proof: no individual construct is marked; 29 source obligations: 25 rendered, 4 elided, 0 refused; 5 statements rendered */
+    {
+        if ((uint8_t)((uint64_t)arg0 != (uint64_t)0U)) {
+            a0_5 = shape_mutual_odd((uint64_t)((uint64_t)arg0 - (uint64_t)1U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)arg1 * (uint64_t)32U) + (uint64_t)arg0) - (uint64_t)arg1));
+            stack_m24_1 = a0_5;
+        } else {
+            {
+                stack_m24_1 = (uint64_t)((uint64_t)arg1 ^ (uint64_t)0xa5a5a5a5U);
+            }
+        }
+        {
+            return (uint64_t)stack_m24_1;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002624
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002624
+EXPECT=<<EOF
+uint64_t shape_mutual_odd(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t shape_mutual_even(uint64_t, uint64_t);
+
+    uint64_t a2_2;
+    uint64_t a0_5;
+    uint64_t stack_m24_1;
+
+    /* r2dec proof: no individual construct is marked; 29 source obligations: 25 rendered, 4 elided, 0 refused; 6 statements rendered */
+    {
+        if ((uint8_t)((uint64_t)arg0 != (uint64_t)0U)) {
+            a2_2 = (uint64_t)2U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)arg0 << (uint64_t)2U);
+            a0_5 = shape_mutual_even((uint64_t)((uint64_t)arg0 - (uint64_t)1U), (uint64_t)((uint64_t)a2_2 + (uint64_t)((uint64_t)((uint64_t)arg1 * (uint64_t)16U) + (uint64_t)arg1)));
+            stack_m24_1 = a0_5;
+        } else {
+            {
+                stack_m24_1 = (uint64_t)((uint64_t)arg1 ^ (uint64_t)0x5a5a5a5aU);
+            }
+        }
+        {
+            return (uint64_t)stack_m24_1;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002680
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002680
+EXPECT=<<EOF
+uint64_t shape_recurse_mutual(uint8_t arg0, uint64_t arg1)
+{
+    uint64_t shape_mutual_even(uint64_t, uint64_t);
+    uint64_t shape_mutual_odd(uint64_t, uint64_t);
+
+    uint64_t a0_1;
+    uint64_t a0_3;
+    uint64_t a0_6;
+
+    /* r2dec proof: no individual construct is marked; 24 source obligations: 20 rendered, 4 elided, 0 refused; 4 statements rendered */
+    {
+        a0_1 = (uint64_t)(uint8_t)arg0;
+        a0_3 = shape_mutual_even((uint64_t)((uint64_t)a0_1 & (uint64_t)15U), arg1);
+        a0_6 = shape_mutual_odd((uint64_t)((uint64_t)a0_1 & (uint64_t)7U), (uint64_t)((uint64_t)arg1 ^ (uint64_t)0xffffU));
+        return (uint64_t)((uint64_t)a0_3 + (uint64_t)a0_6);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010026ce
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x010026ce
+EXPECT=<<EOF
+uint64_t shape_signed_divmod(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t stack_m48_3;
+    uint64_t stack_m48_1;
+    uint64_t stack_m48_2;
+    uint64_t a0_9;
+    uint64_t a0_11;
+    uint32_t tmp_lane_1002720_19_0_1;
+    uint32_t stack_m72_3;
+    uint32_t stack_m72_1;
+    uint32_t stack_m72_2;
+    uint32_t tmp_11280_1;
+    uint32_t tmp_11800_1;
+    uint64_t a0_35;
+    uint64_t stack_m96_1;
+
+    /* r2dec proof: 2 constructs are marked below; 91 source obligations: 83 rendered, 4 elided, 0 refused, 4 residual; 26 statements rendered */
+    {
+        stack_m48_3 = arg1;
+        if ((uint8_t)((uint64_t)stack_m48_3 != (uint64_t)0U)) {
+            stack_m48_1 = stack_m48_3;
+        } else {
+            {
+                stack_m48_1 = (uint64_t)-0x7;
+            }
+        }
+        {
+            if ((uint8_t)((uint64_t)stack_m48_1 != (uint64_t)-0x1)) {
+                stack_m48_2 = stack_m48_1;
+            } else {
+                {
+                    if ((uint8_t)((uint64_t)arg0 != (uint64_t)0x8000000000000000U)) {
+                        stack_m48_2 = stack_m48_1;
+                    } else {
+                        {
+                            stack_m48_2 = 3;
+                        }
+                    }
+                }
+            }
+            {
+                a0_9 = (uint64_t)arg0 == (uint64_t)0x8000000000000000U && (uint64_t)stack_m48_2 == (uint64_t)-0x1 ? r2sleigh_residual_u64(1) : (uint64_t)((int64_t)arg0 / (int64_t)stack_m48_2);
+                a0_11 = (uint64_t)stack_m48_2 == (uint64_t)-0x1 ? (uint64_t)0U : (uint64_t)((int64_t)arg0 % (int64_t)stack_m48_2);
+                tmp_lane_1002720_19_0_1 = (uint32_t)((uint64_t)arg0 >> 0U);
+                stack_m72_3 = (uint32_t)((uint64_t)arg1 >> 0U);
+                if ((uint8_t)((uint64_t)(int32_t)stack_m72_3 != (uint64_t)0U)) {
+                    stack_m72_1 = stack_m72_3;
+                } else {
+                    {
+                        stack_m72_1 = (uint32_t)0xfffffffdU;
+                    }
+                }
+                {
+                    if ((uint8_t)((uint64_t)(int32_t)stack_m72_1 != (uint64_t)-0x1)) {
+                        stack_m72_2 = stack_m72_1;
+                    } else {
+                        {
+                            if ((uint8_t)((uint64_t)(int32_t)tmp_lane_1002720_19_0_1 != (uint64_t)0xffffffff80000000U)) {
+                                stack_m72_2 = stack_m72_1;
+                            } else {
+                                {
+                                    stack_m72_2 = 5;
+                                }
+                            }
+                        }
+                    }
+                    {
+                        tmp_11280_1 = (uint32_t)tmp_lane_1002720_19_0_1 == (uint32_t)0x80000000U && (uint32_t)stack_m72_2 == (uint32_t)0xffffffffU ? r2sleigh_residual_u32(2) : (uint32_t)((int32_t)tmp_lane_1002720_19_0_1 / (int32_t)stack_m72_2);
+                        tmp_11800_1 = (uint32_t)stack_m72_2 == (uint32_t)0xffffffffU ? (uint32_t)0U : (uint32_t)((int32_t)tmp_lane_1002720_19_0_1 % (int32_t)stack_m72_2);
+                        a0_35 = (uint64_t)((uint64_t)((uint64_t)((uint64_t)((uint64_t)63U >= (uint64_t)64U ? (int64_t)arg0 < (int64_t)0U ? (uint64_t)-0x1 : (uint64_t)0U : (uint64_t)((int64_t)arg0 >> (uint64_t)63U)) & (uint64_t)-0x11) + (uint64_t)((uint64_t)(uint32_t)tmp_11800_1 ^ (uint64_t)((uint64_t)((uint64_t)32U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(int32_t)tmp_11280_1 << (uint64_t)32U)) ^ (uint64_t)((uint64_t)a0_11 + (uint64_t)((uint64_t)a0_9 * (uint64_t)0xf4243U))))) + (uint64_t)34U);
+                        stack_m96_1 = (uint8_t)((int64_t)(int32_t)tmp_11280_1 < (int64_t)(int32_t)tmp_11800_1) ? 0x3300 : 0x4400;
+                        {
+                            return (uint64_t)((uint64_t)a0_35 + (uint64_t)stack_m96_1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002832
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002832
+EXPECT=<<EOF
+uint64_t wide_make(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t a1_3;
+
+    /* r2dec proof: no individual construct is marked; 12 source obligations: 8 rendered, 4 elided, 0 refused; 3 statements rendered */
+    {
+        a1_3 = r2sleigh_load_u64((void*)(uint64_t)0x1000588U);
+        (void)r2sleigh_load_u64((void*)(uint64_t)0x1000570U);
+        return (uint64_t)((uint64_t)((uint64_t)arg0 * (uint64_t)a1_3) + (uint64_t)arg1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x0100288a
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x0100288a
+EXPECT=<<EOF
+uint64_t shape_multiword_return(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t wide_make(uint64_t, uint64_t);
+
+    uint64_t a0_2;
+    uint64_t a0_4;
+
+    /* r2dec proof: 3 constructs are marked below; 25 source obligations: 13 rendered, 6 elided, 0 refused, 6 residual; 3 statements rendered; 2 never assigned, read as residuals (A1_2, A1_4) */
+    {
+        a0_2 = wide_make(arg0, arg1);
+        a0_4 = wide_make(r2sleigh_residual_u64(1), a0_2);
+        return (uint64_t)((uint64_t)((uint64_t)r2sleigh_residual_u64(2) ^ (uint64_t)a0_2) + (uint64_t)((uint64_t)a0_4 ^ (uint64_t)r2sleigh_residual_u64(3)));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010028e8
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x010028e8
+EXPECT=<<EOF
+uint64_t indirect_load(uint64_t* arg0, uint32_t arg1)
+{
+    uint64_t a0_3;
+
+    /* r2dec proof: no individual construct is marked; 13 source obligations: 9 rendered, 4 elided, 0 refused; 2 statements rendered */
+    {
+        a0_3 = r2sleigh_load_u64((void*)((uint64_t)arg0 + (uint64_t)(uint32_t)arg1 * 8U));
+        return (uint64_t)r2sleigh_load_u64((void*)a0_3);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002910
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002910
+EXPECT=<<EOF
+uint64_t indirect_store(uint64_t* arg0, uint32_t arg1, uint64_t arg2)
+{
+    uint64_t a1_3;
+
+    /* r2dec proof: no individual construct is marked; 13 source obligations: 9 rendered, 4 elided, 0 refused; 3 statements rendered */
+    {
+        a1_3 = r2sleigh_load_u64((void*)((uint64_t)arg0 + (uint64_t)(uint32_t)arg1 * 8U));
+        r2sleigh_store_u64((void*)a1_3, (uint64_t)arg2);
+        return (uint64_t)arg2;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002940
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002940
+EXPECT=<<EOF
+uint64_t shape_pointer_to_pointer(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+    uint64_t indirect_load(uint64_t, uint32_t);
+    uint64_t indirect_store(uint64_t, uint32_t, uint64_t);
+
+    uint64_t a2_2;
+    uint64_t a0_3;
+    uint64_t a1_1;
+    uint64_t a0_5;
+    uint64_t a1_2;
+    uint32_t tmp_3380_1;
+    uint64_t a0_14;
+    uint32_t tmp_3380_2;
+    uint64_t a0_17;
+    uint64_t a0_18;
+    uint32_t tmp_3380_3;
+    uint64_t a1_11;
+    uint64_t a2_8;
+    uint32_t tmp_3380_4;
+    uint32_t tmp_3380_5;
+    uint64_t a0_29;
+    uint32_t tmp_3380_6;
+    uint64_t a0_30;
+    uint32_t tmp_3380_7;
+    uint64_t a0_36;
+    uint64_t a0_37;
+    uint64_t a1_20;
+    _Alignas(16) uint8_t frame[144];
+
+    /* r2dec proof: no individual construct is marked; 209 source obligations: 123 rendered, 50 elided, 0 refused, 36 assumed (frame extent unproven); 54 statements rendered; 1 callee prototype supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)64U), (uint64_t)r2sleigh_load_u64((void*)a2_2));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 48U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)arg1);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)24U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 48U)));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)16U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 40U)));
+        a0_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 48U));
+        a1_1 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)8U), (uint64_t)((uint64_t)a0_3 ^ (uint64_t)a1_1));
+        a0_5 = r2sleigh_load_u64((void*)(uint64_t)(frame + 48U));
+        a1_2 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 56U), (uint64_t)((uint64_t)a0_5 + (uint64_t)a1_2));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)32U), (uint64_t)((uint64_t)(frame + 56U) + (uint64_t)24U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)40U), (uint64_t)((uint64_t)(frame + 56U) + (uint64_t)16U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)48U), (uint64_t)((uint64_t)(frame + 56U) + (uint64_t)8U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)56U), (uint64_t)(frame + 56U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)((uint64_t)(frame + 56U) + (uint64_t)32U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)0U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_3380_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+            if ((uint8_t)((uint64_t)3U < (uint64_t)(int32_t)tmp_3380_1)) {
+                break;
+            } else {
+                {
+                    a0_14 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)((uint64_t)a0_14 * (uint64_t)0xf4243U));
+                    tmp_3380_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                    a0_17 = indirect_load(r2sleigh_load_u64((void*)(uint64_t)(frame + 32U)), (uint32_t)tmp_3380_2);
+                    a0_18 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)((uint64_t)a0_17 + (uint64_t)a0_18));
+                    {
+                        tmp_3380_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                        r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_3 + (uint64_t)1U) >> 0U));
+                    }
+                }
+            }
+        }
+        {
+            indirect_store(r2sleigh_load_u64((void*)(uint64_t)(frame + 32U)), 1, r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
+            a1_11 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+            a2_8 = r2sleigh_load_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)24U));
+            indirect_store(r2sleigh_load_u64((void*)(uint64_t)(frame + 32U)), 3, (uint64_t)((uint64_t)a2_8 ^ (uint64_t)a1_11));
+            r2sleigh_store_u32((void*)(uint64_t)(frame + 16U), (uint32_t)0U);
+            for (; ; ) {
+                tmp_3380_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 16U));
+                if ((uint8_t)((uint64_t)3U < (uint64_t)(int32_t)tmp_3380_4)) {
+                    break;
+                } else {
+                    {
+                        tmp_3380_5 = r2sleigh_load_u32((void*)(uint64_t)(frame + 16U));
+                        a0_29 = indirect_load(r2sleigh_load_u64((void*)(uint64_t)(frame + 32U)), (uint32_t)tmp_3380_5);
+                        tmp_3380_6 = r2sleigh_load_u32((void*)(uint64_t)(frame + 16U));
+                        a0_30 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)((uint64_t)a0_30 ^ (uint64_t)((uint64_t)((uint64_t)(int32_t)((uint32_t)tmp_3380_6 + (uint32_t)((uint32_t)tmp_3380_6 * (uint32_t)2U)) & (uint64_t)63U) >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a0_29 << (uint64_t)((uint64_t)(int32_t)((uint32_t)tmp_3380_6 + (uint32_t)((uint32_t)tmp_3380_6 * (uint32_t)2U)) & (uint64_t)63U)))));
+                        {
+                            tmp_3380_7 = r2sleigh_load_u32((void*)(uint64_t)(frame + 16U));
+                            r2sleigh_store_u32((void*)(uint64_t)(frame + 16U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_7 + (uint64_t)1U) >> 0U));
+                        }
+                    }
+                }
+            }
+            {
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 0U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
+                a0_36 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+                a0_37 = r2sleigh_load_u64((void*)a0_36);
+                a1_20 = r2sleigh_load_u64((void*)((uint64_t)(frame + 56U) + (uint64_t)64U));
+                if ((uint8_t)((uint64_t)a0_37 != (uint64_t)a1_20)) {
+                    __stack_chk_fail();
+                } else {
+                    {
+                        return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 0U));
+                    }
+                }
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002aac
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002aac
+EXPECT=<<EOF
+uint64_t op_add(uint64_t arg0, uint64_t arg1)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 3 rendered, 4 elided, 0 refused; 1 statements rendered */
+    {
+        return (uint64_t)((uint64_t)arg0 + (uint64_t)arg1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002ace
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002ace
+EXPECT=<<EOF
+uint64_t op_xor(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t a1_2;
+
+    /* r2dec proof: no individual construct is marked; 9 source obligations: 5 rendered, 4 elided, 0 refused; 2 statements rendered */
+    {
+        a1_2 = (uint64_t)((uint64_t)arg1 ^ (uint64_t)arg0);
+        return (uint64_t)((uint64_t)a1_2 + (uint64_t)((uint64_t)a1_2 * (uint64_t)2U));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002af6
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002af6
+EXPECT=<<EOF
+uint64_t op_mul(uint64_t arg0, uint64_t arg1)
+{
+    /* r2dec proof: no individual construct is marked; 8 source obligations: 4 rendered, 4 elided, 0 refused; 1 statements rendered */
+    {
+        return (uint64_t)((uint64_t)((uint64_t)arg1 | (uint64_t)1U) * (uint64_t)arg0);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002b1e
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002b1e
+EXPECT=<<EOF
+uint64_t shape_function_pointer(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+
+    uint64_t a2_2;
+    uint32_t tmp_3380_1;
+    uint64_t a0_7;
+    uint32_t tmp_e480_1;
+    uint64_t a0_8;
+    __uint128_t tmp_6a80_1;
+    __uint128_t tmp_6c80_1;
+    uint64_t a1_8;
+    uint64_t a1_12;
+    uint32_t tmp_e480_2;
+    uint64_t a3_2;
+    uint64_t a0_14;
+    uint32_t tmp_3380_2;
+    uint64_t a0_19;
+    uint64_t a0_20;
+    uint64_t a1_15;
+    _Alignas(16) uint8_t frame[96];
+
+    /* r2dec proof: no individual construct is marked; 121 source obligations: 94 rendered, 27 elided, 0 refused; 34 statements rendered; 1 callee prototype supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 72U), (uint64_t)r2sleigh_load_u64((void*)a2_2));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)arg1);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 48U) + (uint64_t)16U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)0x10041b8U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 48U) + (uint64_t)8U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)0x10041b0U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 48U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)0x10041a8U));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 40U)));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_3380_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+            if ((uint8_t)((uint64_t)5U < (uint64_t)(int32_t)tmp_3380_1)) {
+                break;
+            } else {
+                {
+                    a0_7 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+                    tmp_e480_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                    a0_8 = (uint64_t)((uint64_t)(uint32_t)tmp_e480_1 + (uint64_t)a0_7);
+                    tmp_6a80_1 = (__uint128_t)(uint64_t)a0_8;
+                    tmp_6c80_1 = (__uint128_t)((__uint128_t)tmp_6a80_1 * (__uint128_t)0xaaaaaaaaaaaaaaabU);
+                    a1_8 = (uint64_t)((__uint128_t)tmp_6c80_1 >> 64U);
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)r2sleigh_load_u64((void*)((uint64_t)(frame + 48U) + (uint64_t)((uint64_t)((uint64_t)a0_8 - (uint64_t)((uint64_t)1U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a1_8 >> (uint64_t)1U))) - (uint64_t)((uint64_t)a1_8 & (uint64_t)-0x2)) * 8U)));
+                    a1_12 = r2sleigh_load_u64((void*)(uint64_t)(frame + 32U));
+                    tmp_e480_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                    a3_2 = (uint64_t)(uint32_t)tmp_e480_2;
+                    a0_14 = ((uint64_t(*)(uint64_t, uint64_t, uint64_t, uint64_t))(uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 8U)))(r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)), (uint64_t)((uint64_t)a1_12 + (uint64_t)a3_2), r2sleigh_load_u64((void*)(uint64_t)(frame + 8U)), a3_2);
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)a0_14);
+                    {
+                        tmp_3380_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                        r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_2 + (uint64_t)1U) >> 0U));
+                    }
+                }
+            }
+        }
+        {
+            r2sleigh_store_u64((void*)(uint64_t)(frame + 0U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
+            a0_19 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+            a0_20 = r2sleigh_load_u64((void*)a0_19);
+            a1_15 = r2sleigh_load_u64((void*)(uint64_t)(frame + 72U));
+            if ((uint8_t)((uint64_t)a0_20 != (uint64_t)a1_15)) {
+                __stack_chk_fail();
+            } else {
+                {
+                    return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 0U));
+                }
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002bfe
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002bfe
+EXPECT=<<EOF
+uint64_t shape_byte_indexed_buffer(uint64_t arg0, uint64_t arg1)
+{
+    __attribute__((noreturn)) void __stack_chk_fail(void);
+
+    uint64_t a2_2;
+    uint32_t tmp_3380_1;
+    uint64_t a0_3;
+    uint32_t tmp_e480_1;
+    uint64_t a2_4;
+    uint64_t a1_3;
+    uint32_t tmp_3380_2;
+    uint32_t tmp_3380_3;
+    uint32_t tmp_e480_2;
+    uint64_t a1_9;
+    uint8_t tmp_2d80_1;
+    uint8_t tmp_2d80_2;
+    uint8_t tmp_2d80_3;
+    uint8_t tmp_2d80_4;
+    uint8_t tmp_2d80_5;
+    uint8_t tmp_2d80_6;
+    uint8_t tmp_2d80_7;
+    uint8_t tmp_2d80_8;
+    uint64_t a1_16;
+    uint32_t tmp_e480_3;
+    uint64_t a1_17;
+    uint32_t tmp_e480_4;
+    uint64_t a1_21;
+    uint32_t tmp_3380_4;
+    uint64_t a0_23;
+    uint64_t a1_24;
+    __uint128_t tmp_6a80_1;
+    __uint128_t tmp_6b80_1;
+    __uint128_t tmp_6c80_1;
+    uint64_t a1_25;
+    uint32_t tmp_e480_5;
+    uint64_t a0_26;
+    uint8_t tmp_2d80_17;
+    uint8_t tmp_2d80_18;
+    uint8_t tmp_2d80_19;
+    uint8_t tmp_2d80_20;
+    uint8_t tmp_2d80_21;
+    uint8_t tmp_2d80_22;
+    uint64_t a2_19;
+    uint8_t tmp_2d80_23;
+    uint64_t a3_12;
+    uint8_t tmp_2d80_24;
+    uint64_t a1_36;
+    uint8_t tmp_2d80_25;
+    uint64_t a0_40;
+    uint64_t a1_37;
+    uint8_t tmp_2d80_26;
+    uint64_t a0_42;
+    uint64_t a0_46;
+    uint64_t a0_47;
+    uint64_t a1_40;
+    _Alignas(16) uint8_t frame[192];
+
+    /* r2dec proof: no individual construct is marked; 360 source obligations: 264 rendered, 62 elided, 0 refused, 34 assumed (frame extent unproven); 91 statements rendered; 1 callee prototype supplied by the source */
+    {
+        a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 96U) + (uint64_t)72U), (uint64_t)r2sleigh_load_u64((void*)a2_2));
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 72U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 64U), (uint64_t)arg1);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 96U), (uint64_t)0U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 60U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_3380_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+            if ((uint8_t)((uint64_t)63U < (uint64_t)(int32_t)tmp_3380_1)) {
+                break;
+            } else {
+                {
+                    a0_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 72U));
+                    tmp_e480_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+                    a2_4 = (uint64_t)(uint32_t)tmp_e480_1;
+                    a1_3 = r2sleigh_load_u64((void*)(uint64_t)(frame + 64U));
+                    r2sleigh_store_u8((void*)((uint64_t)(frame + 96U) + (uint64_t)((uint64_t)a2_4 + (uint64_t)8U) * 1U), (uint8_t)((uint64_t)((uint64_t)a2_4 ^ (uint64_t)((uint64_t)((uint64_t)((uint64_t)a2_4 & (uint64_t)56U) >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a0_3 >> (uint64_t)((uint64_t)a2_4 & (uint64_t)56U))) ^ (uint64_t)((uint64_t)((uint64_t)(int32_t)((uint32_t)tmp_e480_1 + (uint32_t)((uint32_t)tmp_e480_1 * (uint32_t)2U)) & (uint64_t)56U) >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a1_3 >> (uint64_t)((uint64_t)(int32_t)((uint32_t)tmp_e480_1 + (uint32_t)((uint32_t)tmp_e480_1 * (uint32_t)2U)) & (uint64_t)56U))))) >> 0U));
+                    {
+                        tmp_3380_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+                        r2sleigh_store_u32((void*)(uint64_t)(frame + 60U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_2 + (uint64_t)1U) >> 0U));
+                    }
+                }
+            }
+        }
+        {
+            r2sleigh_store_u32((void*)(uint64_t)(frame + 60U), (uint32_t)0U);
+            for (; ; ) {
+                tmp_3380_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+                if ((uint8_t)((uint64_t)63U < (uint64_t)(int32_t)tmp_3380_3)) {
+                    break;
+                } else {
+                    {
+                        tmp_e480_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+                        a1_9 = (uint64_t)((uint64_t)((uint64_t)(frame + 96U) + (uint64_t)((uint64_t)(uint32_t)tmp_e480_2 & (uint64_t)248U)) + (uint64_t)8U);
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)a1_9);
+                        tmp_2d80_1 = r2sleigh_load_u8((void*)a1_9);
+                        tmp_2d80_2 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a1_9 + (uint64_t)1U));
+                        tmp_2d80_3 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a1_9 + (uint64_t)2U));
+                        tmp_2d80_4 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a1_9 + (uint64_t)3U));
+                        tmp_2d80_5 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a1_9 + (uint64_t)4U));
+                        tmp_2d80_6 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a1_9 + (uint64_t)5U));
+                        tmp_2d80_7 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a1_9 + (uint64_t)6U));
+                        tmp_2d80_8 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a1_9 + (uint64_t)7U));
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 88U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)(uint8_t)tmp_2d80_1 | (uint64_t)((uint64_t)8U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint8_t)tmp_2d80_2 << (uint64_t)8U))) | (uint64_t)((uint64_t)((uint64_t)16U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint8_t)tmp_2d80_3 << (uint64_t)16U)) | (uint64_t)((uint64_t)24U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint8_t)tmp_2d80_4 << (uint64_t)24U)))) | (uint64_t)((uint64_t)32U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)((uint64_t)((uint64_t)(uint8_t)tmp_2d80_5 | (uint64_t)(int32_t)((uint64_t)8U >= (uint64_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)((uint64_t)(uint8_t)tmp_2d80_6 >> 0U) << (uint64_t)8U))) | (uint64_t)((uint64_t)(int32_t)((uint64_t)16U >= (uint64_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)((uint64_t)(uint8_t)tmp_2d80_7 >> 0U) << (uint64_t)16U)) | (uint64_t)(int32_t)((uint64_t)24U >= (uint64_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)((uint64_t)(uint8_t)tmp_2d80_8 >> 0U) << (uint64_t)24U)))) << (uint64_t)32U))));
+                        a1_16 = r2sleigh_load_u64((void*)(uint64_t)(frame + 72U));
+                        tmp_e480_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+                        a1_17 = r2sleigh_load_u64((void*)(uint64_t)(frame + 88U));
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 88U), (uint64_t)((uint64_t)((uint64_t)(uint32_t)tmp_e480_3 ^ (uint64_t)a1_16) + (uint64_t)a1_17));
+                        tmp_e480_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+                        a1_21 = (uint64_t)((uint64_t)((uint64_t)(frame + 96U) + (uint64_t)((uint64_t)(uint32_t)tmp_e480_4 & (uint64_t)248U)) + (uint64_t)8U);
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)a1_21);
+                        r2sleigh_store_u8((void*)(uint64_t)((uint64_t)a1_21 + (uint64_t)7U), (uint8_t)r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)7U)));
+                        r2sleigh_store_u8((void*)(uint64_t)((uint64_t)a1_21 + (uint64_t)6U), (uint8_t)r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)6U)));
+                        r2sleigh_store_u8((void*)(uint64_t)((uint64_t)a1_21 + (uint64_t)5U), (uint8_t)r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)5U)));
+                        r2sleigh_store_u8((void*)(uint64_t)((uint64_t)a1_21 + (uint64_t)4U), (uint8_t)r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)4U)));
+                        r2sleigh_store_u8((void*)(uint64_t)((uint64_t)a1_21 + (uint64_t)3U), (uint8_t)r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)3U)));
+                        r2sleigh_store_u8((void*)(uint64_t)((uint64_t)a1_21 + (uint64_t)2U), (uint8_t)r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)2U)));
+                        r2sleigh_store_u8((void*)(uint64_t)((uint64_t)a1_21 + (uint64_t)1U), (uint8_t)r2sleigh_load_u8((void*)((uint64_t)(frame + 88U) + (uint64_t)1U)));
+                        r2sleigh_store_u8((void*)a1_21, (uint8_t)r2sleigh_load_u8((void*)(uint64_t)(frame + 88U)));
+                        {
+                            tmp_3380_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 60U));
+                            r2sleigh_store_u32((void*)(uint64_t)(frame + 60U), (uint32_t)((uint64_t)((uint64_t)(int32_t)tmp_3380_4 + (uint64_t)8U) >> 0U));
+                        }
+                    }
+                }
+            }
+            {
+                a0_23 = r2sleigh_load_u64((void*)(uint64_t)(frame + 64U));
+                a1_24 = r2sleigh_load_u64((void*)(uint64_t)0x1000590U);
+                tmp_6a80_1 = (__uint128_t)(uint64_t)a0_23;
+                tmp_6b80_1 = (__uint128_t)(uint64_t)a1_24;
+                tmp_6c80_1 = (__uint128_t)((__uint128_t)tmp_6a80_1 * (__uint128_t)tmp_6b80_1);
+                a1_25 = (uint64_t)((__uint128_t)tmp_6c80_1 >> 64U);
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 56U), (uint32_t)((uint32_t)((uint64_t)a0_23 >> 0U) - (uint32_t)((uint32_t)((uint64_t)((uint64_t)5U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a1_25 >> (uint64_t)5U)) >> 0U) * (uint32_t)57U)));
+                tmp_e480_5 = r2sleigh_load_u32((void*)(uint64_t)(frame + 56U));
+                a0_26 = (uint64_t)((uint64_t)((uint64_t)(frame + 96U) + (uint64_t)(uint32_t)tmp_e480_5) + (uint64_t)8U);
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)a0_26);
+                tmp_2d80_17 = r2sleigh_load_u8((void*)a0_26);
+                tmp_2d80_18 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a0_26 + (uint64_t)1U));
+                tmp_2d80_19 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a0_26 + (uint64_t)2U));
+                tmp_2d80_20 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a0_26 + (uint64_t)3U));
+                tmp_2d80_21 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a0_26 + (uint64_t)4U));
+                tmp_2d80_22 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a0_26 + (uint64_t)5U));
+                a2_19 = (uint64_t)((uint64_t)(uint8_t)tmp_2d80_21 | (uint64_t)(int32_t)((uint64_t)8U >= (uint64_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)((uint64_t)(uint8_t)tmp_2d80_22 >> 0U) << (uint64_t)8U)));
+                tmp_2d80_23 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a0_26 + (uint64_t)6U));
+                a3_12 = (uint64_t)(int32_t)((uint64_t)16U >= (uint64_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)((uint64_t)(uint8_t)tmp_2d80_23 >> 0U) << (uint64_t)16U));
+                tmp_2d80_24 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)a0_26 + (uint64_t)7U));
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 80U), (uint64_t)((uint64_t)((uint64_t)32U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)((uint64_t)((uint64_t)(int32_t)((uint64_t)24U >= (uint64_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)((uint64_t)(uint8_t)tmp_2d80_24 >> 0U) << (uint64_t)24U)) | (uint64_t)a3_12) | (uint64_t)a2_19) << (uint64_t)32U)) | (uint64_t)((uint64_t)((uint64_t)(uint8_t)tmp_2d80_17 | (uint64_t)((uint64_t)8U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint8_t)tmp_2d80_18 << (uint64_t)8U))) | (uint64_t)((uint64_t)((uint64_t)16U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint8_t)tmp_2d80_19 << (uint64_t)16U)) | (uint64_t)((uint64_t)24U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)(uint8_t)tmp_2d80_20 << (uint64_t)24U))))));
+                a1_36 = r2sleigh_load_u64((void*)(uint64_t)(frame + 80U));
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 96U), (uint64_t)((uint64_t)((uint64_t)a1_36 * (uint64_t)32U) - (uint64_t)a1_36));
+                tmp_2d80_25 = r2sleigh_load_u8((void*)(uint64_t)(frame + 72U));
+                if ((uint8_t)((uint64_t)((uint64_t)(uint8_t)tmp_2d80_25 & (uint64_t)1U) == (uint64_t)0U)) {
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)(frame + 96U));
+                } else {
+                    {
+                        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)((uint64_t)(frame + 96U) + (uint64_t)8U));
+                    }
+                }
+                {
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 48U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 16U)));
+                    a0_40 = r2sleigh_load_u64((void*)(uint64_t)(frame + 48U));
+                    a1_37 = r2sleigh_load_u64((void*)(uint64_t)(frame + 72U));
+                    tmp_2d80_26 = r2sleigh_load_u8((void*)(uint64_t)((uint64_t)((uint64_t)a1_37 & (uint64_t)7U) + (uint64_t)a0_40));
+                    a0_42 = r2sleigh_load_u64((void*)(uint64_t)(frame + 96U));
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 96U), (uint64_t)((uint64_t)(uint8_t)tmp_2d80_26 + (uint64_t)a0_42));
+                    r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 96U)));
+                    a0_46 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
+                    a0_47 = r2sleigh_load_u64((void*)a0_46);
+                    a1_40 = r2sleigh_load_u64((void*)((uint64_t)(frame + 96U) + (uint64_t)72U));
+                    if ((uint8_t)((uint64_t)a0_47 != (uint64_t)a1_40)) {
+                        __stack_chk_fail();
+                    } else {
+                        {
+                            return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002e4a
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002e4a
+EXPECT=<<EOF
+uint64_t shape_bool_probe(uint64_t arg0)
+{
+    /* r2dec proof: no individual construct is marked; 9 source obligations: 5 rendered, 4 elided, 0 refused; 1 statements rendered */
+    {
+        return (uint64_t)((uint64_t)(uint8_t)((uint64_t)arg0 < (uint64_t)8U) ^ (uint64_t)1U);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002e6a
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002e6a
+EXPECT=<<EOF
+uint64_t shape_bool_caller(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t shape_bool_probe(uint64_t);
+
+    uint64_t a0_3;
+    uint64_t stack_m40_1;
+    uint64_t a0_7;
+    uint64_t stack_m40_2;
+
+    /* r2dec proof: no individual construct is marked; 37 source obligations: 33 rendered, 4 elided, 0 refused; 9 statements rendered */
+    {
+        a0_3 = shape_bool_probe(arg0);
+        if ((uint8_t)((uint64_t)a0_3 == (uint64_t)0U)) {
+            stack_m40_1 = 0;
+        } else {
+            {
+                stack_m40_1 = arg1;
+            }
+        }
+        {
+            a0_7 = shape_bool_probe(arg1);
+            if ((uint8_t)((uint64_t)a0_7 == (uint64_t)0U)) {
+                stack_m40_2 = stack_m40_1;
+            } else {
+                {
+                    stack_m40_2 = (uint64_t)((uint64_t)arg0 + (uint64_t)stack_m40_1);
+                }
+            }
+            {
+                return (uint64_t)stack_m40_2;
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01002ecc
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01002ecc
+EXPECT=<<EOF
+uint64_t fcn_1002ecc(void)
+{
+    int32_t printf(const char*, ...);
+    uint64_t shape_bool_caller(uint64_t, uint64_t);
+    uint64_t shape_byte_indexed_buffer(uint64_t, uint64_t);
+    uint64_t shape_call_chain(uint64_t, uint64_t);
+    uint64_t shape_function_pointer(uint64_t, uint64_t);
+    uint64_t shape_multiword_return(uint64_t, uint64_t);
+    uint64_t shape_pointer_to_pointer(uint64_t, uint64_t);
+    uint64_t shape_recurse_direct(uint8_t, uint64_t);
+    uint64_t shape_recurse_mutual(uint64_t, uint64_t);
+    uint64_t shape_signed_divmod(uint64_t, uint64_t);
+    uint64_t shape_stack_buffer(uint64_t, uint64_t);
+    uint64_t shape_struct_array(uint64_t, uint64_t);
+    uint64_t shape_struct_pointer(uint64_t, uint64_t);
+    uint64_t shape_struct_value(uint64_t, uint64_t);
+    uint64_t shape_variadic(uint64_t, uint64_t);
+    uint64_t shape_variadic_local(uint64_t, uint64_t);
+
+    uint64_t a0_4;
+    uint64_t a0_7;
+    uint64_t a0_9;
+    uint64_t a0_14;
+    uint64_t a0_18;
+    uint64_t a0_22;
+    uint64_t a0_26;
+    uint64_t a0_30;
+    uint64_t a0_34;
+    uint64_t a0_38;
+    uint64_t a0_42;
+    uint64_t a0_46;
+    uint64_t a0_50;
+    uint64_t a0_54;
+    uint64_t a0_58;
+    uint64_t a0_62;
+    uint64_t a0_66;
+
+    /* r2dec proof: no individual construct is marked; 223 source obligations: 219 rendered, 4 elided, 0 refused; 33 statements rendered; 15 callee prototypes supplied by the source */
+    /* symbol `main`; C allows that name no other prototype */
+    {
+        a0_4 = r2sleigh_load_u64((void*)(uint64_t)0x1000560U);
+        a0_7 = r2sleigh_load_u64((void*)(uint64_t)0x1000558U);
+        a0_9 = shape_variadic(a0_4, a0_7);
+        printf("%016llx\n", a0_9);
+        a0_14 = shape_variadic_local(a0_4, a0_7);
+        printf("%016llx\n", a0_14);
+        a0_18 = shape_call_chain(a0_4, a0_7);
+        printf("%016llx\n", a0_18);
+        a0_22 = shape_struct_pointer(a0_4, a0_7);
+        printf("%016llx\n", a0_22);
+        a0_26 = shape_struct_value(a0_4, a0_7);
+        printf("%016llx\n", a0_26);
+        a0_30 = shape_struct_array(a0_4, a0_7);
+        printf("%016llx\n", a0_30);
+        a0_34 = shape_stack_buffer(a0_4, a0_7);
+        printf("%016llx\n", a0_34);
+        a0_38 = shape_recurse_direct((uint8_t)a0_4, a0_7);
+        printf("%016llx\n", a0_38);
+        a0_42 = shape_recurse_mutual(a0_4, a0_7);
+        printf("%016llx\n", a0_42);
+        a0_46 = shape_signed_divmod(a0_4, a0_7);
+        printf("%016llx\n", a0_46);
+        a0_50 = shape_multiword_return(a0_4, a0_7);
+        printf("%016llx\n", a0_50);
+        a0_54 = shape_pointer_to_pointer(a0_4, a0_7);
+        printf("%016llx\n", a0_54);
+        a0_58 = shape_function_pointer(a0_4, a0_7);
+        printf("%016llx\n", a0_58);
+        a0_62 = shape_bool_caller(a0_4, a0_7);
+        printf("%016llx\n", a0_62);
+        a0_66 = shape_byte_indexed_buffer(a0_4, a0_7);
+        printf("%016llx\n", a0_66);
+        return 0;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010030d0
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x010030d0
+EXPECT=<<EOF
+void __libc_csu_init(int32_t argc, char** argv, char** envp)
+{
+    uint64_t a0_1;
+    uint64_t s1_2;
+    uint64_t s1_3;
+
+    /* r2dec proof: 1 construct is marked below; 47 source obligations: 32 rendered, 14 elided, 0 refused, 1 residual; 10 statements rendered; 1 argument slot read with no parameter, read as residuals (A0_0) */
+    {
+        a0_1 = (uint64_t)((uint64_t)(uint32_t)((uint64_t)r2sleigh_residual_u64(1) >> 32U) << 32U | (uint64_t)(uint32_t)argc);
+        if ((uint8_t)1U) {
+        } else {
+            s1_2 = 0x1000000;
+            for (; ; ) {
+                ((uint64_t(*)(uint64_t, uint64_t, uint64_t, uint64_t))(uint64_t)r2sleigh_load_u64((void*)s1_2))(a0_1, (uint64_t)argv, (uint64_t)envp, r2sleigh_load_u64((void*)s1_2));
+                s1_3 = (uint64_t)((uint64_t)s1_2 + (uint64_t)8U);
+                if ((uint8_t)((uint64_t)s1_3 != (uint64_t)0x1000008U)) {
+                    s1_2 = s1_3;
+                } else {
+                    break;
+                }
+            }
+        }
+        {
+            return;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x0100312c
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x0100312c
+EXPECT=<<EOF
+void __libc_csu_fini(void)
+{
+    /* r2dec proof: no individual construct is marked; 4 source obligations: 1 rendered, 3 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01003160
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01003160
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x1003160; this symbol is the import `__libc_start_main` and has no body of its own. */
+extern int32_t __libc_start_main(void(*)(), int32_t, char**, void(*)(), void(*)(), void(*)(), void*);
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01003170
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01003170
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x1003170; this symbol is the import `snprintf` and has no body of its own. */
+extern int32_t snprintf(char*, uint64_t, const char*, ...);
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01003180
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01003180
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x1003180; this symbol is the import `__stack_chk_fail` and has no body of its own. */
+extern void __stack_chk_fail(void);
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01003190
+FILE=tests/fixtures/shapes_zig_riscv64_O0
+CMDS=aa; pdd @ 0x01003190
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x1003190; this symbol is the import `printf` and has no body of its own. */
+extern int32_t printf(const char*, ...);
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN

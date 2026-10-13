@@ -1,0 +1,195 @@
+# The census of float_calls_zig_x86_64_O2g: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=afl
+EXPECT=<<EOF
+0x010014e0    1     42 sym._start
+0x01001510    1     14 sym.store
+0x01001520    1     18 sym.call_store
+0x01001540    1     46 sym.forward
+0x01001570    1     43 sym.main
+0x010015a0    4    102 sym.__libc_csu_init
+0x01001610    1      6 sym.__libc_csu_fini
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x010014e0
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=aa; pdd @ 0x010014e0
+EXPECT=<<EOF
+void _start(void)
+{
+    uint64_t tmp_55400_2;
+    uint64_t tmp_3cb80_1;
+
+    /* r2dec proof: 5 constructs are marked below; 27 source obligations: 2 rendered, 3 elided, 0 refused, 22 residual; 2 statements rendered; 1 held from entry, read as residuals (stack_p0) */
+    {
+        tmp_55400_2 = r2sleigh_residual_u64(1);
+        r2sleigh_residual_void(2); /* r2dec gap: StoreNotSpelled at 0x10014e0:29 covering 1 op (render::values) */
+        r2sleigh_residual_void(3); /* r2dec gap: StoreNotSpelled at 0x10014e0:32 covering 1 op (render::values) */
+        tmp_3cb80_1 = r2sleigh_load_u64((void*)(uint64_t)0x1002728U);
+        r2sleigh_residual_void(4); /* r2dec gap: CallNotRendered at 0x10014e0:46 covering 1 op (render::values) */
+        r2sleigh_residual_void(5); /* r2dec gap: TailTransferNotRendered at 0x10014e0 (render::control) */
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001510
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=aa; pdd @ 0x01001510
+EXPECT=<<EOF
+void store(double x, double* p)
+{
+    /* r2dec proof: no individual construct is marked; 9 source obligations: 3 rendered, 6 elided, 0 refused; 2 statements rendered */
+    {
+        r2sleigh_store_u64((void*)(uint64_t)p, (uint64_t)r2sleigh_float_to_bits_64(x + x));
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001520
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=aa; pdd @ 0x01001520
+EXPECT=<<EOF
+void call_store(double* p)
+{
+    void store(double, double*);
+
+    /* r2dec proof: no individual construct is marked; 6 source obligations: 4 rendered, 2 elided, 0 refused; 2 statements rendered; 1 callee prototype supplied by the source */
+    {
+        store(r2sleigh_float_from_bits_64((uint64_t)0x3ff4000000000000U), p);
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001540
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=aa; pdd @ 0x01001540
+EXPECT=<<EOF
+void forward(double x, double* p)
+{
+    void store(double, double*);
+
+    /* r2dec proof: no individual construct is marked; 16 source obligations: 9 rendered, 7 elided, 0 refused; 3 statements rendered; 2 callee prototypes supplied by the source */
+    {
+        store(x, p);
+        store(x + r2sleigh_float_from_bits_64((uint64_t)0x3ff0000000000000U), p);
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001570
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=aa; pdd @ 0x01001570
+EXPECT=<<EOF
+int32_t main(int32_t argc, char** argv)
+{
+    void call_store(double*);
+    void forward(double, double*);
+
+    uint64_t tmp_6b00_1;
+    uint64_t tmp_6b00_2;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: 2 constructs are marked below; 35 source obligations: 14 rendered, 18 elided, 0 refused, 3 residual; 6 statements rendered; 1 held from entry, read as residuals (RAX_0); 2 callee prototypes supplied by the source */
+    {
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)r2sleigh_residual_u64(1));
+        call_store((double*)(uint64_t)(frame + 16U));
+        tmp_6b00_1 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+        forward(r2sleigh_float_from_bits_64(tmp_6b00_1), (double*)(uint64_t)(frame + 16U));
+        tmp_6b00_2 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+        return (int32_t)(r2sleigh_float_from_bits_64(tmp_6b00_2) > -2147483649.0 && r2sleigh_float_from_bits_64(tmp_6b00_2) < 2147483648.0 ? (int32_t)r2sleigh_float_from_bits_64(tmp_6b00_2) : r2sleigh_residual_i32(2));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010015a0
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=aa; pdd @ 0x010015a0
+EXPECT=<<EOF
+void __libc_csu_init(int32_t argc, char** argv, char** envp)
+{
+    uint64_t r12_2;
+    uint64_t r13_5;
+    uint64_t tmp_11f80_1;
+    uint64_t r13_6;
+
+    /* r2dec proof: no individual construct is marked; 61 source obligations: 31 rendered, 30 elided, 0 refused; 12 statements rendered */
+    {
+        if ((uint8_t)1U) {
+        } else {
+            r12_2 = 0x1000000;
+            r13_5 = 1;
+            for (; ; ) {
+                tmp_11f80_1 = r2sleigh_load_u64((void*)r12_2);
+                ((uint64_t(*)(uint64_t, uint64_t, uint64_t))(uint64_t)tmp_11f80_1)((uint64_t)(uint32_t)argc, (uint64_t)argv, (uint64_t)envp);
+                r13_6 = (uint64_t)((uint64_t)r13_5 - (uint64_t)1U);
+                if ((uint8_t)((uint64_t)r13_6 != (uint64_t)0U)) {
+                    r12_2 = (uint64_t)((uint64_t)r12_2 + (uint64_t)8U);
+                    r13_5 = r13_6;
+                } else {
+                    break;
+                }
+            }
+        }
+        {
+            return;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01001610
+FILE=tests/fixtures/float_calls_zig_x86_64_O2g
+CMDS=aa; pdd @ 0x01001610
+EXPECT=<<EOF
+void __libc_csu_fini(void)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 1 rendered, 6 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN

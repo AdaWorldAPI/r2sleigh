@@ -1,0 +1,143 @@
+# The census of code_pointer_table_O0: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/code_pointer_table_O0
+CMDS=afl
+EXPECT=<<EOF
+0x1000003c0    1     32 sym._table_op_add
+0x1000003e0    1     32 sym._table_op_xor
+0x100000400    1     32 sym._table_op_mul
+0x100000420    6    152 sym._table_dispatch
+0x1000004b8    1     40 sym._main
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x1000003c0
+FILE=tests/fixtures/code_pointer_table_O0
+CMDS=aa; pdd @ 0x1000003c0
+EXPECT=<<EOF
+uint64_t _table_op_add(uint64_t arg0, uint64_t arg1)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 4 rendered, 3 elided, 0 refused; 1 statements rendered */
+    {
+        return (uint64_t)((uint64_t)arg0 + (uint64_t)arg1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x1000003e0
+FILE=tests/fixtures/code_pointer_table_O0
+CMDS=aa; pdd @ 0x1000003e0
+EXPECT=<<EOF
+uint64_t _table_op_xor(uint64_t arg0, uint64_t arg1)
+{
+    /* r2dec proof: no individual construct is marked; 6 source obligations: 3 rendered, 3 elided, 0 refused; 1 statements rendered */
+    {
+        return (uint64_t)((uint64_t)arg0 ^ (uint64_t)arg1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x100000400
+FILE=tests/fixtures/code_pointer_table_O0
+CMDS=aa; pdd @ 0x100000400
+EXPECT=<<EOF
+uint64_t _table_op_mul(uint64_t arg0, uint64_t arg1)
+{
+    /* r2dec proof: no individual construct is marked; 6 source obligations: 3 rendered, 3 elided, 0 refused; 1 statements rendered */
+    {
+        return (uint64_t)((uint64_t)arg0 * (uint64_t)arg1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x100000420
+FILE=tests/fixtures/code_pointer_table_O0
+CMDS=aa; pdd @ 0x100000420
+EXPECT=<<EOF
+uint64_t _table_dispatch(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t x8_4;
+    uint32_t stack_m76_1;
+    uint64_t stack_m72_1;
+    uint64_t x9_2;
+    uint64_t tmp_12480_1;
+    uint64_t x0_2;
+    uint64_t stack_m72_3;
+    _Alignas(16) uint8_t frame[64];
+
+    /* r2dec proof: 1 construct is marked below; 59 source obligations: 45 rendered, 12 elided, 0 refused, 2 residual; 17 statements rendered */
+    {
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)arg0);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)arg1);
+        r2sleigh_store_u128((void*)(uint64_t)(frame + 0U), (__uint128_t)r2sleigh_load_u128((void*)(uint64_t)0x100004000U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 0U) + (uint64_t)16U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)0x100004010U));
+        x8_4 = r2sleigh_load_u64((void*)(uint64_t)(frame + 40U));
+        stack_m76_1 = 0;
+        stack_m72_1 = x8_4;
+        for (; ; ) {
+            if ((uint8_t)((uint32_t)3U <= (uint32_t)stack_m76_1)) {
+                break;
+            } else {
+                {
+                    x9_2 = r2sleigh_load_u64((void*)(uint64_t)(frame + 32U));
+                    tmp_12480_1 = (uint64_t)((uint64_t)(uint32_t)stack_m76_1 + (uint64_t)x9_2);
+                    x0_2 = ((uint64_t(*)(uint64_t, uint64_t))(uint64_t)r2sleigh_load_u64((void*)((uint64_t)(frame + 0U) + (uint64_t)(uint32_t)stack_m76_1 * 8U)))(stack_m72_1, tmp_12480_1);
+                    stack_m72_3 = x0_2;
+                    {
+                        stack_m76_1 = (uint32_t)((uint32_t)stack_m76_1 + (uint32_t)1U);
+                        stack_m72_1 = stack_m72_3;
+                    }
+                }
+            }
+        }
+        {
+            return r2sleigh_residual_u64(1);
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x1000004b8
+FILE=tests/fixtures/code_pointer_table_O0
+CMDS=aa; pdd @ 0x1000004b8
+EXPECT=<<EOF
+uint64_t _main(void)
+{
+    void _table_dispatch(uint64_t, uint64_t);
+
+    /* r2dec proof: 1 construct is marked below; 12 source obligations: 5 rendered, 5 elided, 0 refused, 2 residual; 2 statements rendered */
+    {
+        _table_dispatch(3, 5);
+        return r2sleigh_residual_u64(1);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN

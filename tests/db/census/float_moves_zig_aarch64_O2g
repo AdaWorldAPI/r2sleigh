@@ -1,0 +1,213 @@
+# The census of float_moves_zig_aarch64_O2g: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=afl
+EXPECT=<<EOF
+0x010104b0    1     52 sym._start
+0x010104e8    1      8 sym.scale
+0x010104f0    1     16 sym.swap_call
+0x01010500    1     32 sym.main
+0x01010520    4    116 sym.__libc_csu_init
+0x01010594    1      4 sym.__libc_csu_fini
+0x010105c0    1     16 sym.imp.__libc_start_main
+0x010105d0    1     16 sym.imp.abort
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x010104b0
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010104b0
+EXPECT=<<EOF
+void _start(uint64_t arg0)
+{
+    /* r2dec proof: 2 constructs are marked below; 22 source obligations: 0 rendered, 3 elided, 0 refused, 19 residual; 0 statements rendered; 1 callee prototype supplied by the source */
+    {
+        r2sleigh_residual_void(1); /* r2dec gap: CallNotRendered at 0x10104b0:24 covering 1 op (render::values) */
+        r2sleigh_residual_void(2); /* r2dec gap: TransferNotFollowed at 0x10104b0 (render::control) */
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010104e8
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010104e8
+EXPECT=<<EOF
+double scale(double x, double k)
+{
+    /* r2dec proof: no individual construct is marked; 3 source obligations: 3 rendered, 0 elided, 0 refused; 1 statements rendered */
+    {
+        return (double)(x * k);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010104f0
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010104f0
+EXPECT=<<EOF
+double swap_call(double a, double b)
+{
+    double scale(double, double);
+
+    /* r2dec proof: no individual construct is marked; 4 source obligations: 4 rendered, 0 elided, 0 refused; 1 statements rendered; 1 callee prototype supplied by the source */
+    {
+        return scale(b, a);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01010500
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x01010500
+EXPECT=<<EOF
+struct r2sleigh_bits_256 {
+    uint8_t bytes[32];
+};
+
+static inline uint64_t r2sleigh_bits_extract_256_64(struct r2sleigh_bits_256 carrier, uint64_t at)
+{
+    uint64_t field = 0;
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        const uint64_t from = at + bit;
+        if (from < 256u && ((carrier.bytes[from / 8] >> (from % 8)) & 1) != 0) {
+            field = (uint64_t)(field | ((uint64_t)1 << bit));
+        }
+    }
+    return field;
+}
+
+static inline struct r2sleigh_bits_256 r2sleigh_bits_zero_extend_64_256(uint64_t field)
+{
+    struct r2sleigh_bits_256 carrier = {{0}};
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        if (((field >> bit) & 1) != 0) {
+            carrier.bytes[bit / 8] = (uint8_t)(carrier.bytes[bit / 8] | (1u << (bit % 8)));
+        }
+    }
+    return carrier;
+}
+
+int32_t main(int32_t argc, char** argv)
+{
+    double swap_call(double, double);
+
+    struct r2sleigh_bits_256 z0_5;
+    uint64_t tmp_lane_1010500_11_9_1;
+
+    /* r2dec proof: 1 construct is marked below; 15 source obligations: 10 rendered, 3 elided, 0 refused, 2 residual; 3 statements rendered; 1 callee prototype supplied by the source */
+    {
+        z0_5 = r2sleigh_bits_zero_extend_64_256((uint64_t)r2sleigh_float_to_bits_64(swap_call((double)(int32_t)argc, r2sleigh_float_from_bits_64((uint64_t)0x4000000000000000U))));
+        tmp_lane_1010500_11_9_1 = r2sleigh_bits_extract_256_64(z0_5, 0U);
+        return (int32_t)(r2sleigh_float_from_bits_64(tmp_lane_1010500_11_9_1) > -2147483649.0 && r2sleigh_float_from_bits_64(tmp_lane_1010500_11_9_1) < 2147483648.0 ? (int32_t)r2sleigh_float_from_bits_64(tmp_lane_1010500_11_9_1) : r2sleigh_residual_i32(1));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01010520
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x01010520
+EXPECT=<<EOF
+void __libc_csu_init(int32_t argc, char** argv, char** envp)
+{
+    uint64_t x22_2;
+    uint64_t x23_2;
+    uint64_t x8_4;
+    uint64_t tmp_3e280_1;
+
+    /* r2dec proof: no individual construct is marked; 45 source obligations: 30 rendered, 15 elided, 0 refused; 12 statements rendered */
+    {
+        if ((uint8_t)1U) {
+        } else {
+            x22_2 = 0x1000000;
+            x23_2 = 1;
+            for (; ; ) {
+                x8_4 = r2sleigh_load_u64((void*)x22_2);
+                ((uint64_t(*)(uint64_t, uint64_t, uint64_t))(uint64_t)r2sleigh_load_u64((void*)x22_2))((uint64_t)(uint32_t)argc, (uint64_t)argv, (uint64_t)envp);
+                tmp_3e280_1 = (uint64_t)((uint64_t)x23_2 - (uint64_t)1U);
+                if ((uint8_t)((uint64_t)tmp_3e280_1 != (uint64_t)0U)) {
+                    x22_2 = (uint64_t)((uint64_t)x22_2 + (uint64_t)8U);
+                    x23_2 = tmp_3e280_1;
+                } else {
+                    break;
+                }
+            }
+        }
+        {
+            return;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x01010594
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x01010594
+EXPECT=<<EOF
+void __libc_csu_fini(void)
+{
+    /* r2dec proof: no individual construct is marked; 1 source obligations: 1 rendered, 0 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010105c0
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010105c0
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x10105c0; this symbol is the import `__libc_start_main` and has no body of its own. */
+extern int32_t __libc_start_main(void(*)(), int32_t, char**, void(*)(), void(*)(), void(*)(), void*);
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x010105d0
+FILE=tests/fixtures/float_moves_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010105d0
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x10105d0; this symbol is the import `abort` and has no body of its own. */
+extern void abort(void);
+
+EOF
+EXPECT_ERR=<<EOF
+r2s: unknown command 'aa'
+EOF
+RUN
