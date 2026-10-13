@@ -2194,9 +2194,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::clang-O1::avg": {
-   "cause": "The result is a double in xmm0; interface recovery knows only the integer result carrier, finds rax written on some paths only, and marks the return unproven, so it traps. Owner: P7, the ABI classifier's float result rule.",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::clang-O1::bit_count": {
    "status": "equal"
@@ -2245,9 +2243,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::clang-O2::avg": {
-   "cause": "The result is a double in xmm0; interface recovery knows only the integer result carrier, finds rax written on some paths only, and marks the return unproven, so it traps. Owner: P7, the ABI classifier's float result rule.",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::clang-O2::bit_count": {
    "status": "equal"
@@ -2347,9 +2343,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::gcc-O1::avg": {
-   "cause": "[P7 calls (ABI classifier with float result class)] [G-FLOAT] avg returns double in XMM0, but the contract has one integer result slot: returned_result reads only RAX (r2ssa/src/recover_interface.rs:690), RAX is untouched on a path -> 'unresolved=1 -> Unproven' (:714), and body_proven_result's unique-carrier rule fails. Both returns render `return r2sleigh_residual_u64(n)` and the FP accumulation is elided as unobserved.",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::gcc-O1::bit_count": {
    "status": "equal"

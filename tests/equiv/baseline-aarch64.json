@@ -2185,9 +2185,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O0::avg": {
-   "cause": "[r2ssa recover_interface, FP on AArch64] The interface recovers no floating result: the rendering drops the d-register data flow (movi/ldr d/fadd/scvtf/fdiv) and returns x0, here as a counted residual; the double result is in v0.",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O0::bit_count": {
    "status": "equal"
@@ -2289,9 +2287,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O2::avg": {
-   "cause": "[r2ssa recover_interface, FP on AArch64] The interface recovers no floating result: the rendering drops the d-register data flow (movi/ldr d/fadd/scvtf/fdiv) and returns x0, here as a counted residual; the double result is in v0.",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O2::bit_count": {
    "status": "equal"
@@ -2438,9 +2434,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::aarch64-gcc-O2::avg": {
-   "cause": "[r2ssa recover_interface, FP on AArch64] The interface recovers no floating result: the rendering drops the d-register data flow (movi/ldr d/fadd/scvtf/fdiv) and returns x0, here as a counted residual; the double result is in v0.",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::aarch64-gcc-O2::bit_count": {
    "status": "equal"
