@@ -369,6 +369,31 @@ fn an_argument_register_handed_back_untouched_is_the_result_callers_read() {
     assert!(unread.contains("r2sleigh_residual_"), "{unread}");
 }
 
+/// AArch64 `fmov d0, #1.0; ret` hands x0 back untouched beside the float it writes, and a caller
+/// `bl f; str w0, [x1]` reads x0: the handed-back argument is the result.
+const A64_FLOAT_BESIDE_ITS_ARGUMENT: &[u8] = &[
+    0x00, 0x10, 0x6e, 0x1e, // 1000 fmov d0, #1.0
+    0xc0, 0x03, 0x5f, 0xd6, // 1004 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, // 1008 padding
+    0xfc, 0xff, 0xff, 0x97, // 1010 bl 0x1000
+    0x20, 0x00, 0x00, 0xb9, // 1014 str w0, [x1]
+    0xc0, 0x03, 0x5f, 0xd6, // 1018 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03,
+    0xd5, // 101c padding
+];
+
+#[test]
+fn an_argument_handed_back_beside_a_written_float_is_the_result_callers_read() {
+    let program = Literal::of_code(
+        A64_FLOAT_BESIDE_ITS_ARGUMENT,
+        &[("f", BASE, 8), ("caller", BASE + 0x10, 0x0c)],
+    )
+    .in_aarch64();
+    let text = rendered(program);
+    assert!(text.contains("return (uint64_t)arg0;"), "{text}");
+    assert!(!text.contains("r2sleigh_residual"), "{text}");
+}
+
 /// `mov rax, rdi; mov rdx, rsi; ret`, a 16-byte value returned in RDX:RAX, then
 /// `call f; mov rax, rdx; ret`, which reads the high half and returns it.
 const PAIR: &[u8] = &[
@@ -511,27 +536,25 @@ fn a_register_a_callee_left_is_no_half_of_the_result() {
     assert!(!f.contains("second register is open"), "{f}");
 }
 
-/// AArch64 `fmov d0, #1.0; ret` hands x0 back untouched beside the float it writes, and a caller
-/// `bl f; str w0, [x1]` reads x0: the handed-back argument is the result.
-const A64_FLOAT_BESIDE_ITS_ARGUMENT: &[u8] = &[
-    0x00, 0x10, 0x6e, 0x1e, // 1000 fmov d0, #1.0
-    0xc0, 0x03, 0x5f, 0xd6, // 1004 ret
-    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, // 1008 padding
-    0xfc, 0xff, 0xff, 0x97, // 1010 bl 0x1000
-    0x20, 0x00, 0x00, 0xb9, // 1014 str w0, [x1]
-    0xc0, 0x03, 0x5f, 0xd6, // 1018 ret
-    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03,
-    0xd5, // 101c padding
+/// `test rdi, rdi; sete dl; mov rax, rdi; ret`: DL over the caller's other seven bytes of RDX, as
+/// clang -O1's `table_walk` leaves it. A caller reading RDX after `f` makes no half of it.
+const BYTE_OVER_THE_CALLERS: &[u8] = &[
+    0x48, 0x85, 0xff, // 1000 test rdi, rdi
+    0x0f, 0x94, 0xc2, // 1003 sete dl
+    0x48, 0x89, 0xf8, // 1006 mov rax, rdi
+    0xc3, // 1009 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 100a padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0x48, 0x89, 0xd0, // 1015 mov rax, rdx
+    0xc3, // 1018 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1019 padding
 ];
 
 #[test]
-fn an_argument_handed_back_beside_a_written_float_is_the_result_callers_read() {
-    let program = Literal::of_code(
-        A64_FLOAT_BESIDE_ITS_ARGUMENT,
-        &[("f", BASE, 8), ("caller", BASE + 0x10, 0x0c)],
-    )
-    .in_aarch64();
-    let text = rendered(program);
-    assert!(text.contains("return (uint64_t)arg0;"), "{text}");
-    assert!(!text.contains("r2sleigh_residual"), "{text}");
+fn a_byte_written_over_the_callers_register_is_no_half_of_the_result() {
+    let functions = [("f", BASE, 0x0a), ("caller", BASE + 0x10, 9)];
+    let f = rendered(Literal::of_code(BYTE_OVER_THE_CALLERS, &functions));
+    assert!(f.starts_with("uint64_t f(uint64_t arg0)"), "{f}");
+    assert!(!f.contains("second register is open"), "{f}");
 }
