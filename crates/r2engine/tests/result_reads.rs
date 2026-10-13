@@ -649,6 +649,13 @@ fn a_result_another_way_in_may_read_stays_a_residual() {
         BASE + 0x28,
         &[0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, 0x90, 0x90],
     );
+    let mut filler = closed();
+    // 1028 call 0x1000; 102d jmp 0x101c: filler between bodies whose transfers reach known code,
+    // and a call from it is a way in no index holds.
+    filler.write(
+        BASE + 0x28,
+        &[0xe8, 0xd3, 0xff, 0xff, 0xff, 0xeb, 0xed, 0x90],
+    );
     let exported = closed().declaring(r2abi::statement::Symbol {
         name: "f".into(),
         vaddr: BASE,
@@ -666,6 +673,7 @@ fn a_result_another_way_in_may_read_stays_a_residual() {
         ("tail-called", tailed),
         ("stored", stored),
         ("in code no body holds", unread),
+        ("called from filler", filler),
         ("exported", exported),
     ] {
         let text = rendered(program);
