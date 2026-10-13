@@ -13,7 +13,7 @@ pub(crate) use signature::*;
 pub(crate) use structs::*;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+
 use std::sync::Arc;
 
 use r2ssa::{
@@ -753,39 +753,9 @@ fn build_type_analysis_inner(
         &input.parsed_context.external_type_db,
         input.ptr_bits,
     );
+    // A structure a parameter's accesses lay out is the solve's (doc/adr-aggregates.md); no
+    // scored declaration is generated here.
     let mut local_structs = input.local_structs;
-    augment_local_struct_artifacts_with_projection(
-        &mut local_structs,
-        &semantic_projection,
-        input.ptr_bits,
-    );
-    if let Some(semantic) = semantic_inputs.as_ref() {
-        augment_local_struct_artifacts_with_local_field_accesses(
-            &mut local_structs,
-            semantic.local_field_accesses,
-            input.ptr_bits,
-        );
-    }
-    align_local_structs_with_external(
-        &mut local_structs.struct_decls,
-        &mut local_structs.slot_type_overrides,
-        &local_structs.slot_field_profiles,
-        &external_structs,
-        input.ptr_bits,
-    );
-    prefer_stronger_local_struct_overrides(
-        &local_structs.struct_decls,
-        &mut local_structs.slot_type_overrides,
-        &local_structs.slot_field_profiles,
-        input.ptr_bits,
-    );
-    materialize_unresolved_signature_struct_layouts(
-        merged_signature.as_ref(),
-        &mut local_structs.struct_decls,
-        &mut local_structs.slot_type_overrides,
-        &input.parsed_context.external_type_db,
-        input.ptr_bits,
-    );
     let array_index_field_profiles = local_structs.slot_field_profiles.clone();
     let indexed_local_struct_refinement_slots = indexed_local_struct_refinement_slots(
         &local_structs,
@@ -1699,129 +1669,6 @@ fn signature_context_maps(
         }
     }
     maps
-}
-
-fn unresolved_named_struct_target_for_param(
-    param: &FunctionParamSpec,
-    type_db: &ExternalTypeDb,
-    ptr_bits: u32,
-) -> Option<String> {
-    let Some(CTypeLike::Pointer(inner)) = param.ty.as_ref() else {
-        return None;
-    };
-    match inner.as_ref() {
-        CTypeLike::Struct(name) => unresolved_named_struct_target(name, type_db),
-        CTypeLike::Typedef { name, .. } if !type_db_resolves_type_name(type_db, name, ptr_bits) => {
-            unresolved_named_struct_target(name, type_db)
-        }
-        _ => None,
-    }
-}
-
-fn unresolved_named_struct_target(name: &str, type_db: &ExternalTypeDb) -> Option<String> {
-    let name = canonical_struct_decl_name(name);
-    if name.is_empty()
-        || is_generated_local_struct_name(&name)
-        || external_named_aggregate_has_real_layout(type_db, &name)
-    {
-        return None;
-    }
-    Some(name)
-}
-
-fn canonical_struct_decl_name(name: &str) -> String {
-    let trimmed = name.trim();
-    for prefix in ["struct ", "union ", "enum "] {
-        if let Some(rest) = trimmed.strip_prefix(prefix) {
-            return rest.trim().to_string();
-        }
-    }
-    trimmed.to_string()
-}
-
-fn merge_or_insert_local_struct_decl(
-    struct_decls: &mut Vec<StructDeclCandidate>,
-    incoming: StructDeclCandidate,
-    ptr_bits: u32,
-) {
-    let Some(existing) = struct_decls
-        .iter_mut()
-        .find(|decl| decl.name.eq_ignore_ascii_case(&incoming.name))
-    else {
-        struct_decls.push(incoming);
-        return;
-    };
-
-    let mut fields = existing
-        .fields
-        .iter()
-        .cloned()
-        .map(|field| (field.offset, field))
-        .collect::<BTreeMap<_, _>>();
-    for field in incoming.fields {
-        fields.entry(field.offset).or_insert(field);
-    }
-    existing.fields = fields.into_values().collect();
-    existing.confidence = existing.confidence.max(incoming.confidence);
-    existing.source = StructDeclSource::LocalInferred;
-    if let Some(decl) = build_struct_decl(&existing.name, &existing.fields, ptr_bits) {
-        existing.decl = decl;
-    }
-}
-
-fn materialize_unresolved_signature_struct_layouts(
-    merged_signature: Option<&FunctionSignatureSpec>,
-    struct_decls: &mut Vec<StructDeclCandidate>,
-    slot_type_overrides: &mut HashMap<usize, String>,
-    type_db: &ExternalTypeDb,
-    ptr_bits: u32,
-) {
-    let Some(signature) = merged_signature else {
-        return;
-    };
-
-    let mut slots = slot_type_overrides.keys().copied().collect::<Vec<_>>();
-    slots.sort_unstable();
-    for slot in slots {
-        let Some(raw_ty) = slot_type_overrides.get(&slot) else {
-            continue;
-        };
-        let Some(local_name) = generated_local_struct_name_from_override(raw_ty, ptr_bits) else {
-            continue;
-        };
-        let Some(param) = signature.params.get(slot) else {
-            continue;
-        };
-        let Some(target_name) = unresolved_named_struct_target_for_param(param, type_db, ptr_bits)
-        else {
-            continue;
-        };
-        let Some(local_decl) = struct_decls
-            .iter()
-            .find(|decl| {
-                decl.source == StructDeclSource::LocalInferred
-                    && decl.name.eq_ignore_ascii_case(&local_name)
-            })
-            .cloned()
-        else {
-            continue;
-        };
-        let Some(decl) = build_struct_decl(&target_name, &local_decl.fields, ptr_bits) else {
-            continue;
-        };
-        merge_or_insert_local_struct_decl(
-            struct_decls,
-            StructDeclCandidate {
-                name: target_name.clone(),
-                decl,
-                confidence: local_decl.confidence,
-                source: StructDeclSource::LocalInferred,
-                fields: local_decl.fields,
-            },
-            ptr_bits,
-        );
-        slot_type_overrides.insert(slot, format!("struct {target_name} *"));
-    }
 }
 
 fn dedup_struct_decls(mut decls: Vec<StructDeclCandidate>) -> Vec<StructDeclCandidate> {
