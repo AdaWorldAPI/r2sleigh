@@ -2,6 +2,7 @@
 
 mod call_results;
 mod expressions;
+mod fields;
 mod returns;
 mod shared;
 pub(crate) use shared::exact_copy_chain_to_entry_storage;
@@ -9,6 +10,7 @@ mod stack;
 
 pub use call_results::*;
 pub(crate) use expressions::*;
+pub use fields::*;
 pub use returns::*;
 pub use shared::*;
 pub use stack::*;
@@ -429,6 +431,8 @@ pub struct PreparedFunctionCertificates {
     pub stack_reloads: crate::dense::IdMap<ValueId, StackReloadSourceCertificate>,
     pub returns: Vec<ReturnValueCertificate>,
     pub returns_by_inst: crate::dense::IdMap<InstId, usize>,
+    /// What each formal's pointee is read as (doc/adr-aggregates.md).
+    pub parameter_fields: BTreeMap<u32, ParameterFields>,
     /// The call-result solve moved a state past its height: the function refuses.
     pub exhausted: Option<crate::fixpoint::Exhausted>,
 }
@@ -761,6 +765,7 @@ pub(crate) fn collect_prepared_function_certificates(
     private_objects: &BTreeSet<ObjectId>,
     declared_slots: &DeclaredStackSlots,
     memory_round_trips: BTreeMap<StructuredAccessId, MemoryRoundTripCertificate>,
+    addresses: &crate::AddressProvenanceFacts,
 ) -> PreparedFunctionCertificates {
     let Body {
         function,
@@ -1293,6 +1298,14 @@ pub(crate) fn collect_prepared_function_certificates(
     let (returns, returns_by_inst) =
         collect_return_value_certificates(boundaries, graph, machine_context, &stack_reloads);
     let compiler_inserted = unobserved_compiler_inserted(function, graph, &returns);
+    let parameter_fields = collect_parameter_fields(
+        graph,
+        boundaries,
+        addresses,
+        &stack_reloads,
+        &memory_accesses,
+        &memory_accesses_by_inst,
+    );
 
     PreparedFunctionCertificates {
         loops,
@@ -1317,6 +1330,7 @@ pub(crate) fn collect_prepared_function_certificates(
         stack_reloads,
         returns,
         returns_by_inst,
+        parameter_fields,
         exhausted,
     }
 }

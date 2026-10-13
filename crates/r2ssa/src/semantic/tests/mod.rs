@@ -1,5 +1,6 @@
 mod boundaries;
 mod certificates;
+mod fields;
 mod objects;
 mod predicates;
 mod values;

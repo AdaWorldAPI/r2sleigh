@@ -379,6 +379,7 @@ impl PreparedFunctionFacts {
             &private_stack_objects,
             &declared_slots,
             memory_round_trips,
+            &addresses,
         );
         phase!("certificates", certificates.stack_slots.len());
         let (applied_assumption_bindings, assumption_usage) = collect_prepared_assumption_usage(
