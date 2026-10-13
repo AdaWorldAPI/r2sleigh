@@ -942,9 +942,8 @@ impl Image {
 
     /// Which state of the image's bytes this is.
     ///
-    /// Two reads at one revision see the same bytes. Anything derived from the
-    /// bytes and held beside the image records the revision it was derived at,
-    /// and is derived again when they differ.
+    /// Two reads at one revision see the same bytes the image itself wrote; a write to the file from
+    /// outside it is seen as the mapped file shows it (`held.rs`). Derived facts record the revision.
     pub const fn byte_revision(&self) -> u64 {
         self.byte_revision
     }

@@ -149,11 +149,6 @@ pub struct Name {
 }
 
 impl Name {
-    /// The name as a user expects to read it.
-    ///
-    /// A string is stored as the text it is, because that is what a listing of
-    /// strings is for; what a flag can be written as is a projection of it,
-    /// with everything an identifier cannot hold replaced.
     /// Every spelling that seeks to this name, as `NameDb::by_spelling` keys it: the listed one
     /// past its prefix, and a symbol's bare text, which radare2 also accepts (`s main`).
     fn seeks(&self) -> Vec<(usize, Arc<str>)> {
@@ -176,8 +171,8 @@ impl Name {
     }
 }
 
-/// The text as radare2 names a string's flag: its escaped form (`r_str_escape`) through the flag
-/// filter (`r_name_filter`): letters, digits, `.`, `:` and `_` kept, dash-like characters made `_`.
+/// The text as radare2 names a string's flag: the scanner's escaped form through the flag filter
+/// (`r_name_filter`): letters, digits, `.`, `:` and `_` kept, dash-like characters made `_`.
 fn identifier(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();

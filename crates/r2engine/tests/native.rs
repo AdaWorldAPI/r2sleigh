@@ -3683,15 +3683,8 @@ fn a_clear_direction_flag_survives_a_call() {
 /// How many instructions read the one value nothing can render.
 const STORES_OF_AN_UNRENDERABLE_VALUE: u32 = 2_000;
 
-/// `xor ecx, ecx; crc32 ecx, edi`, then `mov [rsi + 4*i], ecx` for every `i`, then
-/// `xor eax, eax; ret`.
-///
-/// `crc32` is a user operation no model gives a value, which is the refusal
-/// this wants: its value is unproven, so is every store of it, and the whole
-/// run is one marked gap. The readers fan out rather than
-/// chain. A chain of single-reader values is an inline expression as tall as
-/// the chain, a depth source of its own that is bounded where expressions are
-/// built; this is about how many cells one occurrence answers for.
+/// `xor ecx, ecx; crc32 ecx, edi`, a `mov [rsi + 4*i], ecx` per `i`, `xor eax, eax; ret`: no model
+/// gives `crc32` a value, so its readers fan out from one marked gap.
 fn stores_of_an_unrenderable_value() -> Vec<u8> {
     let mut bytes = vec![0x31, 0xc9, 0xf2, 0x0f, 0x38, 0xf1, 0xcf];
     for store in 0..STORES_OF_AN_UNRENDERABLE_VALUE {
