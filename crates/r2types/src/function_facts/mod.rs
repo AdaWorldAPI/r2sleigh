@@ -1366,7 +1366,14 @@ impl SolvedFunction {
         signatures: &BTreeMap<r2ssa::CallSiteId, crate::FunctionType>,
         ptr_bits: u32,
     ) -> Self {
-        let signedness = crate::signedness::scalar_signedness_of(source, false, std::iter::empty());
+        // One signedness pass: merges and the parameters' home aliases, for the solve, the stack
+        // slots and parameter signedness alike.
+        let params = crate::prepare::recover_signature_params_from_prepared_ssa(source, ptr_bits);
+        let signedness = crate::signedness::scalar_signedness_of(
+            source,
+            true,
+            crate::signature_infer::signedness_aliases(source, &params),
+        );
         let evidence =
             crate::evidence::solve_evidence_types(source, signatures, &signedness, ptr_bits);
         let returns = ReturnTypeFact::decide(source, signatures, &evidence);

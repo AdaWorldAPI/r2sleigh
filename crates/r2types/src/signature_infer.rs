@@ -7,7 +7,8 @@ use crate::convert::CTypeLike;
 use crate::analysis::{InferredSignature, InferredSignatureParam};
 use crate::model::Signedness;
 use crate::prepare::{prepared_arch_display_name, recover_signature_params_from_prepared_ssa};
-use crate::signedness::{ScalarSignednessEvidence, scalar_signedness_of};
+use crate::signedness::ScalarSignednessEvidence;
+use r2ssa::dense::IdMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SignatureTypeEvidence {
@@ -125,7 +126,12 @@ pub(crate) fn infer_signature_from_prepared_ssa(
             &param.evidence,
         );
     }
-    refine_parameter_signedness(prepared, &recovered_params, &mut canonical_params);
+    refine_parameter_signedness(
+        prepared,
+        &recovered_params,
+        &solved.signedness,
+        &mut canonical_params,
+    );
 
     let callconv = prepared.machine_context().function_interface().map_or_else(
         || "unknown".to_string(),
@@ -235,14 +241,10 @@ fn certified_parameter_pointer_type(
 fn refine_parameter_signedness(
     prepared: &SsaArtifact,
     recovered_params: &[RecoveredSignatureParam],
+    inferred: &IdMap<r2ssa::ValueId, BTreeSet<ScalarSignednessEvidence>>,
     params: &mut [SignatureParamCandidate],
 ) {
     let graph = prepared.graph();
-    let inferred = scalar_signedness_of(
-        prepared,
-        true,
-        signedness_aliases(prepared, recovered_params),
-    );
     let mut pointee_evidence = HashMap::<(usize, u32), BTreeSet<ScalarSignednessEvidence>>::new();
     for access in prepared.certificates().memory_accesses.values() {
         let Some(index) = certified_memory_parameter(prepared, access) else {
@@ -307,7 +309,7 @@ fn refine_parameter_signedness(
 /// The same-width aliases parameter signedness flows through beside the
 /// merges: a certified reload and the value it reloads, and a parameter's
 /// home and its reload.
-fn signedness_aliases(
+pub(crate) fn signedness_aliases(
     prepared: &SsaArtifact,
     recovered_params: &[RecoveredSignatureParam],
 ) -> Vec<(r2ssa::ValueId, r2ssa::ValueId)> {
