@@ -1,0 +1,21 @@
+name: CI on request
+
+# The whole pipeline, both tiers, where a pull request's base moves to master (the
+# next to merge) or it gains the `full-ci` label. A separate workflow so an edit or
+# label that asks for nothing posts no skipped check over the gates' results.
+on:
+  pull_request:
+    types: [labeled, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    name: Full CI on request
+    if: >-
+      (github.event.action == 'labeled' && github.event.label.name == 'full-ci') ||
+      (github.event.action == 'edited' && github.event.changes.base.ref.from != '' && github.event.pull_request.base.ref == 'master')
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
