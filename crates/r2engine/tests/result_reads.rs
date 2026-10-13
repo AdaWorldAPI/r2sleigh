@@ -786,3 +786,21 @@ fn a_conditional_tail_jump_returns_nothing_from_before_the_branch() {
     let f = rendered(Literal::of_code(CONDITIONAL_TAIL, &functions));
     assert!(f.contains("r2sleigh refused f"), "{f}");
 }
+
+/// Prepared as a callee, `f` of `ONLY_XMM0_WRITTEN` proves its one written register XMM0, and the
+/// convention's float register at a double's width is a double: `caller` declares and stores it so.
+#[test]
+fn a_caller_takes_the_float_result_beside_an_untouched_integer_register() {
+    let program = Literal::of_code(
+        ONLY_XMM0_WRITTEN,
+        &[("f", BASE, 5), ("caller", BASE + 0x10, 0x0a)],
+    );
+    let text = OpenProgram::of(program)
+        .rendered(BASE + 0x10)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(text.contains("double f(uint32_t);"), "{text}");
+    assert!(!text.contains("(double)f("), "{text}");
+}

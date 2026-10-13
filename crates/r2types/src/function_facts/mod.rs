@@ -773,6 +773,19 @@ pub struct SourceOwnedCalleeSignature {
     signature: crate::FunctionType,
 }
 
+/// Whether `storage` is a float's width inside the convention's float result register.
+fn float_carrier(source: &r2ssa::SsaArtifact, storage: r2ssa::CanonicalStorageId) -> bool {
+    let Some(slot) = (source.machine_context().convention_slots())
+        .and_then(r2ssa::SourceConventionSlots::float_result_slot)
+    else {
+        return false;
+    };
+    matches!(storage.size, 4 | 8)
+        && storage.space == slot.space
+        && storage.offset >= slot.offset
+        && storage.offset + u64::from(storage.size) <= slot.offset + u64::from(slot.size)
+}
+
 /// The type a call returns where its callee's result is one of two carriers: the float register's
 /// lane is a float of its width, the integer register a word (doc/adr-resolved-bodies.md).
 fn call_result_type(
@@ -1527,6 +1540,14 @@ impl FunctionFacts {
                 (Some(result), _) if pair_callee => call_result_type(&signature.interface, result),
                 (_, CTypeLike::Unknown) => {
                     site_result.and_then(|result| call_result_type(&signature.interface, result))
+                }
+                // The convention's float register read at a float's width is that float, whatever
+                // carrier-width integer the callee's body spells (doc/adr-resolved-bodies.md).
+                (
+                    Some(r2ssa::SourceCallResult::Register { storage }),
+                    CTypeLike::Int { bits, .. },
+                ) if float_carrier(source, storage) && *bits == storage.size * 8 => {
+                    Some(CTypeLike::Float(*bits))
                 }
                 (_, declared) => Some(declared.clone()),
             };
