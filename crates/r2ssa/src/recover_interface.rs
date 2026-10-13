@@ -172,9 +172,17 @@ pub struct RecoveredInterface {
     reads_past_parameters: bool,
     /// Whether the result is void because no call reads it, which holds under a closed world only.
     closed_world: bool,
+    /// The first pass over recovery's own facts that moved a state past its height.
+    exhausted: Option<crate::fixpoint::Exhausted>,
 }
 
 impl RecoveredInterface {
+    /// The first pass over recovery's facts that moved a state past its stated height: the function
+    /// recovered from refuses, as a sealed one does (`Prepared::seal`).
+    pub(crate) const fn exhausted(&self) -> Option<crate::fixpoint::Exhausted> {
+        self.exhausted
+    }
+
     /// Whether the result rests on `Premise::ClosedWorld`: void because no call the image shows reads it.
     pub const fn assumes_closed_world(&self) -> bool {
         self.closed_world
@@ -1653,6 +1661,7 @@ fn recover_interface_inner(
         result_carriers,
         reads_past_parameters,
         closed_world,
+        exhausted: facts.exhausted(),
     })
 }
 

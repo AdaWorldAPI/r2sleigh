@@ -2494,6 +2494,11 @@ impl TrustedSsaArtifact {
                 let Ok(preliminary_prep) = preliminary.provisional_prep_facts(control) else {
                     break 'recovered None;
                 };
+                // The preliminary build may be the one sealed: its provisional facts and
+                // recovery's own are passes over it, and an exhausted one refuses it.
+                if let Some(exhausted) = preliminary_prep.facts.exhausted {
+                    preliminary.note_exhausted(exhausted);
+                }
                 let recovered = crate::recover_interface::recover_interface_with_context(
                     preliminary,
                     &preliminary_prep,
@@ -2504,6 +2509,9 @@ impl TrustedSsaArtifact {
                 let Some(recovered) = recovered else {
                     break 'recovered None;
                 };
+                if let Some(exhausted) = recovered.exhausted() {
+                    preliminary.note_exhausted(exhausted);
+                }
                 result_owners.clone_from(recovered.result_owners());
                 result_ambiguous = recovered.result_ambiguous();
                 closed_world = recovered.assumes_closed_world();
