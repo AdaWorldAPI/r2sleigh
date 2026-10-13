@@ -264,6 +264,14 @@ impl TryFrom<LedgerColumns> for ObligationLedger {
         if columns.outcomes.len() != places || columns.by_id.len() != places {
             return Err(format!("columns of {places} places disagree in length"));
         }
+        // Places read in order: `over` sorts the reading order, and lookups search it.
+        if columns
+            .reading_order
+            .windows(2)
+            .any(|pair| pair[0] > pair[1])
+        {
+            return Err("`reading_order` is out of order".to_owned());
+        }
         let mut sorted = columns.by_id.clone();
         sorted.sort_unstable();
         if sorted
@@ -757,6 +765,22 @@ mod tests {
         assert!(serde_json::from_value::<ObligationLedger>(value.clone()).is_err());
         let mut value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
         value["conflicts"] = serde_json::json!({"7": 1});
+        assert!(serde_json::from_value::<ObligationLedger>(value).is_err());
+    }
+
+    /// A reading order read back out of order is rejected: its places would no longer be found.
+    #[test]
+    fn a_ledger_read_back_out_of_order_is_rejected() {
+        let ledger = ledger_of(&[
+            obligation(0, SemanticObligationKind::LiveValueProducer),
+            obligation(1, SemanticObligationKind::ObservableMemoryRead),
+        ]);
+        let text = serde_json::to_string(&ledger).expect("it serializes");
+        let mut value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+        let order = value["reading_order"].as_array().expect("an array").clone();
+        let reversed = order.into_iter().rev().collect::<Vec<_>>();
+        value["reading_order"] = serde_json::Value::Array(reversed);
+        value["by_id"] = serde_json::json!([1, 0]);
         assert!(serde_json::from_value::<ObligationLedger>(value).is_err());
     }
 
