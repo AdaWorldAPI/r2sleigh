@@ -3557,3 +3557,22 @@ fn by_direction<T>(
     }
     map
 }
+
+/// A return the interface's graph states rests on what the graph is read from: a library's
+/// prototype is `Declared`, not the program's own debug information.
+#[test]
+fn an_exact_source_return_rests_on_the_interface_s_basis() {
+    let source = exact_signed_i32_return_source(true);
+    let fact = ReturnTypeFact::decide(&source, &BTreeMap::new(), &crate::EvidenceTypes::default());
+    assert!(
+        matches!(
+            fact,
+            ReturnTypeFact::Decided {
+                by: ReturnTypeEvidence::ExactSource,
+                ..
+            }
+        ),
+        "{fact:?}"
+    );
+    assert_eq!(fact.basis(&source), Some(r2source::Basis::Declared));
+}

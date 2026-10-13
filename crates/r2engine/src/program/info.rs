@@ -267,27 +267,7 @@ fn returns(
     let declared = fact
         .declared()
         .map(|ty| r2types::spellable_c_type_like(ty, bits));
-    Some(Fact::new(declared, return_basis(fact)?))
-}
-
-/// What a return type rests on (doc/adr-provenance.md, C2); none where r2types refuses one.
-fn return_basis(fact: &r2types::ReturnTypeFact) -> Option<Basis> {
-    use r2types::{ReturnTypeEvidence as By, ReturnTypeFact as Return};
-    Some(match fact {
-        Return::Decided { by, .. } => match by {
-            // The program's own declaration, in its debug information.
-            By::ExactSource | By::Declared => Basis::DebugInfo,
-            // Every exit proven to hand back no value.
-            By::VoidBoundary => Basis::Certified,
-            // One type agreed by every exit: true of each, exact of none.
-            By::Exits => Basis::Solved,
-            // Only the width of the storage word every return certifies.
-            By::Carrier => Basis::CarrierWidth,
-        },
-        // The convention's result slot, which no exit is proven to fill.
-        Return::Unproven { .. } => Basis::Convention,
-        Return::Refused(_) => return None,
-    })
+    Some(Fact::new(declared, fact.basis(artifact)?))
 }
 
 /// Every declarable stack object, and every frame slot promotion took out of memory: the frame
