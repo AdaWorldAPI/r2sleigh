@@ -153,9 +153,8 @@ fn a_call_leaves_the_stack_pointer_where_the_convention_says_it_found_it() {
     let prepared =
         crate::testing::prepared(&blocks, &arch, Some(interface), Vec::new(), [sp_storage])
             .expect("prepared SSA should build");
-    let function = prepared.function();
     let facts = prepared.decompile_prep_facts();
-    let block = function.named_block(0x4000).expect("entry block");
+    let block = prepared.named_block(0x4000).expect("entry block");
 
     // The projection is the layer a new operation is most easily missed
     // in: three separate tables key on the operation kind, and all three
@@ -592,7 +591,6 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
     assert!(!memory.is_write);
 
     let return_idx = prepared
-        .function()
         .named_block(0x1600)
         .and_then(|block| {
             block
@@ -609,7 +607,6 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
     );
 
     let result = prepared
-        .function()
         .named_block(0x1600)
         .and_then(|block| {
             block
@@ -622,17 +619,14 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
                 })
         })
         .expect("post-call result op");
-    assert!(
-        prepared
-            .inst_at(0x1600, result.0)
-            .and_then(|inst| prepared.call_result_certificate_for_inst(inst))
-            .is_none()
-    );
-    assert!(
-        prepared
-            .call_result_certificates_for_callsite(call.call_site)
-            .is_empty()
-    );
+    let results = prepared
+        .certificates()
+        .call_results
+        .values()
+        .collect::<Vec<_>>();
+    let inst = prepared.inst_at(0x1600, result.0);
+    assert!(results.iter().all(|cert| Some(cert.at) != inst));
+    assert!(results.iter().all(|cert| cert.call_site != call.call_site));
 }
 
 #[test]
@@ -872,8 +866,7 @@ fn a_narrow_formal_is_the_callers_lane_and_the_whole_register_keeps_the_callers_
         [register(0x4200, 8)],
     )
     .expect("the sealed function validates");
-    let function = artifact.function();
-    let defined = function
+    let defined = artifact
         .named_blocks()
         .iter()
         .flat_map(|block| block.ops())
@@ -885,7 +878,7 @@ fn a_narrow_formal_is_the_callers_lane_and_the_whole_register_keeps_the_callers_
         "a version-0 value is defined: {defined:?}"
     );
     // The whole register is rebuilt over the caller's register, not zero.
-    let rebuilt = function
+    let rebuilt = artifact
         .named_blocks()
         .iter()
         .flat_map(|block| block.ops())

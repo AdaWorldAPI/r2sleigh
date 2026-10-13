@@ -55,8 +55,8 @@ pub(crate) struct ScalarArrayInferenceCtx<'a> {
     pub(crate) array_addr_exprs: &'a HashMap<String, ScalarArrayAddrExpr>,
     pub(crate) array_addr_expr_names: &'a HashMap<String, Option<ScalarArrayAddrExpr>>,
     pub(crate) stack_roots: Option<FrameRoots<'a>>,
-    pub(crate) block_ops: &'a HashMap<u64, HashMap<String, SSAOp>>,
-    pub(crate) value_ops: &'a HashMap<String, SSAOp>,
+    pub(crate) block_ops: &'a HashMap<u64, HashMap<String, &'a SSAOp>>,
+    pub(crate) value_ops: &'a HashMap<String, &'a SSAOp>,
 }
 
 pub(crate) fn scalar_array_access_certificates_from_ssa(
@@ -77,27 +77,25 @@ pub(crate) fn scalar_array_access_certificates_from_ssa(
     let mut array_addr_expr_names: HashMap<String, Option<ScalarArrayAddrExpr>> = HashMap::new();
     let mut certificates = ScalarArrayAccessCertificates::default();
 
-    let block_ops: HashMap<u64, HashMap<String, SSAOp>> = ssa_blocks
+    // Borrowed: two copies of every operation were this pass's peak (doc/adr-memory-model.md, MM.11).
+    let block_ops: HashMap<u64, HashMap<String, &SSAOp>> = ssa_blocks
         .iter()
         .map(|block| {
             let ops = block
                 .ops()
                 .iter()
-                .filter_map(|op| {
-                    op.dst()
-                        .map(|dst| (ssa_var_block_key(block.addr, dst), op.clone()))
-                })
+                .filter_map(|op| op.dst().map(|dst| (ssa_var_block_key(block.addr, dst), op)))
                 .collect::<HashMap<_, _>>();
             (block.addr, ops)
         })
         .collect();
-    let value_ops: HashMap<String, SSAOp> = ssa_blocks
+    let value_ops: HashMap<String, &SSAOp> = ssa_blocks
         .iter()
         .flat_map(|block| {
             block
                 .ops()
                 .iter()
-                .filter_map(|op| op.dst().map(|dst| (dst.display_name(), op.clone())))
+                .filter_map(|op| op.dst().map(|dst| (dst.display_name(), op)))
         })
         .collect();
 

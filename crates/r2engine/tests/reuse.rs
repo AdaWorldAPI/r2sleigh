@@ -122,6 +122,7 @@ fn a_patch_that_moves_an_import_stub_makes_every_held_analysis_stale() {
     assert_eq!(
         program
             .imports()
+            .stubs
             .get(&STUB)
             .map(|stub| stub.symbol.as_str()),
         Some("puts")
@@ -129,7 +130,7 @@ fn a_patch_that_moves_an_import_stub_makes_every_held_analysis_stale() {
     // `jmp [rip + 2]` becomes `jmp [rip + 0x10]`, which reads no slot.
     program.source_mut().write(STUB + 2, &[0x10]);
     program.prepared(ONE).expect("it prepares");
-    assert!(program.imports().is_empty());
+    assert!(program.imports().stubs.is_empty());
     let stats = program.analysis_stats();
     assert_eq!(
         (
@@ -288,9 +289,7 @@ fn a_patch_that_stops_a_callee_s_callee_returning_makes_the_caller_stale() {
         .write(CALLER, &[0xe8, 0x0b, 0x00, 0x00, 0x00, 0xc3]);
     let ends = |program: &mut OpenProgram<Literal>| {
         let prepared = program.prepared(CALLER).expect("it prepares");
-        let blocks = prepared.lifted();
-        blocks
-            .iter()
+        (prepared.outline().blocks.iter())
             .map(|block| block.addr + u64::from(block.size))
             .max()
     };
@@ -365,21 +364,23 @@ fn a_listing_asks_a_held_callee_what_its_parameters_take_without_preparing_it() 
 }
 
 #[test]
-fn a_rendering_is_redrawn_without_analysing_again() {
-    // `pdd` on one function, another, then the first: the session redraws what it rendered.
+fn a_rendering_is_held_only_while_it_is_the_newest() {
+    // A redraw of the function just rendered reads it; one rendered before another is drawn
+    // again, to the same text (doc/adr-memory-model.md, "Retention").
     let mut program = opened();
     let text = |program: &mut OpenProgram<Literal>, entry| {
         let rendering = program.rendered(entry);
         rendering.expect("it renders").response.output.into_text()
     };
     let first = text(&mut program, ONE);
+    assert_eq!(text(&mut program, ONE), first);
     text(&mut program, TWO);
     assert_eq!(text(&mut program, ONE), first);
     let stats = program.analysis_stats();
     assert_eq!(
         (stats.rendered.computed, stats.rendered.reused),
-        (2, 1),
-        "the first function was rendered again"
+        (3, 1),
+        "the redraw was read; the return to the first function drew it again"
     );
     // `mov eax, 1` becomes `mov eax, 3`: the rendering read it.
     program.source_mut().write(ONE + 1, &[0x03]);

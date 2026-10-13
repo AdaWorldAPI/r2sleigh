@@ -11,12 +11,14 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::callee::{CalleeIdentityContext, CalleeResolutionFacts, CallsiteKey};
+use crate::callee::{CalleeIdentityContext, CalleeResolutionFacts};
 use crate::facts::{
     CalleeFact, CalleeLinkage, FunctionTypeFacts, OutParamCertificateEvidence,
     OutParamCertificateSource, SignatureCertificateSource,
 };
 use crate::{CTypeLike, normalize_external_type_name, parse_c_type_like};
+use r2ssa::InstId;
+use r2ssa::dense::IdMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ParamSlotResolver {
@@ -36,7 +38,7 @@ impl ParamSlotResolver {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionCallsiteFacts {
-    pub by_callsite: BTreeMap<CallsiteKey, CallsiteArgumentFacts>,
+    pub by_callsite: IdMap<InstId, CallsiteArgumentFacts>,
 }
 
 impl FunctionCallsiteFacts {
@@ -44,15 +46,15 @@ impl FunctionCallsiteFacts {
         self.by_callsite.is_empty()
     }
 
-    pub fn arguments_for_site(&self, callsite: CallsiteKey) -> Option<&CallsiteArgumentFacts> {
-        self.by_callsite.get(&callsite)
+    pub fn arguments_for_site(&self, callsite: InstId) -> Option<&CallsiteArgumentFacts> {
+        self.by_callsite.get(callsite)
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionCallResultFacts {
     pub by_value: r2ssa::dense::IdMap<r2ssa::ValueId, CallResultFact>,
-    pub by_callsite: BTreeMap<CallsiteKey, Vec<r2ssa::ValueId>>,
+    pub by_callsite: IdMap<InstId, Vec<r2ssa::ValueId>>,
 }
 
 impl FunctionCallResultFacts {
@@ -64,9 +66,9 @@ impl FunctionCallResultFacts {
         self.by_value.get(value)
     }
 
-    pub fn results_for_site(&self, callsite: CallsiteKey) -> impl Iterator<Item = &CallResultFact> {
+    pub fn results_for_site(&self, callsite: InstId) -> impl Iterator<Item = &CallResultFact> {
         self.by_callsite
-            .get(&callsite)
+            .get(callsite)
             .into_iter()
             .flatten()
             .filter_map(|value| self.by_value.get(*value))
@@ -79,7 +81,7 @@ impl FunctionCallResultFacts {
     /// whose definition the call statement renders. The boundary definition is
     /// the earliest identity result carried in a register; propagated identity
     /// results occur later. A tie is ambiguous and therefore remains unowned.
-    pub fn definition_for_site(&self, callsite: CallsiteKey) -> Option<&CallResultFact> {
+    pub fn definition_for_site(&self, callsite: InstId) -> Option<&CallResultFact> {
         let is_boundary_definition = |result: &CallResultFact| {
             result.relation.is_identity()
                 && matches!(result.carrier, r2ssa::ReturnCarrier::Register { .. })
@@ -96,7 +98,7 @@ impl FunctionCallResultFacts {
         definitions.next().is_none().then_some(definition)
     }
 
-    pub fn owner_for_site(&self, callsite: CallsiteKey) -> Option<&r2ssa::ValueOwner> {
+    pub fn owner_for_site(&self, callsite: InstId) -> Option<&r2ssa::ValueOwner> {
         let direct_stack_owner = self.unique_owner_for_site_matching(callsite, |result, owner| {
             result.relation.is_identity()
                 && matches!(&result.carrier, r2ssa::ReturnCarrier::Register { .. })
@@ -154,7 +156,7 @@ impl FunctionCallResultFacts {
 
     fn unique_owner_for_site_matching(
         &self,
-        callsite: CallsiteKey,
+        callsite: InstId,
         accept: impl Fn(&CallResultFact, &r2ssa::ValueOwner) -> bool,
     ) -> Result<Option<&r2ssa::ValueOwner>, ()> {
         let mut selected = None;
@@ -173,7 +175,7 @@ impl FunctionCallResultFacts {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionCallRenderFacts {
-    pub by_callsite: BTreeMap<CallsiteKey, CallsiteRenderFact>,
+    pub by_callsite: IdMap<InstId, CallsiteRenderFact>,
 }
 
 impl FunctionCallRenderFacts {
@@ -181,8 +183,8 @@ impl FunctionCallRenderFacts {
         self.by_callsite.is_empty()
     }
 
-    pub fn fact_for_site(&self, callsite: CallsiteKey) -> Option<&CallsiteRenderFact> {
-        self.by_callsite.get(&callsite)
+    pub fn fact_for_site(&self, callsite: InstId) -> Option<&CallsiteRenderFact> {
+        self.by_callsite.get(callsite)
     }
 }
 
@@ -231,8 +233,12 @@ impl FunctionControlFacts {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionRenderFacts {
-    /// Canonical certified expression graph, indexed by the value each expression defines.
-    pub certified_exprs: r2ssa::dense::IdMap<r2ssa::ValueId, CertifiedExpr>,
+    /// The values a statement may spell: r2ssa's renderable values and every call's result.
+    pub renderable_expressions: r2ssa::dense::IdSet<r2ssa::ValueId>,
+    /// The roles a value carries (a call, a parameter, a stack slot, a loop carrier), where it carries one.
+    pub bindings: r2ssa::dense::IdMap<r2ssa::ValueId, BTreeSet<r2ssa::SemanticId>>,
+    /// The merges a predicate chooses between, by the value each defines.
+    pub guarded_phis: r2ssa::dense::IdMap<r2ssa::ValueId, GuardedPhiRenderFact>,
     /// Canonical certified addressable entities keyed by stable semantic identity.
     pub certified_entities: BTreeMap<r2ssa::SemanticId, CertifiedEntity>,
     /// Canonical certified observable-effect graph keyed by stable semantic identity.
@@ -240,12 +246,12 @@ pub struct FunctionRenderFacts {
     /// Stable return-effect identity for each returning instruction.
     pub return_effects_by_inst: r2ssa::dense::IdMap<r2ssa::InstId, r2ssa::SemanticId>,
     /// Stable memory-effect identities for each instruction, by direction.
-    pub memory_effects_by_inst: BTreeMap<MemoryEffectKey, Vec<r2ssa::SemanticId>>,
+    pub memory_effects_by_inst: IdMap<InstId, r2ssa::ByDirection<Vec<r2ssa::SemanticId>>>,
     /// Value annotations that supplement, rather than duplicate, certified expressions.
     pub string_literals_by_value: r2ssa::dense::IdMap<r2ssa::ValueId, StringLiteralRenderFact>,
     /// Type-owner render projections tied back to canonical memory-effect identities.
-    pub member_accesses_by_inst: BTreeMap<MemoryEffectKey, Vec<MemberAccessRenderFact>>,
-    pub array_accesses_by_inst: BTreeMap<MemoryEffectKey, Vec<ArrayAccessRenderFact>>,
+    pub member_accesses_by_inst: IdMap<InstId, r2ssa::ByDirection<Vec<MemberAccessRenderFact>>>,
+    pub array_accesses_by_inst: IdMap<InstId, r2ssa::ByDirection<Vec<ArrayAccessRenderFact>>>,
 }
 
 impl FunctionRenderFacts {
@@ -258,7 +264,9 @@ impl FunctionRenderFacts {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.certified_exprs.is_empty()
+        self.renderable_expressions.is_empty()
+            && self.bindings.is_empty()
+            && self.guarded_phis.is_empty()
             && self.certified_entities.is_empty()
             && self.certified_effects.is_empty()
             && self.return_effects_by_inst.is_empty()
@@ -268,16 +276,13 @@ impl FunctionRenderFacts {
             && self.array_accesses_by_inst.is_empty()
     }
 
-    pub fn expression_for_value(&self, value: r2ssa::ValueId) -> Option<&ExpressionRenderFact> {
-        self.certified_exprs.get(value).map(|cert| &cert.fact)
-    }
-
-    pub fn certified_expr_for_value(&self, value: r2ssa::ValueId) -> Option<&CertifiedExpr> {
-        self.certified_exprs.get(value)
+    /// The roles `value` carries, in identity order.
+    pub fn bindings_of(&self, value: r2ssa::ValueId) -> impl Iterator<Item = &r2ssa::SemanticId> {
+        self.bindings.get(value).into_iter().flatten()
     }
 
     pub fn guarded_phi_for_value(&self, value: r2ssa::ValueId) -> Option<&GuardedPhiRenderFact> {
-        self.certified_expr_for_value(value)?.guarded_phi.as_deref()
+        self.guarded_phis.get(value)
     }
 
     pub fn certified_effect(&self, id: r2ssa::SemanticId) -> Option<&CertifiedEffect> {
@@ -302,8 +307,7 @@ impl FunctionRenderFacts {
     /// This deliberately does not walk expression inputs: an expression that
     /// depends on one parameter is not necessarily identical to that parameter.
     pub fn exact_parameter_slot_for_value(&self, value: r2ssa::ValueId) -> Option<usize> {
-        let expr = self.certified_expr_for_value(value)?;
-        let mut slots = expr.bindings.iter().filter_map(|binding| {
+        let mut slots = self.bindings_of(value).filter_map(|binding| {
             let r2ssa::SemanticId::Parameter(slot) = binding else {
                 return None;
             };
@@ -325,27 +329,24 @@ impl FunctionRenderFacts {
     /// are deliberately excluded.
     pub fn unique_parameter_dependency_slot_for_value(
         &self,
+        graph: &r2ssa::SsaGraph,
         value: r2ssa::ValueId,
     ) -> Option<usize> {
-        let mut pending = vec![r2ssa::SemanticId::expression(value)];
-        let mut visited = BTreeSet::new();
+        let mut pending = vec![value];
+        let mut visited = r2ssa::dense::IdSet::default();
         let mut slots = BTreeSet::new();
-        while let Some(id) = pending.pop() {
-            if !visited.insert(id) {
+        while let Some(value) = pending.pop() {
+            if !visited.insert(value) {
                 continue;
             }
-            let r2ssa::SemanticId::Expression(value) = id else {
-                continue;
-            };
-            let Some(expr) = self.certified_exprs.get(value) else {
-                continue;
-            };
-            for binding in &expr.bindings {
+            for binding in self.bindings_of(value) {
                 if let r2ssa::SemanticId::Parameter(slot) = binding {
                     slots.insert(usize::try_from(*slot).ok()?);
                 }
             }
-            pending.extend(expr.inputs.iter().copied());
+            if let Some(inst) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) {
+                pending.extend(graph.inputs(inst.id).iter().copied());
+            }
         }
         let slot = slots.pop_first()?;
         slots.is_empty().then_some(slot)
@@ -356,8 +357,7 @@ impl FunctionRenderFacts {
     }
 
     pub fn expression_is_renderable(&self, value: r2ssa::ValueId) -> bool {
-        self.expression_for_value(value)
-            .is_some_and(|fact| fact.renderable)
+        self.renderable_expressions.contains(value)
     }
 
     pub fn string_literal_for_value(
@@ -378,7 +378,8 @@ impl FunctionRenderFacts {
     ) -> Option<&MemoryAccessRenderFact> {
         let mut matching = self
             .memory_effects_by_inst
-            .get(&(access.inst, is_write))?
+            .get(access.inst)?
+            .get(is_write)
             .iter()
             .filter_map(|id| {
                 self.certified_effects
@@ -398,7 +399,8 @@ impl FunctionRenderFacts {
     ) -> Option<&MemoryAccessRenderFact> {
         let mut matching = self
             .memory_effects_by_inst
-            .get(&(inst, is_write))?
+            .get(inst)?
+            .get(is_write)
             .iter()
             .filter_map(|id| {
                 self.certified_effects
@@ -432,7 +434,8 @@ impl FunctionRenderFacts {
         let memory = self.memory_access(access)?;
         let facts = self
             .member_accesses_by_inst
-            .get(&(memory.access.inst, memory.is_write))?;
+            .get(memory.access.inst)?
+            .get(memory.is_write);
         let mut matching = facts.iter().filter(|fact| {
             fact.access == memory.access
                 && fact.object == memory.object
@@ -492,8 +495,7 @@ impl FunctionRenderFacts {
     }
 
     pub fn loop_carrier_for_value(&self, value: r2ssa::ValueId) -> Option<&CertifiedEntity> {
-        let expr = self.certified_expr_for_value(value)?;
-        let mut carriers = expr.bindings.iter().filter_map(|binding| {
+        let mut carriers = self.bindings_of(value).filter_map(|binding| {
             let r2ssa::SemanticId::LoopCarrier(_) = binding else {
                 return None;
             };
@@ -533,7 +535,8 @@ impl FunctionRenderFacts {
         access_width: Option<u32>,
     ) -> Option<&MemberAccessRenderFact> {
         self.member_accesses_by_inst
-            .get(&(inst, is_write))?
+            .get(inst)?
+            .get(is_write)
             .iter()
             .find(|fact| {
                 let Some(memory) = self.memory_access(fact.access) else {
@@ -558,7 +561,8 @@ impl FunctionRenderFacts {
         access_width: Option<u32>,
     ) -> Option<&ArrayAccessRenderFact> {
         self.array_accesses_by_inst
-            .get(&(inst, is_write))?
+            .get(inst)?
+            .get(is_write)
             .iter()
             .find(|fact| {
                 let Some(memory) = self.memory_access(fact.access) else {
@@ -1191,7 +1195,7 @@ impl SourceOwnedFunctionFacts {
             .machine_context()
             .memory_model()
             .default_address_bits();
-        enriched.apply_certified_call_argument_type_constraints(ptr_bits);
+        enriched.apply_certified_call_argument_type_constraints(source.graph(), ptr_bits);
         let evidence = enriched.apply_recovered_evidence_types(source, ptr_bits);
         // Exact immutable interface evidence outranks advisory propagation.
         // Apply it after recovered call evidence so the latter cannot rewrite
@@ -1667,7 +1671,8 @@ impl FunctionFacts {
             let indexed = self
                 .render
                 .array_accesses_by_inst
-                .get(&(memory.access.inst, memory.is_write))
+                .get(memory.access.inst)
+                .map(|facts| facts.get(memory.is_write))
                 .and_then(|facts| {
                     facts.iter().find(|fact| {
                         fact.access == memory.access
@@ -1773,8 +1778,9 @@ impl FunctionFacts {
             });
         }
         for fact in member_facts {
-            let key = (fact.access.inst, fact.is_write);
-            let facts = self.render.member_accesses_by_inst.entry(key).or_default();
+            let facts = (self.render.member_accesses_by_inst)
+                .get_or_insert_with(fact.access.inst, r2ssa::ByDirection::default)
+                .get_mut(fact.is_write);
             // The declared name replaces one an external layout guessed: two facts for one
             // access are no fact at all, because the lookup requires exactly one.
             facts.retain(|existing| {
@@ -1823,8 +1829,9 @@ impl FunctionFacts {
             let Some(inst) = prepared.graph().inst_for_op(candidate.op) else {
                 continue;
             };
-            let key = (inst, candidate.is_write);
-            let Some(effect_ids) = self.render.memory_effects_by_inst.get(&key) else {
+            let Some(effect_ids) = (self.render.memory_effects_by_inst.get(inst))
+                .map(|effects| effects.get(candidate.is_write))
+            else {
                 continue;
             };
             for effect_id in effect_ids {
@@ -1859,14 +1866,15 @@ impl FunctionFacts {
         }
 
         for fact in member_facts {
-            let key = (fact.access.inst, fact.is_write);
-            let facts = self.render.member_accesses_by_inst.entry(key).or_default();
+            let facts = (self.render.member_accesses_by_inst)
+                .get_or_insert_with(fact.access.inst, r2ssa::ByDirection::default)
+                .get_mut(fact.is_write);
             if !facts.contains(&fact) {
                 facts.push(fact);
             }
         }
 
-        for facts in self.render.member_accesses_by_inst.values_mut() {
+        for facts in (self.render.member_accesses_by_inst.values_mut()).flat_map(|d| d.each_mut()) {
             facts.sort_by(|a, b| {
                 (
                     a.is_write,
@@ -1939,8 +1947,9 @@ impl FunctionFacts {
             let Some(inst) = prepared.graph().inst_for_op(candidate.op) else {
                 continue;
             };
-            let key = (inst, candidate.is_write);
-            let Some(effect_ids) = self.render.memory_effects_by_inst.get(&key) else {
+            let Some(effect_ids) = (self.render.memory_effects_by_inst.get(inst))
+                .map(|effects| effects.get(candidate.is_write))
+            else {
                 continue;
             };
             let effect_ids = effect_ids.clone();
@@ -1974,14 +1983,16 @@ impl FunctionFacts {
                     base: Some(base),
                     index: Some(index),
                 };
-                let facts = self.render.array_accesses_by_inst.entry(key).or_default();
+                let facts = (self.render.array_accesses_by_inst)
+                    .get_or_insert_with(inst, r2ssa::ByDirection::default)
+                    .get_mut(fact.is_write);
                 if !facts.contains(&fact) {
                     facts.push(fact);
                 }
             }
         }
 
-        for facts in self.render.array_accesses_by_inst.values_mut() {
+        for facts in (self.render.array_accesses_by_inst.values_mut()).flat_map(|d| d.each_mut()) {
             facts.sort_by_key(|fact| {
                 (
                     fact.is_write,
@@ -2032,10 +2043,7 @@ impl FunctionFacts {
                 .parameter_values(candidate.slot)
                 .next()
                 .is_none()
-            || !self
-                .render
-                .certified_expr_for_value(index)
-                .is_some_and(|expr| expr.fact.renderable)
+            || !self.render.expression_is_renderable(index)
         {
             return None;
         }
@@ -2158,10 +2166,10 @@ impl FunctionFacts {
             let Some(parameter_id) = r2ssa::SemanticId::parameter(slot) else {
                 continue;
             };
-            let Some(cert) = self.render.certified_exprs.get_mut(value.id) else {
-                continue;
-            };
-            cert.bindings.insert(parameter_id);
+            self.render
+                .bindings
+                .get_or_insert_with(value.id, BTreeSet::new)
+                .insert(parameter_id);
             r2il::refusal_evidence!(
                 "parameter-entry",
                 "slot {slot} entry value {:?} of {} bytes ({:?})",
@@ -2193,47 +2201,40 @@ impl FunctionFacts {
             if !slots.is_empty() {
                 continue;
             }
-            let Some(expr) = self.render.certified_exprs.get_mut(reload.value) else {
-                continue;
-            };
-            expr.bindings.insert(r2ssa::SemanticId::Parameter(slot));
+            self.render
+                .bindings
+                .get_or_insert_with(reload.value, BTreeSet::new)
+                .insert(r2ssa::SemanticId::Parameter(slot));
             parameter_slot_by_value.insert(reload.value, slot);
         }
 
         // Preserve exact parameter identity through same-width copies. This is
         // an alias relation, unlike the broader expression dependency walk:
         // arithmetic, loads, casts, and phi nodes never inherit the binding.
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for value in &prepared.graph().values {
-                if parameter_slot_by_value.contains(value.id) {
-                    continue;
-                }
-                let Some(inst) = prepared
-                    .graph()
-                    .def_inst(value.id)
-                    .and_then(|inst| prepared.graph().inst(inst))
-                else {
+        // A copy has one source, so one walk forward from the bound values, `O(V + E)`.
+        let graph = prepared.graph();
+        let mut ready = parameter_slot_by_value.keys().collect::<Vec<_>>();
+        while let Some(source) = ready.pop() {
+            let slot = parameter_slot_by_value[source];
+            for site in graph.use_sites(source) {
+                let Some(inst) = graph.inst(site.inst) else {
                     continue;
                 };
                 let r2ssa::InstPayload::Op(r2ssa::SSAOp::Copy { dst, src }) = &inst.payload else {
                     continue;
                 };
-                let graph = prepared.graph();
-                if graph.var(*dst).size != graph.var(*src).size {
+                if *src != source
+                    || graph.var(*dst).size != graph.var(*src).size
+                    || parameter_slot_by_value.contains(*dst)
+                {
                     continue;
                 }
-                let source = *src;
-                let Some(slot) = parameter_slot_by_value.get(source).copied() else {
-                    continue;
-                };
-                let Some(expr) = self.render.certified_exprs.get_mut(value.id) else {
-                    continue;
-                };
-                expr.bindings.insert(r2ssa::SemanticId::Parameter(slot));
-                parameter_slot_by_value.insert(value.id, slot);
-                changed = true;
+                self.render
+                    .bindings
+                    .get_or_insert_with(*dst, BTreeSet::new)
+                    .insert(r2ssa::SemanticId::Parameter(slot));
+                parameter_slot_by_value.insert(*dst, slot);
+                ready.push(*dst);
             }
         }
         for (slot, (entry_value, carrier_width)) in entry_value_by_slot {
@@ -2448,12 +2449,16 @@ impl FunctionFacts {
     /// A constraint is accepted only when the callsite argument has a unique
     /// certified path to one ABI parameter and the callee identity carries a
     /// typed signature. Conflicting callees leave the caller type unchanged.
-    pub fn apply_certified_call_argument_type_constraints(&mut self, ptr_bits: u32) -> usize {
+    pub fn apply_certified_call_argument_type_constraints(
+        &mut self,
+        graph: &r2ssa::SsaGraph,
+        ptr_bits: u32,
+    ) -> usize {
         let type_db = &self.types.external_type_db;
         let mut constraints = BTreeMap::<usize, CTypeLike>::new();
         let mut conflicted = BTreeSet::new();
         for (callsite, arguments) in &self.callsites.by_callsite {
-            let identity = self.callee_resolution.identity_for_callsite(*callsite);
+            let identity = self.callee_resolution.identity_for_callsite(callsite);
             let signature = arguments
                 .callee_signature
                 .as_ref()
@@ -2467,7 +2472,7 @@ impl FunctionFacts {
                 };
                 let Some(slot) = self
                     .render
-                    .unique_parameter_dependency_slot_for_value(argument.value)
+                    .unique_parameter_dependency_slot_for_value(graph, argument.value)
                 else {
                     continue;
                 };
@@ -2757,7 +2762,7 @@ impl FunctionFacts {
         for (callsite, arguments) in &self.callsites.by_callsite {
             let Some(signature) = arguments.callee_signature.as_ref().or_else(|| {
                 self.callee_resolution
-                    .identity_for_callsite(*callsite)
+                    .identity_for_callsite(callsite)
                     .and_then(crate::CalleeIdentity::known_signature)
             }) else {
                 continue;

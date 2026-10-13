@@ -95,7 +95,7 @@ pub use assumption::{
     AnalysisAssumption, AnalysisAssumptionConflict, AssumptionProvenance, AssumptionScope,
     AssumptionSet, AssumptionSubject, AssumptionUsageReport, AssumptionValue,
 };
-pub use block::{BlockMut, SSABlock, branch_condition};
+pub use block::{BlockMut, SSABlock, branch_condition, branch_condition_in};
 pub use cfg::{BasicBlock, BlockTerminator, CFG, CFGEdge, DeclaredSuccessors};
 pub use control::{
     SsaCancellationToken, SsaExecutionControl, SsaExecutionStopReason, SsaPrepareError,
@@ -170,30 +170,29 @@ pub use r2sleigh_lift::{
 };
 pub use r2source::OwnedFunctionSnapshot;
 pub use semantic::{
-    BlockAssumption, CallArgumentCertificate, CallArgumentLocation, CallBoundarySlot,
+    BlockAssumption, ByDirection, CallArgumentCertificate, CallArgumentLocation, CallBoundarySlot,
     CallBoundaryValueFact, CallFrameReach, CallMemoryEffect, CallResultCertificate,
     CallResultValueRelation, CallSiteFact, CallSiteFacts, CallSiteId, CallSiteTransfer,
     CalleeStackAllocationCertificate, CallerSlotSupply, CallerStackSlotCertificate,
     CallsiteCertificate, CompareKind, CompareProvenance, ControlDomain, ControlDomainFacts,
     ControlDomainId, ControlGuard, EntryAffineForm, ExtentAssumption, ForLoopCertificate,
-    FrameReach, GlobalObjectKey, IfRegionCertificate, InductionFact, InductionStep,
-    LoopCarrierEdgeValue, LoopCarrierFact, LoopCarrierMemberFact, LoopCarrierMemberRole,
-    LoopCarrierUpdateFact, LoopCertificate, LoopId, LoopTrips, MachineReturnControlCertificate,
-    MemberRunPlace, MemberRunSource, MemberRunStoreCertificate, MemberRunStoreMember,
-    MemoryAccessCertificate, MemoryDefFact, MemoryLocation, MemoryObjectKey, MemoryPhiFact,
-    MemorySSAFacts, MemoryUseFact, MemoryVersion, ObjectFact, ObjectId, ObjectKind, ObjectModel,
-    ObjectSpaceId, ParameterObjectKey, PredicateFact, PredicateFacts, PredicateId,
-    PreparedAssumptionBinding, PreparedAssumptionBindingKind, PreparedFunctionCertificates,
-    PreparedFunctionFacts, PreparedProofFailure, ProofNodeId, RelativeMemoryAddress, ReturnCarrier,
-    ReturnValueCertificate, SemanticId, SourceBoundaryFacts, SourceCallArgumentFact,
-    SourceCallArgumentValue, SourceCallBoundaryFact, SourceFormalParameterFact,
-    SourceReturnAddressFact, SourceReturnBoundaryFact, SourceReturnStackPointerFact,
-    StackArrayElementCertificate, StackArrayElementIndex, StackArrayLayoutCertificate,
-    StackArrayLayoutDisposition, StackArrayLayoutRefusal, StackFrameRoundTripCertificate,
-    StackGeometryCertificate, StackObjectKey, StackSlotCertificate, StructuredAccessId,
-    StructuredDataflowFacts, StructuredLoopFact, StructuredLoopKind, StructuredMemoryAccessFact,
-    StructuredRecursiveCallFact, SupervisorCall, SwitchCertificate, SwitchGuardCertificate,
-    SwitchPredicateFact, TripCount, TripGuard, TripRefusal, TripTest, TwoWaySelectionCertificate,
+    FrameReach, GlobalObjectKey, InductionFact, InductionStep, LoopCarrierEdgeValue,
+    LoopCarrierFact, LoopCarrierMemberFact, LoopCarrierMemberRole, LoopCarrierUpdateFact,
+    LoopCertificate, LoopId, LoopTrips, MachineReturnControlCertificate, MemberRunPlace,
+    MemberRunSource, MemberRunStoreCertificate, MemberRunStoreMember, MemoryAccessCertificate,
+    MemoryDefFact, MemoryLocation, MemoryObjectKey, MemoryPhiFact, MemorySSAFacts, MemoryUseFact,
+    MemoryVersion, ObjectFact, ObjectId, ObjectKind, ObjectModel, ObjectSpaceId,
+    ParameterObjectKey, PredicateFact, PredicateFacts, PredicateId, PreparedAssumptionBinding,
+    PreparedAssumptionBindingKind, PreparedFunctionCertificates, PreparedFunctionFacts,
+    ProofNodeId, RelativeMemoryAddress, ReturnCarrier, ReturnValueCertificate, SemanticId,
+    SourceBoundaryFacts, SourceCallArgumentFact, SourceCallArgumentValue, SourceCallBoundaryFact,
+    SourceFormalParameterFact, SourceReturnAddressFact, SourceReturnBoundaryFact,
+    SourceReturnStackPointerFact, StackArrayElementCertificate, StackArrayElementIndex,
+    StackArrayLayoutCertificate, StackArrayLayoutDisposition, StackArrayLayoutRefusal,
+    StackFrameRoundTripCertificate, StackGeometryCertificate, StackObjectKey, StackSlotCertificate,
+    StructuredAccessId, StructuredDataflowFacts, StructuredLoopFact, StructuredLoopKind,
+    StructuredMemoryAccessFact, StructuredRecursiveCallFact, SupervisorCall, SwitchCertificate,
+    SwitchGuardCertificate, SwitchPredicateFact, TripCount, TripGuard, TripRefusal, TripTest,
     ValueOwner, VariadicCallsiteArgumentCountEvidence, VariadicCallsiteArgumentCountRefusal,
     returned_bytes, value_reaching,
 };

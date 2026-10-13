@@ -17,7 +17,6 @@ fn inst_at(prepared: &r2ssa::SsaArtifact, block_addr: u64, index: usize) -> r2ss
 /// The operation a fixture names by its block and its place in the block.
 fn op_at(prepared: &r2ssa::SsaArtifact, block_addr: u64, index: usize) -> r2ssa::OpId {
     prepared
-        .function()
         .named_block(block_addr)
         .and_then(|block| block.op_id(index))
         .expect("the fixture's operation")
@@ -764,9 +763,7 @@ fn function_facts_owns_input_quality_evidence() {
 
 #[test]
 fn function_facts_owns_canonical_callee_resolution() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(3),
-    };
+    let callsite = r2ssa::InstId(3);
     let function_names = HashMap::from([(0x402000, "sym.helper".to_string())]);
     let symbols = HashMap::new();
     let known_function_signatures = HashMap::new();
@@ -797,9 +794,7 @@ fn prepared_display_name_does_not_create_a_known_signature() {
         target: Varnode::constant(0x402000, 8),
     });
     let prepared = x86_stack_home_under(&[block], None, Vec::new()).expect("prepared direct call");
-    let callsite = CallsiteKey {
-        at: inst_at(&prepared, 0x401000, 0),
-    };
+    let callsite = inst_at(&prepared, 0x401000, 0);
     let mut names = crate::DisplayNames::default();
     names.insert_function(0x402000, "sym.imp.__memcpy_chk");
     let mut facts = FunctionFacts::default();
@@ -818,12 +813,10 @@ fn prepared_display_name_does_not_create_a_known_signature() {
 
 #[test]
 fn function_facts_owns_canonical_callsite_arguments() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let value = r2ssa::ValueId(11);
     let callsites = FunctionCallsiteFacts {
-        by_callsite: BTreeMap::from([(
+        by_callsite: r2ssa::dense::IdMap::from_iter([(
             callsite,
             CallsiteArgumentFacts {
                 callsite,
@@ -1000,9 +993,7 @@ fn a_storage_width_scalar_is_not_evidence_for_replacing_another_one() {
 
 #[test]
 fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let value = r2ssa::ValueId(11);
     let signed_byte = CTypeLike::Int {
         bits: 8,
@@ -1029,7 +1020,7 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
     let resolution =
         CalleeResolutionFacts::from_direct_call_targets([(callsite, 0x402000)], &identity_ctx);
     let callsites = FunctionCallsiteFacts {
-        by_callsite: BTreeMap::from([(
+        by_callsite: r2ssa::dense::IdMap::from_iter([(
             callsite,
             CallsiteArgumentFacts {
                 callsite,
@@ -1052,21 +1043,10 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
         )]),
     };
     let mut render = FunctionRenderFacts::default();
-    render.certified_exprs.insert(
-        value,
-        CertifiedExpr {
-            id: r2ssa::SemanticId::expression(value),
-            fact: ExpressionRenderFact {
-                value,
-                defining_inst: Some(r2ssa::InstId(4)),
-                width: 8,
-                renderable: true,
-            },
-            inputs: Vec::new(),
-            bindings: BTreeSet::from([r2ssa::SemanticId::Parameter(0)]),
-            guarded_phi: None,
-        },
-    );
+    render.renderable_expressions.insert(value);
+    render
+        .bindings
+        .insert(value, BTreeSet::from([r2ssa::SemanticId::Parameter(0)]));
     let signature = FunctionSignatureSpec {
         ret_type: Some(CTypeLike::Int {
             bits: 64,
@@ -1092,7 +1072,16 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
     .with_callsites(callsites)
     .with_render(render);
 
-    assert_eq!(facts.apply_certified_call_argument_type_constraints(64), 1);
+    // The argument is bound to the parameter itself: no definition to walk.
+    let mut block = R2ILBlock::new(0x401000, 4);
+    block.push(R2ILOp::Return {
+        target: Varnode::register(0x10, 8),
+    });
+    let graph = r2ssa::SsaArtifact::raw(&[block], None).expect("SSA");
+    assert_eq!(
+        facts.apply_certified_call_argument_type_constraints(graph.graph(), 64),
+        1
+    );
     let typed = facts
         .type_facts()
         .render_authorized_signature()
@@ -1111,13 +1100,11 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
 
 #[test]
 fn function_facts_owns_canonical_call_render_disposition() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let target = r2ssa::ValueId(10);
     let arg = r2ssa::ValueId(11);
     let render = FunctionCallRenderFacts {
-        by_callsite: BTreeMap::from([(
+        by_callsite: r2ssa::dense::IdMap::from_iter([(
             callsite,
             CallsiteRenderFact {
                 callsite,
@@ -1142,9 +1129,7 @@ fn function_facts_owns_canonical_call_render_disposition() {
 
 #[test]
 fn callsite_facts_own_canonical_argument_vector() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let register_value = r2ssa::ValueId(11);
     let stack_value = r2ssa::ValueId(12);
     let duplicate_stack_value = r2ssa::ValueId(99);
@@ -1211,9 +1196,7 @@ fn callsite_facts_own_canonical_argument_vector() {
 
 #[test]
 fn function_facts_owns_canonical_call_results() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let value = r2ssa::ValueId(21);
     let derived_value = r2ssa::ValueId(22);
     let owner = r2ssa::ValueOwner::StackSlot {
@@ -1264,7 +1247,7 @@ fn function_facts_owns_canonical_call_results() {
                 },
             ),
         ]),
-        by_callsite: BTreeMap::from([(callsite, vec![value, derived_value])]),
+        by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, vec![value, derived_value])]),
     };
 
     let facts = FunctionFacts::default().with_call_results(call_results);
@@ -1302,9 +1285,7 @@ fn function_facts_owns_canonical_call_results() {
 
 #[test]
 fn call_result_definition_is_not_replaced_by_a_later_stack_owner() {
-    let callsite = crate::CallsiteKey {
-        at: r2ssa::InstId(7),
-    };
+    let callsite = r2ssa::InstId(7);
     let defined = r2ssa::ValueId(20);
     let stored = r2ssa::ValueId(21);
     let storage = r2ssa::CanonicalStorageId {
@@ -1345,7 +1326,7 @@ fn call_result_definition_is_not_replaced_by_a_later_stack_owner() {
                 },
             ),
         ]),
-        by_callsite: BTreeMap::from([(callsite, vec![defined, stored])]),
+        by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, vec![defined, stored])]),
     };
 
     assert_eq!(
@@ -1408,7 +1389,6 @@ fn prepared_call_results_bind_certified_exprs_to_stable_call_ids() {
     facts.attach_prepared_decompile_evidence(&prepared);
 
     let store_value = prepared
-        .function()
         .named_block(0x401000)
         .expect("entry block")
         .ops()
@@ -1423,13 +1403,10 @@ fn prepared_call_results_bind_certified_exprs_to_stable_call_ids() {
         .and_then(|results| results.result_for_value(store_value))
         .expect("canonical call-result fact");
     let binding = r2ssa::SemanticId::call(result.call_site_id);
-    let certified = facts
-        .render()
-        .and_then(|render| render.certified_expr_for_value(store_value))
-        .expect("certified call-result expression");
+    let render = facts.render().expect("render facts");
 
-    assert!(certified.fact.renderable);
-    assert!(certified.bindings.contains(&binding));
+    assert!(render.expression_is_renderable(store_value));
+    assert!(render.bindings_of(store_value).any(|role| *role == binding));
 }
 
 #[test]
@@ -1517,9 +1494,7 @@ fn an_implicit_call_read_keeps_its_entry_value_as_a_certified_parameter() {
 
     let mut facts = FunctionFacts::default();
     facts.attach_prepared_decompile_evidence(&prepared);
-    let callsite = CallsiteKey {
-        at: inst_at(&prepared, 0x401000, 0),
-    };
+    let callsite = inst_at(&prepared, 0x401000, 0);
     assert_eq!(
         facts
             .callsites()
@@ -1579,9 +1554,7 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
         target: Varnode::constant(0x402000, 8),
     });
     let prepared = x86_stack_home_prepared(&[block]);
-    let callsite = CallsiteKey {
-        at: inst_at(&prepared, 0x401000, 0),
-    };
+    let callsite = inst_at(&prepared, 0x401000, 0);
     let sentinel_value = r2ssa::ValueId(0xfeed);
     let sentinel_callsite = CallsiteArgumentFacts {
         callsite,
@@ -1637,15 +1610,15 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
                 source: StringLiteralRenderSource::TypedFunctionFacts,
             },
         )]),
-        member_accesses_by_inst: BTreeMap::from([(member_op, vec![member_access])]),
+        member_accesses_by_inst: by_direction([(member_op, vec![member_access])]),
         ..FunctionRenderFacts::default()
     };
     let mut facts = FunctionFacts::default()
         .with_callsites(FunctionCallsiteFacts {
-            by_callsite: BTreeMap::from([(callsite, sentinel_callsite.clone())]),
+            by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, sentinel_callsite.clone())]),
         })
         .with_call_render(FunctionCallRenderFacts {
-            by_callsite: BTreeMap::from([(callsite, sentinel_render.clone())]),
+            by_callsite: r2ssa::dense::IdMap::from_iter([(callsite, sentinel_render.clone())]),
         })
         .with_render(existing_render);
 
@@ -1675,7 +1648,7 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
     assert!(
         facts
             .render()
-            .and_then(|render| render.member_accesses_by_inst.get(&member_op))
+            .and_then(|render| render.member_accesses_by_inst.get(member_op.0))
             .is_none(),
         "an unvalidated detached member projection must be removed during source rebuild"
     );
@@ -2144,9 +2117,7 @@ fn prepared_render_facts_certify_params_stack_memory_and_returns_by_semantic_id(
         .expect("entry rdi value");
     let param_id = r2ssa::SemanticId::parameter(0).expect("parameter ID");
     assert!(
-        render
-            .certified_expr_for_value(rdi.id)
-            .is_some_and(|expr| expr.bindings.contains(&param_id)),
+        render.bindings_of(rdi.id).any(|role| *role == param_id),
         "entry parameter binding must use ABI slot identity"
     );
     assert!(render.parameter_values(0).any(|value| value == rdi.id));
@@ -2166,8 +2137,8 @@ fn prepared_render_facts_certify_params_stack_memory_and_returns_by_semantic_id(
         .expect("certified parameter-home reload");
     assert!(
         render
-            .certified_expr_for_value(reloaded.value)
-            .is_some_and(|expr| expr.bindings.contains(&param_id)),
+            .bindings_of(reloaded.value)
+            .any(|role| *role == param_id),
         "parameter identity must cross its certified stack-home reload"
     );
     assert!(
@@ -2181,9 +2152,9 @@ fn prepared_render_facts_certify_params_stack_memory_and_returns_by_semantic_id(
     );
     assert!(
         render
-            .certified_exprs
+            .bindings
             .values()
-            .all(|expr| !expr.bindings.contains(&r2ssa::SemanticId::Parameter(1))),
+            .all(|roles| !roles.contains(&r2ssa::SemanticId::Parameter(1))),
         "unused ABI entry registers beyond signature arity must not become parameters"
     );
 
@@ -2264,7 +2235,6 @@ fn prepared_render_facts_certify_branch_guarded_phi() {
     )
     .expect("prepared");
     let phi = prepared
-        .function()
         .named_block(0x40100c)
         .and_then(|block| {
             block
@@ -2393,7 +2363,7 @@ fn parameter_identity_is_distinct_from_single_parameter_dependency() {
     assert_eq!(render.exact_parameter_slot_for_value(copied.id), Some(0));
     assert_eq!(render.exact_parameter_slot_for_value(derived.id), None);
     assert_eq!(
-        render.unique_parameter_dependency_slot_for_value(derived.id),
+        render.unique_parameter_dependency_slot_for_value(prepared.graph(), derived.id),
         Some(0)
     );
 }
@@ -2571,7 +2541,6 @@ fn scalar_array_candidates_populate_indexed_member_render_facts() {
     });
     let prepared = x86_stack_home_prepared(&[block]);
     let load_index = prepared
-        .function()
         .named_block(0x401000)
         .expect("block")
         .ops()
@@ -2820,28 +2789,13 @@ fn function_facts_owns_canonical_render_facts() {
         ordinal: 0,
     };
     let object = r2ssa::ObjectId(3);
-    let expression_id = r2ssa::SemanticId::expression(value);
     let memory_id = r2ssa::SemanticId::memory_access(access);
     let return_at = r2ssa::InstId(9);
     let return_id = r2ssa::SemanticId::return_value(return_at);
     let render = FunctionRenderFacts {
-        certified_exprs: [(
-            value,
-            CertifiedExpr {
-                id: expression_id,
-                fact: ExpressionRenderFact {
-                    value,
-                    defining_inst: Some(r2ssa::InstId(8)),
-                    width: 8,
-                    renderable: true,
-                },
-                inputs: Vec::new(),
-                bindings: BTreeSet::new(),
-                guarded_phi: None,
-            },
-        )]
-        .into_iter()
-        .collect(),
+        renderable_expressions: [value].into_iter().collect(),
+        bindings: r2ssa::dense::IdMap::default(),
+        guarded_phis: r2ssa::dense::IdMap::default(),
         certified_entities: BTreeMap::from([(
             r2ssa::SemanticId::stack_slot(object),
             CertifiedEntity::StackSlot {
@@ -2893,7 +2847,7 @@ fn function_facts_owns_canonical_render_facts() {
             ),
         ]),
         return_effects_by_inst: r2ssa::dense::IdMap::from_iter([(return_at, return_id)]),
-        memory_effects_by_inst: BTreeMap::from([((r2ssa::InstId(7), true), vec![memory_id])]),
+        memory_effects_by_inst: by_direction([((r2ssa::InstId(7), true), vec![memory_id])]),
         string_literals_by_value: r2ssa::dense::IdMap::from_iter([(
             value,
             StringLiteralRenderFact {
@@ -2903,7 +2857,7 @@ fn function_facts_owns_canonical_render_facts() {
                 source: StringLiteralRenderSource::TypedFunctionFacts,
             },
         )]),
-        member_accesses_by_inst: BTreeMap::from([(
+        member_accesses_by_inst: by_direction([(
             (r2ssa::InstId(7), true),
             vec![MemberAccessRenderFact {
                 access,
@@ -2917,7 +2871,7 @@ fn function_facts_owns_canonical_render_facts() {
                 source: MemberAccessSource::ExternalLayout,
             }],
         )]),
-        array_accesses_by_inst: BTreeMap::from([(
+        array_accesses_by_inst: by_direction([(
             (r2ssa::InstId(7), true),
             vec![ArrayAccessRenderFact {
                 access,
@@ -3018,8 +2972,8 @@ fn function_render_facts_require_exact_array_access_identity() {
                 },
             },
         )]),
-        memory_effects_by_inst: BTreeMap::from([((r2ssa::InstId(7), false), vec![memory_id])]),
-        array_accesses_by_inst: BTreeMap::from([(
+        memory_effects_by_inst: by_direction([((r2ssa::InstId(7), false), vec![memory_id])]),
+        array_accesses_by_inst: by_direction([(
             (r2ssa::InstId(7), false),
             vec![ArrayAccessRenderFact {
                 access,
@@ -3075,8 +3029,9 @@ fn function_render_facts_require_exact_array_access_identity() {
     let mut wrong_object = render.clone();
     wrong_object
         .array_accesses_by_inst
-        .get_mut(&(r2ssa::InstId(7), false))
+        .get_mut(r2ssa::InstId(7))
         .expect("array fact")
+        .get_mut(false)
         .first_mut()
         .expect("array fact")
         .object = r2ssa::ObjectId(9);
@@ -3090,8 +3045,9 @@ fn function_render_facts_require_exact_array_access_identity() {
     let mut wrong_access = render;
     wrong_access
         .array_accesses_by_inst
-        .get_mut(&(r2ssa::InstId(7), false))
+        .get_mut(r2ssa::InstId(7))
         .expect("array fact")
+        .get_mut(false)
         .first_mut()
         .expect("array fact")
         .access = other_access;
@@ -3141,7 +3097,7 @@ fn memory_access_lookup_requires_exact_address_space() {
             effect(ram_access, r2il::SpaceId::Ram),
             effect(custom_access, r2il::SpaceId::Custom(7)),
         ]),
-        memory_effects_by_inst: BTreeMap::from([(
+        memory_effects_by_inst: by_direction([(
             (r2ssa::InstId(7), false),
             vec![ram_id, custom_id],
         )]),
@@ -3589,4 +3545,15 @@ fn a_packed_aggregate_is_refused() {
     assert!(!aggregate_is_definable(&graph, "pair"));
     let tail = pair_graph(32, 128, 64).expect("a pair padded past its alignment");
     assert_eq!(aggregate_members(&tail, "pair"), None);
+}
+
+/// Facts by instruction and direction, as the render facts hold them.
+fn by_direction<T>(
+    entries: impl IntoIterator<Item = ((r2ssa::InstId, bool), Vec<T>)>,
+) -> r2ssa::dense::IdMap<r2ssa::InstId, r2ssa::ByDirection<Vec<T>>> {
+    let mut map = r2ssa::dense::IdMap::default();
+    for ((inst, is_write), facts) in entries {
+        *(map.get_or_insert_with(inst, r2ssa::ByDirection::default)).get_mut(is_write) = facts;
+    }
+    map
 }

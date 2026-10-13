@@ -464,7 +464,6 @@ fn prepared_call_result_refuses_display_named_stack_store_reload_owner() {
     let prepared = prepared_preserving(&blocks, &arch, &["rbx", "rsp", "rbp"])
         .expect("prepared SSA should build");
     let alias_var = prepared
-        .function()
         .named_block(0x1780)
         .and_then(|block| {
             block.ops().iter().find_map(|op| match op {
@@ -483,7 +482,6 @@ fn prepared_call_result_refuses_display_named_stack_store_reload_owner() {
             .is_none()
     );
     let truncated_var = prepared
-        .function()
         .named_block(0x1780)
         .and_then(|block| {
             block.ops().iter().find_map(|op| match op {
@@ -915,7 +913,7 @@ fn reads_of_the_same_bytes_under_the_same_memory_are_one_content_in_any_block() 
         panic!("four reads of the parameter's memory: {reads:?}");
     };
     assert_eq!(object, field_object, "one object at two offsets");
-    let content = artifact.liveness().values();
+    let (content, _) = artifact.recomputed_liveness();
     assert!(
         !content.same_content(*a, *b),
         "two fields of one object are two contents"

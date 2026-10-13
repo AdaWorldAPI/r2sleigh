@@ -123,7 +123,7 @@ The program
 | **C** Provenance ([provenance](doc/adr-provenance.md)) | C0; C1 types and the format parameter | C1 r2dec reads the grade (`from_source_signature` deleted); C2 every answer field a `Fact`; C3 r2types on `Basis` (with T); C4 references carry `Confidence` |
 | **P5** Values as an index | the value view states lanes: `INSERT(w, x, k)` with `x` another value's bits at `k` grows `w`'s prefix through the lane, and an insert above keeps the bits below it; `ValueViews::low_lane_value` indexes, per root, the value that is exactly its low bits at each width; a register call argument reached as a wider root write names that value, its root write kept as `lane_of` and checked by the certificate (`swap_call`: `return scale(b, a);`); a load from bytes the program never writes folds to them, captured by r2engine where `TableBytes` says read-only and no literal store overlaps (`store(1.25, p)`, `x *= 0.5`); `r2il::eval` refuses an insert past the 128 carried bits | the renderer reads the views (D2): bound lane carriers (`__uint128_t XMM0_5 = (__uint128_t)bits(half(..))`), bitwise vector ops on a scalar lane (`andpd`/`orpd` in `floor_at`) and all-literal lane inserts (`xorps` zeroing) are D's, since folding the inserts to 128-bit literals first loses the lane the argument narrowing reads; a return slot reached as a wider root reads the views as arguments do (with LX's storage index); a load whose literal address SSA folds (aarch64 `adrp`/`ldr`) is captured on the restated preparation, as folded string literals are |
 | **P6** One resolved body per function, as a query | [resolved-bodies](doc/adr-resolved-bodies.md); P6a the walk through dispatch tables is the `Walked` query; P6c1 a callee resolved as a root is; P6c2 return-only demand (`Resolved`, `Demand`, `result_owners`); `read_callees` kept as the one loop a root reads callees through (the database answers it with `Resolved`, a plain `Program` with each callee resolved alone) | its remainder is SM: a summary held once per session with demand bounded to what is held, so the 21 s transitive resolution measured for pumasim `main` is never paid by one `pdd`; parameters stay what each body proves alone |
-| **I** Unread container facts (CFI, LSDA, IBT, RELRO, init arrays) | — | stripped discovery finds every FDE start |
+| **I** Unread container facts (CFI, LSDA, IBT, RELRO, init arrays) | init, fini and preinit arrays as entries (`EntryKind`) and RELRO as sealed ranges (`TableBytes::LoaderWritten`), both earlier; CFI (#184): each frame `.eh_frame` states seeds discovery as `Stated`, except a frame in a section of linkage code (the stub walk now returns those sections, `naming::Linkage`, so a CET `.plt` of resolver and lazy entries counts though it names no stub); stripped coreutils `true` 74 of 74 FDE starts found (functions 13 to 78; radare2 `aaa` 26), `ls` 279 of 279 (105 to 283; radare2 145); the rest are GCC `.cold` fragments' own FDEs, judged functions as their local symbols say when unstripped; census: stripped `hashes_gcc_x64_O2` now finds `_dl_relocate_static_pie` at 0x401270, rendered as the unstripped build renders it | LSDA landing pads as statements about their functions (a C++ catch block no edge reaches); IBT `endbr64` markers as candidate starts (decoded, so weaker than a frame, and only where no frame states one); the differential sweep (W) to grade function sets against radare2 and DWARF |
 | **P7** Call contracts | Darwin arm64 variadic tail (M1c); declared `double` arguments reach their calls (B3) | no dropped or invented argument; printf's stack tail on x86-64; a recovered interface's float parameters and float result (a body's float work feeds only the float result, so recovery never observes it; the variadic save area's spills read as parameters in both classes, and the convention's `al` read at entry states the tail) |
 | **P8** Data objects and strings | — | `iz` lists proven strings |
 | **P9** Types over the graph | — | a struct pointer is not `uint32_t*` (its first exit is T's; recursive and polymorphic types after T) |
@@ -330,6 +330,111 @@ maintainer accepts broken renderings on `rebuild` until it merges.
       7. **LX2**, D27's adapter deleted: D0 reads T's and F2's dense
          indexes.
       8. **D26**'s purge delay, the maintainer's (PF row).
+      9. **MM**, memory as a linear budget
+         ([memory-model](doc/adr-memory-model.md)). Two causes, measured
+         2026-10-12: a session held whole per-function answers (renderings
+         with their facts, analyses and sealings up to 200,000 operations
+         each), and one function's peak holds about ten representations of
+         it at once, about 2 KB of heap per SSA operation. The only
+         functions over 1 GB were a debug file's zero fill decoded as code.
+         Done (stack #165): the walk stops at the file's last byte (#166);
+         a held rendering keeps its text, ledger and premises (#168); a
+         function's walk, analysis, sealing and rendering are held only
+         while newest, program-wide facts (summaries, names, returns) held
+         (#169); a prepared function keeps its walk's outline, not its lift
+         (#170); facts nothing reads are not kept (#171); the ledger holds
+         each obligation once (#172); a value's definition, inputs and
+         width are the graph's alone (#173: r2ssa's expression
+         certificates and r2types' certified expressions each copied them
+         per value, 10.6 MB at the render peak); the inventory's seeds are
+         a bit per kind owed of the whole instruction, and one backward
+         pass taints every return whose interface is unproven (#174: each
+         seeded instruction had held its own `BTreeSet`, and each such
+         return, every return during recovery, rescanned every
+         instruction, `O(k · (B + I))`: 35.5 MB at preparation's peak);
+         the term arena holds a type once and a node in 32 bytes, its side
+         tables dense, its arrays shrunk once canonical, and the import's
+         root steps are runs over two arrays (#175: every value's
+         canonical term also built a transitive producer set to fill a
+         `reads` list nothing read, and its import held a 32-byte producer
+         id nothing read); r2types' array inference borrows the
+         operations it indexes by name, the inventory's table is sized
+         from its seeds and sorted in place, and the import's roots are
+         recorded as runs as each completes (#176: the inference cloned
+         every operation twice, 42.6 MB at the type seal; the table kept
+         its doubling slack and a stable sort's scratch; the importer held
+         a hash map of two vectors per root, 9.2 MB); one open-addressed
+         index (`dense::HashIndex`) owns each variable-to-id lookup (#178:
+         the value table keyed a `HashMap` by a second copy of every
+         variable beside the graph's own index; heap 1.2 to 2.4% lower,
+         time unchanged). A 50-function `pdd` session: pumasim 935 to 385 MB, 0pack 765 to
+         386 MB, time unchanged. Since #172: heap peak (dhat) pumasim
+         `pdd @ 0x23fdf0` 180.6 to 158.6 MB (197.0 at #167), 0pack
+         `0x58e3d0` 199.5 to 177.6 MB since #173; release peak RSS, median
+         of 5, 0pack 340 to 275 MB, pumasim 311 to 272 MB; pumasim's time
+         1.57 to 1.49 s. Each phase's peak is now within a few MB of the
+         others (preparation's inventory build, the type seal's array
+         inference, render's import), so a cut in one moves the peak to
+         the next. 0pack's (177.6 MB, about 1.9 KB per operation) is
+         render's: the analysis artifact 58.4 MB, render's own 25.0 MB,
+         the machine projection 18.9 MB, the term import 9.5 MB. The array
+         inference still keys maps by spelled names, in six rounds that
+         keep a partial result when they run out: T deletes it (below).
+         Left, largest first:
+         1. **MM.6** one encoding of each operation after the seal: the
+            graph owns it and the function's blocks, as the builder's, are
+            dropped at the seal (0pack's render peak at #179: the
+            function's operations, arena and table 14.4 MB beside the
+            graph's 19.3); 30 post-seal reader files re-key, 3 readers
+            named for a decision ([one-ir](doc/adr-one-ir.md), "The op
+            after the seal", amended 2026-10-12: the plan had the graph
+            index the function's operations, which hands 216 graph-only
+            signatures a handle back). Step 1 done (#182): every
+            post-seal reader of the function's operations (22 r2ssa files,
+            r2types' named copy, now spelled from the graph by
+            `SsaGraph::named_blocks`, r2dec and r2engine) reads the graph;
+            the named copies those passes built per call are gone. `pdd` 2
+            to 6% faster, the 50-function session 3%, allocations 1% fewer,
+            heap peaks unchanged, census byte-identical. Step 2 done
+            (#183): the seal drops the function's blocks of operations once
+            the graph is built and the function validated, keeping its CFG,
+            arena and records; a read of them is a debug assertion
+            (`a_sealed_function_refuses_to_read_its_operations`), and the
+            tests read the graph (`SsaArtifact::named_block(s)`). Heap peak
+            0pack `0x58e3d0` 167.3 to 162.4 MiB, pumasim 147.6 to 143.8,
+            the session 191.4 to 187.5; time 2 to 4% lower; census
+            byte-identical. Left: the value table once no `VarId` outlives
+            the seal (the `formal_*` maps have graph twins), a compile-time
+            type for the sealed function in place of the debug assertion.
+         2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
+            symbols 7.6, names 4.2), PF's.
+         3. **MM.7** compact identities: a disposition (48 B per
+            instruction) and an imported value carry a 32-byte canonical
+            instruction id the graph already implies; an obligation copies
+            its instruction's graph inputs where it states none of its own.
+         4. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
+            of it the type) and render's own structures (7.6 MB).
+         5. **MM.9** D26: one forced collect at each phase boundary,
+            measured.
+         6. **MM.3** (conditional) facts only sealing reads, measured
+            2026-10-12 at the render peak: the fact pass holds 28.7 MB (the
+            35.7 estimate counted r2types'), of which memory SSA 5.3 MB
+            (struct inference, slicing and recomputed liveness read it),
+            the inventory's preallocation 4.4 MB, predicates and control
+            domains under 0.1 MB. Dropping them at the seal needs the
+            analysis and its sealing as one query, since both hold one
+            `Arc<SsaArtifact>`: worth it only once the rest are done.
+         7. Done (#179, D11): `populate_certified_parameter_exprs` copied a
+            parameter's binding along same-width copies in a `while
+            changed` loop over every value, `O(V · chain)`; one walk forward
+            from the bound values over their uses states the same map,
+            `O(V + E)`, census byte-identical.
+         Gates (#177): `census.py time` reports and gates each case's heap
+         peak from the `alloc-count` build (1.05x the base) and times a
+         50-function pumasim session under the RSS, heap and time budgets;
+         at #176 the session's heap peak is 196.5 MiB against 151.3 for
+         its largest function alone. Exit: `c ≤ 600 B` per operation, then
+         `≤ 300 B`.
 6. **LP2 to LP4**, then **I**, **C2, C4**, **P7, P8, P9, P11**.
 7. Beside the path, as small items when a step waits on CI: **L5**, **M6**
    rest.

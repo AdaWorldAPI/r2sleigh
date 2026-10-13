@@ -2,13 +2,9 @@
 
 use super::*;
 
-/// One instruction's memory effects in one direction: a read and a write
-/// performed by one instruction are different effects.
-pub type MemoryEffectKey = (r2ssa::InstId, bool);
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallsiteRenderFact {
-    pub callsite: CallsiteKey,
+    pub callsite: InstId,
     pub target: Option<r2ssa::ValueId>,
     pub disposition: CallsiteRenderDisposition,
     pub proof_values: Vec<r2ssa::ValueId>,
@@ -227,28 +223,6 @@ pub(crate) fn field_certificate_width_matches(
         .and_then(|field_type| parse_c_type_like(field_type, ptr_bits))
         .and_then(|ty| type_like_size_bytes(&ty, ptr_bits))
         .is_none_or(|width| width == u64::from(access_width))
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExpressionRenderFact {
-    pub value: r2ssa::ValueId,
-    pub defining_inst: Option<r2ssa::InstId>,
-    pub width: u32,
-    pub renderable: bool,
-}
-
-/// A renderable expression tied to canonical SSA identity and dependencies.
-///
-/// `bindings` records semantic roles such as ABI parameters without replacing
-/// the expression's stable value identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CertifiedExpr {
-    pub id: r2ssa::SemanticId,
-    pub fact: ExpressionRenderFact,
-    pub inputs: Vec<r2ssa::SemanticId>,
-    pub bindings: BTreeSet<r2ssa::SemanticId>,
-    /// Boxed: few expressions are a guarded merge, and inline it would double every entry.
-    pub guarded_phi: Option<Box<GuardedPhiRenderFact>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -582,7 +556,7 @@ pub struct SwitchSelectorFact {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallResultFact {
-    pub callsite: CallsiteKey,
+    pub callsite: InstId,
     pub call_site_id: r2ssa::CallSiteId,
     pub at: r2ssa::InstId,
     pub value: r2ssa::ValueId,
@@ -594,7 +568,7 @@ pub struct CallResultFact {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallsiteArgumentFacts {
-    pub callsite: CallsiteKey,
+    pub callsite: InstId,
     pub call_site_id: r2ssa::CallSiteId,
     pub at: r2ssa::InstId,
     pub target: r2ssa::ValueId,
@@ -856,15 +830,15 @@ pub fn exact_source_return_type(source: &r2ssa::SsaArtifact) -> Option<CTypeLike
     };
     let expected_carrier = r2ssa::ReturnCarrier::Register { storage };
     let mut return_count = 0usize;
+    let ssa = source.graph();
     for &block_addr in source.function().block_addrs() {
-        let block = source.function().get_block(block_addr)?;
-        for (op, ssa_op) in block.sited() {
-            if !matches!(ssa_op, r2ssa::SSAOp::Return { .. }) {
+        let block = ssa.block_id_for_addr(block_addr)?;
+        for &inst in ssa.op_insts(block) {
+            if !matches!(ssa.op(inst), Some(r2ssa::SSAOp::Return { .. })) {
                 continue;
             }
             return_count = return_count.checked_add(1)?;
-            let certificate =
-                source.return_certificate_for_inst(source.graph().inst_for_op(op)?)?;
+            let certificate = source.return_certificate_for_inst(inst)?;
             if !exact_return_certificate_matches(
                 certificate,
                 logical,
@@ -1174,7 +1148,7 @@ pub(crate) fn prepared_callee_resolution_facts(
             .values()
             .filter_map(|call_site| {
                 let direct_target = prepared.resolved_call_target(call_site)?;
-                Some((CallsiteKey { at: call_site.at }, direct_target))
+                Some((call_site.at, direct_target))
             }),
         &ctx,
     )
@@ -1188,7 +1162,7 @@ pub(crate) fn prepared_callsite_argument_facts(
         .callsites
         .values()
         .map(|cert| {
-            let callsite = CallsiteKey { at: cert.at };
+            let callsite = cert.at;
             let argument_values = cert
                 .argument_values
                 .iter()
@@ -1265,15 +1239,15 @@ pub(crate) fn prepared_callsite_argument_facts(
 
 pub(crate) fn prepared_call_result_facts(prepared: &r2ssa::SsaArtifact) -> FunctionCallResultFacts {
     let mut by_value = r2ssa::dense::IdMap::default();
-    let mut by_callsite = BTreeMap::<CallsiteKey, Vec<r2ssa::ValueId>>::new();
+    let mut by_callsite = IdMap::<InstId, Vec<r2ssa::ValueId>>::default();
     for cert in prepared.certificates().call_results.values() {
         let Some(callsite_cert) = prepared.certificates().callsites.get(&cert.call_site) else {
             continue;
         };
-        let callsite = CallsiteKey {
-            at: callsite_cert.at,
-        };
-        by_callsite.entry(callsite).or_default().push(cert.value);
+        let callsite = callsite_cert.at;
+        by_callsite
+            .get_or_insert_with(callsite, Vec::new)
+            .push(cert.value);
         by_value.insert(
             cert.value,
             CallResultFact {
@@ -1300,7 +1274,7 @@ pub(crate) fn prepared_call_render_facts(prepared: &r2ssa::SsaArtifact) -> Funct
         .callsites
         .values()
         .map(|cert| {
-            let callsite = CallsiteKey { at: cert.at };
+            let callsite = cert.at;
             // This fact says how control leaves the site, not what the
             // statement assigns; the plan owns that, from the value it defines.
             let count_refusal = if cert.variadic {
@@ -1803,42 +1777,26 @@ pub(crate) fn prepared_guarded_phi_arm_value(
 
 pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRenderFacts {
     let certificates = prepared.certificates();
-    let mut certified_exprs = certificates
-        .expressions
+    // A value's definition, inputs and width are the graph's; the projection adds only what it proves.
+    let mut renderable_expressions = certificates.renderable_expressions.clone();
+    let mut bindings = r2ssa::dense::IdMap::<r2ssa::ValueId, BTreeSet<_>>::default();
+    for (value, result) in &certificates.call_results {
+        renderable_expressions.insert(value);
+        let mut roles = BTreeSet::from([r2ssa::SemanticId::call(result.call_site)]);
+        if let r2ssa::ReturnCarrier::StackSlot { object, .. } = &result.carrier {
+            roles.insert(r2ssa::SemanticId::stack_slot(*object));
+        }
+        if let Some(r2ssa::ValueOwner::StackSlot { object, .. }) = &result.owner {
+            roles.insert(r2ssa::SemanticId::stack_slot(*object));
+        }
+        bindings.insert(value, roles);
+    }
+    let guarded_phis = prepared
+        .graph()
+        .values
         .iter()
-        .map(|(value, cert)| {
-            let call_result = certificates.call_results.get(value);
-            let mut bindings = BTreeSet::new();
-            if let Some(result) = call_result {
-                bindings.insert(r2ssa::SemanticId::call(result.call_site));
-                if let r2ssa::ReturnCarrier::StackSlot { object, .. } = &result.carrier {
-                    bindings.insert(r2ssa::SemanticId::stack_slot(*object));
-                }
-                if let Some(r2ssa::ValueOwner::StackSlot { object, .. }) = &result.owner {
-                    bindings.insert(r2ssa::SemanticId::stack_slot(*object));
-                }
-            }
-            let fact = ExpressionRenderFact {
-                value: cert.value,
-                defining_inst: cert.defining_inst,
-                width: cert.width,
-                renderable: cert.renderable || call_result.is_some(),
-            };
-            (
-                value,
-                CertifiedExpr {
-                    id: r2ssa::SemanticId::expression(value),
-                    fact,
-                    inputs: cert
-                        .inputs
-                        .iter()
-                        .copied()
-                        .map(r2ssa::SemanticId::expression)
-                        .collect(),
-                    bindings,
-                    guarded_phi: prepared_guarded_phi_render_fact(prepared, value).map(Box::new),
-                },
-            )
+        .filter_map(|value| {
+            prepared_guarded_phi_render_fact(prepared, value.id).map(|fact| (value.id, fact))
         })
         .collect::<r2ssa::dense::IdMap<_, _>>();
     let mut certified_memory_effects = certificates
@@ -1879,15 +1837,17 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
     let memory_effects_by_inst = certificates
         .memory_accesses_by_inst
         .iter()
-        .map(|(op, accesses)| {
-            (
-                *op,
-                accesses
-                    .iter()
-                    .copied()
+        .map(|(inst, accesses)| {
+            let effects = |accesses: &Vec<r2ssa::StructuredAccessId>| {
+                (accesses.iter().copied())
                     .map(r2ssa::SemanticId::memory_access)
-                    .collect(),
-            )
+                    .collect()
+            };
+            let effects = r2ssa::ByDirection {
+                read: effects(&accesses.read),
+                write: effects(&accesses.write),
+            };
+            (inst, effects)
         })
         .collect();
     let certified_return_effects = certificates
@@ -2032,9 +1992,9 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
         carrier_edge_roots.extend(carrier.entries.iter().map(|entry| entry.value));
         carrier_edge_roots.extend(carrier.updates.iter().map(|update| update.value));
         for value in carrier.members.iter().map(|member| member.value) {
-            if let Some(expr) = certified_exprs.get_mut(value) {
-                expr.bindings.insert(carrier.id);
-            }
+            bindings
+                .get_or_insert_with(value, BTreeSet::new)
+                .insert(carrier.id);
         }
         certified_entities.insert(
             carrier.id,
@@ -2073,14 +2033,16 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
     let mut certified_effects = certified_memory_effects;
     certified_effects.extend(certified_return_effects);
     FunctionRenderFacts {
-        certified_exprs,
+        renderable_expressions,
+        bindings,
+        guarded_phis,
         certified_entities,
         certified_effects,
         return_effects_by_inst,
         memory_effects_by_inst,
         string_literals_by_value: r2ssa::dense::IdMap::default(),
-        member_accesses_by_inst: BTreeMap::new(),
-        array_accesses_by_inst: BTreeMap::new(),
+        member_accesses_by_inst: IdMap::default(),
+        array_accesses_by_inst: IdMap::default(),
     }
 }
 

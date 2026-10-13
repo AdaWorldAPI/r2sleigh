@@ -1533,7 +1533,7 @@ fn symbolic_store_plus_constant_preserves_arg_offset_range() {
         24,
     );
     let abi = prepared.abi().expect("exact ABI");
-    let block = prepared.function().named_block(0x4300).expect("block");
+    let block = prepared.named_block(0x4300).expect("block");
     let Some(SSAOp::Store { addr, val, .. }) = block
         .ops()
         .iter()
@@ -1607,7 +1607,7 @@ fn symbolic_store_minus_constant_preserves_arg_offset_range() {
         24,
     );
     let abi = prepared.abi().expect("exact ABI");
-    let block = prepared.function().named_block(0x4310).expect("block");
+    let block = prepared.named_block(0x4310).expect("block");
     let Some(SSAOp::Store { addr, val, .. }) = block
         .ops()
         .iter()

@@ -42,8 +42,7 @@ impl MemoryPrefix {
         phase!("predicates", 0);
         let values = crate::values::solve_value_ranges(graph, function, prep, &predicates);
         // A table dispatch switches on what indexes the table's read, known only now.
-        for (block_addr, selector) in crate::indirect::dispatch_selectors(function, graph, &values)
-        {
+        for (block_addr, selector) in crate::indirect::dispatch_selectors(graph, &values) {
             if let Some(fact) = predicates.switches.get_mut(&block_addr) {
                 fact.selector.get_or_insert(selector);
             }
@@ -62,7 +61,6 @@ impl MemoryPrefix {
         );
         phase!("objects", objects.objects.len());
         let (memory_accesses, member_run_stores) = collect_structured_memory_access_facts(
-            function,
             graph,
             &objects,
             &memory,

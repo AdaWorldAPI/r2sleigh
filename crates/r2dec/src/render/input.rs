@@ -84,10 +84,9 @@ impl<'a> RenderInput<'a> {
 
     /// The types the callee of the call at `inst` declares, as its own interface's graph states them.
     pub fn callee_type_graph(&self, inst: r2ssa::InstId) -> Option<&'a r2ssa::SourceTypeGraph> {
-        let key = r2types::CallsiteKey { at: inst };
         let site = (self.facts.report().callsites())?
             .by_callsite
-            .get(&key)?
+            .get(inst)?
             .call_site_id;
         (self.facts.source().call_site_interface(site))?
             .exact_callee_interface()?
@@ -116,16 +115,15 @@ impl<'a> RenderInput<'a> {
         &self,
         inst: r2ssa::InstId,
     ) -> Option<&'a r2types::FunctionType> {
-        let key = r2types::CallsiteKey { at: inst };
         let graded = (self.facts.report().callsites())
-            .and_then(|callsites| callsites.by_callsite.get(&key))
+            .and_then(|callsites| callsites.by_callsite.get(inst))
             .filter(|facts| {
                 (facts.callee_signature_types.as_ref())
                     .is_some_and(|types| types.grade() <= r2source::Grade::Declared)
             })
             .and_then(|facts| facts.callee_signature.as_ref());
         let identity = (self.callee_resolution())
-            .and_then(|resolution| resolution.identity_for_callsite(key))
+            .and_then(|resolution| resolution.identity_for_callsite(inst))
             .filter(|identity| {
                 identity
                     .signature_source
@@ -141,9 +139,8 @@ impl<'a> RenderInput<'a> {
         &self,
         inst: r2ssa::InstId,
     ) -> Option<&'a r2types::FunctionType> {
-        let key = r2types::CallsiteKey { at: inst };
         (self.facts.report().callsites())
-            .and_then(|callsites| callsites.by_callsite.get(&key))
+            .and_then(|callsites| callsites.by_callsite.get(inst))
             .filter(|facts| {
                 (facts.callee_signature_types.as_ref())
                     .is_some_and(|types| types.basis == r2source::Basis::CarrierWidth)

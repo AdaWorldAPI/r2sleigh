@@ -325,7 +325,7 @@ fn dispatch_load<'a>(
     graph: &'a SsaGraph,
     values: &crate::values::ValueRanges,
     inst: InstId,
-    op: &SSAOp,
+    op: &SSAOp<ValueId>,
 ) -> Option<(Option<&'a GraphInst>, Option<EntryTransform>, ValueId)> {
     // A tail call through a table is a branch, not a call, and it reaches the
     // same set of functions either way.
@@ -334,7 +334,7 @@ fn dispatch_load<'a>(
     };
     let call_inst = graph.inst(inst)?;
     let target_value = exact_input(graph, call_inst, 0)?;
-    if graph.value_id_for_var(target) != Some(target_value) {
+    if *target != target_value {
         return None;
     }
     let target_value = crate::constant::root_of(graph, target_value);
@@ -353,7 +353,7 @@ fn dispatch_table_read(
     values: &crate::values::ValueRanges,
     block_addr: u64,
     inst: InstId,
-    op: &SSAOp,
+    op: &SSAOp<ValueId>,
 ) -> Option<DispatchTableRead> {
     let (SSAOp::CallInd { instruction, .. } | SSAOp::BranchInd { instruction, .. }) = op else {
         return None;
@@ -437,19 +437,15 @@ fn dispatch_table_read(
 /// between a selector and a table address is affine, and which of its
 /// operands is the base is a question about values rather than about opcodes.
 pub(crate) fn dispatch_selectors(
-    function: &SSAFunction,
     graph: &SsaGraph,
     values: &crate::values::ValueRanges,
 ) -> std::collections::BTreeMap<u64, ValueId> {
-    function
-        .named_blocks()
-        .iter()
+    (graph.blocks.iter())
         .filter_map(|block| {
-            let (id, op) = block
-                .sited()
-                .rev()
+            let (inst, op) = (graph.op_insts(block.id).iter().rev())
+                .filter_map(|inst| Some((*inst, graph.op(*inst)?)))
                 .find(|(_, op)| matches!(op, SSAOp::CallInd { .. } | SSAOp::BranchInd { .. }))?;
-            let (_, _, address) = dispatch_load(graph, values, graph.inst_for_op(id)?, op)?;
+            let (_, _, address) = dispatch_load(graph, values, inst, op)?;
             Some((block.addr, selector_of(graph, values, address).0))
         })
         .collect()
@@ -457,16 +453,13 @@ pub(crate) fn dispatch_selectors(
 
 /// Every dispatch in one function that reads its target from a table.
 fn dispatch_table_reads_in_graph(
-    function: &SSAFunction,
     graph: &SsaGraph,
     values: &crate::values::ValueRanges,
 ) -> Vec<DispatchTableRead> {
-    function
-        .named_blocks()
-        .iter()
+    (graph.blocks.iter())
         .flat_map(|block| {
-            block.sited().filter_map(|(id, op)| {
-                dispatch_table_read(graph, values, block.addr, graph.inst_for_op(id)?, op)
+            graph.op_insts(block.id).iter().filter_map(|inst| {
+                dispatch_table_read(graph, values, block.addr, *inst, graph.op(*inst)?)
             })
         })
         .collect()
@@ -482,7 +475,7 @@ pub(crate) fn prepared_dispatch_table_reads(
     let prep = Some(prep);
     let predicates = crate::semantic::collect_predicate_facts(function, prep, graph);
     let values = crate::values::solve_value_ranges(graph, function, prep, &predicates);
-    dispatch_table_reads_in_graph(function, graph, &values)
+    dispatch_table_reads_in_graph(graph, &values)
 }
 
 /// Where every dispatch in one function reads its target.
@@ -490,11 +483,7 @@ pub(crate) fn prepared_dispatch_table_reads(
 /// Answered without any table in hand, which is how the native route learns
 /// which memory it has to read before it can resolve anything.
 pub fn dispatch_table_reads(artifact: &SsaArtifact) -> Vec<DispatchTableRead> {
-    dispatch_table_reads_in_graph(
-        artifact.function(),
-        artifact.graph(),
-        &artifact.facts().values,
-    )
+    dispatch_table_reads_in_graph(artifact.graph(), &artifact.facts().values)
 }
 
 #[cfg(test)]
@@ -517,7 +506,7 @@ mod tests {
         // solves for that exactly as the analysis phase does.
         let predicates = crate::semantic::collect_predicate_facts_for_test(&function, &graph);
         let values = crate::values::solve_value_ranges(&graph, &function, None, &predicates);
-        dispatch_table_reads_in_graph(&function, &graph, &values)
+        dispatch_table_reads_in_graph(&graph, &values)
     }
 
     /// The graph for a straight guard: entry dominates both arms.

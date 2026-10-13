@@ -88,20 +88,13 @@ fn prepared_parameter_indexed_accesses_keep_semantic_index_identity() {
         interface,
     )
     .expect("prepared indexed load");
-    let load_index = prepared
-        .function()
-        .get_block(0x401000)
-        .expect("block")
-        .ops()
-        .iter()
-        .position(|op| matches!(op, r2ssa::SSAOp::Load { .. }))
-        .expect("indexed load");
-    let load_inst = prepared
-        .function()
-        .get_block(0x401000)
-        .and_then(|block| block.op_id(load_index))
-        .and_then(|op| prepared.graph().inst_for_op(op))
-        .expect("indexed load instruction");
+    let graph = prepared.graph();
+    let load_inst = (graph
+        .op_insts(graph.block_id_for_addr(0x401000).expect("block"))
+        .iter())
+    .copied()
+    .find(|inst| matches!(graph.op(*inst), Some(r2ssa::SSAOp::Load { .. })))
+    .expect("indexed load instruction");
     let address = prepared
         .memory_certificate_for_inst(load_inst, false)
         .expect("memory certificate");
@@ -110,21 +103,15 @@ fn prepared_parameter_indexed_accesses_keep_semantic_index_identity() {
         .parameter_expression(address.address)
         .expect("parameter-relative address");
     let index_value = parameter_address.terms[0].value;
-    let custom_index = prepared
-        .function()
-        .get_block(0x401000)
-        .expect("block")
-        .ops()
-        .iter()
-        .position(|op| matches!(op, r2ssa::SSAOp::Load { space, .. } if *space == r2il::SpaceId::Custom(7)))
+    let custom_load = (graph.op_insts(graph.block_id_for_addr(0x401000).expect("block")).iter())
+        .copied()
+        .find(|inst| {
+            matches!(graph.op(*inst), Some(r2ssa::SSAOp::Load { space, .. }) if *space == r2il::SpaceId::Custom(7))
+        })
         .expect("custom-space load");
     assert!(
         prepared
-            .function()
-            .get_block(0x401000)
-            .and_then(|block| block.op_id(custom_index))
-            .and_then(|op| prepared.graph().inst_for_op(op))
-            .and_then(|inst| prepared.memory_certificate_for_inst(inst, false))
+            .memory_certificate_for_inst(custom_load, false)
             .is_some(),
         "the Custom-space access must exist before type filtering"
     );
@@ -135,11 +122,7 @@ fn prepared_parameter_indexed_accesses_keep_semantic_index_identity() {
         candidates,
         vec![ScalarArrayRenderCandidate {
             slot: 0,
-            op: prepared
-                .function()
-                .get_block(0x401000)
-                .and_then(|block| block.op_id(load_index))
-                .expect("indexed load"),
+            op: graph.op_for_inst(load_inst).expect("indexed load"),
             is_write: false,
             field_offset: 0,
             element_stride: 1,

@@ -230,7 +230,6 @@ fn decompile_artifact_two_address_stack_updates_read_incoming_versions() {
     )
     .expect("decompile SSA artifact");
     let updates = artifact
-        .function()
         .named_block(0x1000)
         .expect("entry block")
         .ops()
@@ -429,7 +428,6 @@ fn prepared_function_refuses_display_named_stack_reload_at_control_return() {
     )
     .expect("prepared SSA should build");
     let return_op_idx = prepared
-        .function()
         .named_block(0x1890)
         .and_then(|block| {
             block
@@ -527,7 +525,6 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
     let prepared = SsaArtifact::for_decompile(&blocks, Some(&crate::Arch::from(arch.clone())))
         .expect("prepared SSA should build");
     let return_op_idx = prepared
-        .function()
         .named_block(0x190c)
         .and_then(|block| {
             block
@@ -942,7 +939,7 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
     .expect("typed decompile artifact");
     let typed_function = typed.function();
     let typed_facts = typed.decompile_prep_facts();
-    let op_roots = typed_function
+    let op_roots = typed
         .named_block(0x3000)
         .expect("entry")
         .ops()
@@ -955,7 +952,7 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
                 .map(|root| (typed_function.canonical_storage_for_var(dst), root))
         })
         .collect::<Vec<_>>();
-    let entry_op_roots = typed_function
+    let entry_op_roots = typed
         .named_block(0x3000)
         .expect("entry")
         .ops()
@@ -1017,7 +1014,7 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
             }
     }));
     assert!(
-        typed_function
+        typed
             .named_block(0x3000)
             .expect("entry")
             .ops()
@@ -1448,10 +1445,7 @@ fn new_subregister_result_cannot_inherit_stack_address_authority() {
         interface,
     )
     .expect("subregister New artifact");
-    let block = artifact
-        .function()
-        .named_block(0x3480)
-        .expect("entry block");
+    let block = artifact.named_block(0x3480).expect("entry block");
     let new_dst = block
         .ops()
         .iter()

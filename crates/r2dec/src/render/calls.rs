@@ -5,7 +5,7 @@ use r2ssa::{
     CallSiteTransfer, CanonicalStorageId, InstId, InstPayload, MachineType, SSAOp,
     SemanticObligationInventory, SemanticObligationKind, SsaArtifact, ValueId,
 };
-use r2types::{CalleeClass, CalleeResolutionFacts, CallsiteKey};
+use r2types::{CalleeClass, CalleeResolutionFacts};
 
 use crate::ast::{BinaryOp, CExpr, CType};
 use crate::prelude::ResidualCause;
@@ -301,8 +301,7 @@ fn planned(
         Unplanned::Undescribed,
     )?;
     let graph = artifact.graph();
-    let identity = resolution
-        .and_then(|resolution| resolution.identity_for_callsite(CallsiteKey { at: inst }));
+    let identity = resolution.and_then(|resolution| resolution.identity_for_callsite(inst));
     let callee = callee(certificate, identity, graph, inst).ok_or(Unplanned::NoCallee)?;
     let result = result_value(inventory, graph, inst).ok_or(Unplanned::ResultUnclear)?;
     // Each argument passes in the class its register says, which a signature, where there is one,

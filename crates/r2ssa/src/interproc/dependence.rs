@@ -53,7 +53,6 @@ use crate::semantic::{
     MemoryLocation, ObjectKind, ObjectModel, ReachingStorageState, RelativeMemoryAddress,
     SourceCallArgumentValue, memory_locations_may_alias,
 };
-use crate::var::SSAVar;
 use crate::{CallBoundarySlot, CanonicalStorageId, ObjectId};
 
 /// The formals a bit stands for: bit `i` is formal `i`, and the last bit every
@@ -122,10 +121,7 @@ impl FormalDependence {
             frame: FrameTraffic::of(prepared),
             exposed: 0,
         };
-        // Named once, not once a pass: the pass reads names until this
-        // module reads values (doc/adr-one-ir.md, F2.3 stage 5).
-        let named = prepared.function().named_blocks();
-        while dependence.pass(prepared, &named) {}
+        while dependence.pass(prepared) {}
         dependence
     }
 
@@ -246,7 +242,7 @@ impl FormalDependence {
     }
 
     /// One pass over the blocks in order; whether any value gained a bit.
-    fn pass(&mut self, prepared: &SsaArtifact, named: &[crate::block::SSABlock]) -> bool {
+    fn pass(&mut self, prepared: &SsaArtifact) -> bool {
         let exposed = self
             .frame
             .exposed
@@ -255,32 +251,35 @@ impl FormalDependence {
             .fold(0, |left, right| left | right);
         let mut changed = exposed != self.exposed;
         self.exposed = exposed;
-        for block in named {
-            for phi in block.phis() {
-                let inputs = phi
-                    .sources
-                    .iter()
-                    .map(|(_, source)| self.var_bits(prepared, source))
+        let graph = prepared.graph();
+        for block in &graph.blocks {
+            for &phi in graph.phi_insts(block.id) {
+                let Some(output) = graph.inst(phi).and_then(|phi| phi.output) else {
+                    continue;
+                };
+                let inputs = (graph.inputs(phi).iter())
+                    .map(|source| self.bits_of(*source))
                     .fold(0, |left, right| left | right);
-                changed |= self.raise(prepared, &phi.dst, inputs);
+                changed |= self.raise(output, inputs);
             }
-            changed |= self.ops_pass(prepared, block);
+            changed |= self.ops_pass(prepared, block.id);
         }
         changed
     }
 
     /// One block's operations, in order; whether any value gained a bit.
-    fn ops_pass(&mut self, prepared: &SsaArtifact, block: &crate::block::SSABlock) -> bool {
+    fn ops_pass(&mut self, prepared: &SsaArtifact, block: crate::graph::BlockId) -> bool {
         let mut changed = false;
         // What the last call in this block was handed: the definitions that
         // follow it are what it left, and may be any of it.
         let mut last_call = 0u64;
-        for (id, op) in block.sited() {
+        let graph = prepared.graph();
+        for &inst in graph.op_insts(block) {
+            let Some(op) = graph.op(inst) else {
+                continue;
+            };
             if matches!(op, SSAOp::Call { .. } | SSAOp::CallInd { .. }) {
-                last_call = prepared
-                    .graph()
-                    .inst_for_op(id)
-                    .and_then(|inst| prepared.call_sites().by_inst.get(inst))
+                last_call = (prepared.call_sites().by_inst.get(inst))
                     .map_or(u64::MAX, |call| self.passed_to_call(prepared, *call));
                 let unseen = self.unseen | last_call;
                 changed |= unseen != self.unseen;
@@ -291,39 +290,36 @@ impl FormalDependence {
                 continue;
             };
             let inputs = self.op_bits(prepared, op, last_call);
-            changed |= self.raise(prepared, dst, inputs);
+            changed |= self.raise(*dst, inputs);
         }
         changed
     }
 
     /// The bits an operation's output is computed from.
-    fn op_bits(&self, prepared: &SsaArtifact, op: &SSAOp, last_call: u64) -> u64 {
+    fn op_bits(&self, prepared: &SsaArtifact, op: &SSAOp<ValueId>, last_call: u64) -> u64 {
         match op {
             SSAOp::Load { dst, .. }
             | SSAOp::LoadLinked { dst, .. }
-            | SSAOp::LoadGuarded { dst, .. } => self.reloaded_bits(prepared, dst),
+            | SSAOp::LoadGuarded { dst, .. } => self.reloaded_bits(prepared, *dst),
             SSAOp::CallDefine { .. } => last_call,
             SSAOp::AtomicCAS(swap) => {
-                self.reloaded_bits(prepared, &swap.dst)
+                self.reloaded_bits(prepared, swap.dst)
                     | op.sources()
                         .into_iter()
-                        .map(|source| self.var_bits(prepared, source))
+                        .map(|source| self.bits_of(*source))
                         .fold(0, |left, right| left | right)
             }
             op => op
                 .sources()
                 .into_iter()
-                .map(|source| self.var_bits(prepared, source))
+                .map(|source| self.bits_of(*source))
                 .fold(0, |left, right| left | right),
         }
     }
 
     /// A load's bits: what was stored where it may read, where that is the
     /// function's own frame, and what the stack-reload certificate names.
-    fn reloaded_bits(&self, prepared: &SsaArtifact, dst: &SSAVar) -> u64 {
-        let Some(value) = prepared.graph().value_id_for_var(dst) else {
-            return 0;
-        };
+    fn reloaded_bits(&self, prepared: &SsaArtifact, value: ValueId) -> u64 {
         let certified = prepared
             .stack_reload_certificate_for_value(value)
             .map_or(0, |reload| self.bits_of(reload.source));
@@ -336,17 +332,7 @@ impl FormalDependence {
             .fold(certified, |left, right| left | right)
     }
 
-    fn var_bits(&self, prepared: &SsaArtifact, var: &SSAVar) -> u64 {
-        prepared
-            .graph()
-            .value_id_for_var(var)
-            .map_or(0, |value| self.bits_of(value))
-    }
-
-    fn raise(&mut self, prepared: &SsaArtifact, var: &SSAVar, bits: u64) -> bool {
-        let Some(value) = prepared.graph().value_id_for_var(var) else {
-            return false;
-        };
+    fn raise(&mut self, value: ValueId, bits: u64) -> bool {
         let Some(held) = self.bits.get_mut(value.0 as usize) else {
             return false;
         };
@@ -381,9 +367,9 @@ impl FrameTraffic {
         let objects = prepared.objects();
         let mut loads = Vec::<(ValueId, FramePlace)>::new();
         let mut stores = Vec::<(InstId, ValueId, FramePlace)>::new();
-        for block in prepared.function().named_blocks() {
-            for (id, op) in block.sited() {
-                let Some(inst) = graph.inst_for_op(id) else {
+        for block in &graph.blocks {
+            for &inst in graph.op_insts(block.id) {
+                let Some(op) = graph.op(inst) else {
                     continue;
                 };
                 let (addr, space, loaded, stored) = match op {
@@ -409,8 +395,7 @@ impl FrameTraffic {
                     ),
                     _ => continue,
                 };
-                let is_frame = prepared
-                    .object_for_var(addr, space)
+                let is_frame = (objects.object_for_value(*addr, space))
                     .is_some_and(|object| is_frame_object(objects, object));
                 if !is_frame {
                     continue;
@@ -422,15 +407,12 @@ impl FrameTraffic {
                     let mut location = location.clone();
                     // An indexed address is somewhere in its object the
                     // machine computes; the memory facts state its base.
-                    if graph
-                        .value_id_for_var(addr)
-                        .is_some_and(|value| objects.index_for_address(value).is_some())
-                    {
+                    if objects.index_for_address(*addr).is_some() {
                         location.address = RelativeMemoryAddress::Unknown;
                     }
                     Some(location)
                 };
-                if let Some(value) = loaded.and_then(|dst| graph.value_id_for_var(dst)) {
+                if let Some(&value) = loaded {
                     let uses = prepared.memory().uses_by_inst.get(inst).map(|uses| {
                         uses.iter()
                             .map(|fact| fact.location.clone())
@@ -438,7 +420,7 @@ impl FrameTraffic {
                     });
                     loads.push((value, place(uses.as_deref())));
                 }
-                if let Some(value) = stored.and_then(|val| graph.value_id_for_var(val)) {
+                if let Some(&value) = stored {
                     let defs = prepared.memory().defs_by_inst.get(inst).map(|defs| {
                         defs.iter()
                             .map(|fact| fact.location.clone())
@@ -498,14 +480,10 @@ impl FrameTraffic {
 /// in a variable.
 fn promoted_slot_writes(prepared: &SsaArtifact) -> impl Iterator<Item = ValueId> + '_ {
     let graph = prepared.graph();
-    prepared
-        .function()
-        .blocks()
-        .iter()
-        .flat_map(|block| block.ops().iter())
-        .filter_map(SSAOp::dst)
-        .filter_map(move |dst| {
-            let value = graph.value_of(*dst)?;
+    (graph.blocks.iter())
+        .flat_map(move |block| graph.op_insts(block.id))
+        .filter_map(move |inst| graph.op(*inst)?.dst().copied())
+        .filter_map(move |value| {
             graph
                 .value(value)?
                 .canonical_storage

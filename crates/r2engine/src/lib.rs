@@ -40,6 +40,8 @@ pub use json::{
     RenderProofJson, RenderRefusalJson, RenderedFunctionJson, RenderedLineJson, RenderedLinkJson,
     RenderedResidualJson, RenderedVariableJson,
 };
+/// The allocation counters the shell's counting allocator feeds and its report reads.
+pub use r2il::allocation;
 pub use r2sleigh_lift::disasm::syntax::number_spans;
 pub use r2sleigh_lift::flow::Flow;
 pub use r2sleigh_lift::{NumberSpan, Syntax};
@@ -1445,13 +1447,6 @@ pub struct SealedFunctionAnalysis {
 }
 
 impl SealedFunctionAnalysis {
-    /// The SSA operations this analysis holds: its weight in the query database.
-    pub(crate) fn operations(&self) -> usize {
-        self.trusted_ssa
-            .as_ref()
-            .map_or(0, |ssa| ssa.artifact().function().arena().id_limit())
-    }
-
     pub const fn facts(&self) -> &r2types::SourceOwnedFunctionFacts {
         &self.source_owned_facts
     }

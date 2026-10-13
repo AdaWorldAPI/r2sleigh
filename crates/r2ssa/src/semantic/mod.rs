@@ -50,7 +50,6 @@ use r2il::SpaceId;
 use serde::{Deserialize, Serialize};
 
 use crate::address::{AddressProvenanceFacts, collect_address_provenance};
-use crate::arena::OpId;
 use crate::assumption::{AssumptionSet, AssumptionSubject, AssumptionUsageReport, AssumptionValue};
 use crate::cfg::BlockTerminator;
 use crate::function::{DecompilePrepFacts, SSAFunction, StackAddressBase, StackAddressRoot};
@@ -405,8 +404,6 @@ impl PreparedFunctionFacts {
             facts,
             CollectedLiveness {
                 live_out,
-                values: live_values,
-                storage_spans,
                 ignored_reads,
             },
         ))
@@ -443,12 +440,10 @@ pub fn returned_bytes(interface: &r2source::SourceFunctionInterface) -> Option<C
     })
 }
 
-/// The liveness a collection computed and read: one model, which the sealed
-/// artifact keeps.
+/// What the sealed artifact keeps of the liveness a collection computed: the value liveness and
+/// storage spans the loop facts read go with the collection (doc/adr-memory-model.md, decision 1).
 pub(crate) struct CollectedLiveness {
     pub(crate) live_out: crate::liveout::FunctionLiveOut,
-    pub(crate) values: crate::liveness::ValueLiveness,
-    pub(crate) storage_spans: StorageSpans,
     /// Reads the text never performs: a call's conventional read of a
     /// register the certified call does not pass.
     pub(crate) ignored_reads: std::collections::BTreeSet<crate::graph::UseSite>,

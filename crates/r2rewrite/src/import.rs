@@ -13,7 +13,7 @@
 //! rendering the resulting term renders those instructions here, and the
 //! accounting has to know.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use r2ssa::{
     CanonicalInstructionId, InductionStep, InstId, MachineArithmeticMode, MachineBitVector,
@@ -35,7 +35,6 @@ pub const OBJECT_ADDRESS: &str = "address.object";
 pub struct ImportedValue {
     pub value: ValueId,
     pub base_root: MachineExprId,
-    pub producer: CanonicalInstructionId,
     /// The value's own instruction as a term, with expanded producers inside.
     pub term: TermId,
 }
@@ -53,6 +52,145 @@ pub struct Substitution {
 pub struct ImportStep {
     own: Box<[Rewrite]>,
     substitutions: Box<[Substitution]>,
+}
+
+impl ImportStep {
+    fn view(&self) -> StepView<'_> {
+        StepView {
+            own: &self.own,
+            substitutions: &self.substitutions,
+        }
+    }
+}
+
+/// One step as its readers walk it, wherever it is held.
+#[derive(Debug, Clone, Copy)]
+struct StepView<'a> {
+    own: &'a [Rewrite],
+    substitutions: &'a [Substitution],
+}
+
+/// Every imported root's step, by root, as two runs over two arrays: a root no import reached
+/// has empty runs, which every walk reads as no step.
+#[derive(Debug, Clone, Default)]
+struct Steps {
+    own_at: Vec<u32>,
+    own: Vec<Rewrite>,
+    substitutions_at: Vec<u32>,
+    substitutions: Vec<Substitution>,
+}
+
+impl Steps {
+    /// The completed roots' steps in root order: one pass, `O(R + rewrites + substitutions)`.
+    fn of(done: Completed) -> Self {
+        let len = done
+            .roots
+            .iter()
+            .rposition(Option::is_some)
+            .map_or(0, |at| at + 1);
+        let mut steps = Self {
+            own_at: Vec::with_capacity(len + 1),
+            own: Vec::with_capacity(done.own.len()),
+            substitutions_at: Vec::with_capacity(len + 1),
+            substitutions: Vec::with_capacity(done.substitutions.len()),
+        };
+        steps.own_at.push(0);
+        steps.substitutions_at.push(0);
+        for at in done.roots.iter().take(len) {
+            if let Some(at) = at {
+                steps.own.extend_from_slice(at.own(&done.own));
+                (steps.substitutions).extend_from_slice(at.substitutions(&done.substitutions));
+            }
+            steps.own_at.push(steps.own.len() as u32);
+            steps
+                .substitutions_at
+                .push(steps.substitutions.len() as u32);
+        }
+        steps
+    }
+
+    fn get(&self, root: MachineExprId) -> Option<StepView<'_>> {
+        let at = root.index();
+        let run =
+            |offsets: &[u32]| Some(*offsets.get(at)? as usize..*offsets.get(at + 1)? as usize);
+        Some(StepView {
+            own: &self.own[run(&self.own_at)?],
+            substitutions: &self.substitutions[run(&self.substitutions_at)?],
+        })
+    }
+}
+
+/// The roots imported so far, by base node, while the import runs: each completed root's term
+/// and its step's runs, appended as it completes; `Steps::of` puts them in root order.
+#[derive(Debug, Default)]
+struct Completed {
+    roots: Vec<Option<StepAt>>,
+    own: Vec<Rewrite>,
+    substitutions: Vec<Substitution>,
+}
+
+/// One completed root: its term, and where its step's runs lie.
+#[derive(Debug, Clone, Copy)]
+struct StepAt {
+    term: TermId,
+    opaque: bool,
+    own: (u32, u32),
+    substitutions: (u32, u32),
+}
+
+impl StepAt {
+    fn own(self, own: &[Rewrite]) -> &[Rewrite] {
+        &own[self.own.0 as usize..self.own.1 as usize]
+    }
+
+    fn substitutions(self, substitutions: &[Substitution]) -> &[Substitution] {
+        &substitutions[self.substitutions.0 as usize..self.substitutions.1 as usize]
+    }
+}
+
+impl Completed {
+    fn with_roots(roots: usize) -> Self {
+        Self {
+            roots: vec![None; roots],
+            ..Self::default()
+        }
+    }
+
+    fn record(&mut self, root: MachineExprId, imported: RootImport) {
+        let own = (
+            self.own.len() as u32,
+            (self.own.len() + imported.own.len()) as u32,
+        );
+        self.own.extend(imported.own);
+        let start = self.substitutions.len();
+        let substitutions = (start as u32, (start + imported.substitutions.len()) as u32);
+        self.substitutions.extend(imported.substitutions);
+        if self.roots.len() <= root.index() {
+            self.roots.resize(root.index() + 1, None);
+        }
+        self.roots[root.index()] = Some(StepAt {
+            term: imported.term,
+            opaque: imported.opaque,
+            own,
+            substitutions,
+        });
+    }
+
+    fn done(&self, root: MachineExprId) -> Option<RootTerm> {
+        let at = (*self.roots.get(root.index())?)?;
+        Some(RootTerm {
+            term: at.term,
+            opaque: at.opaque,
+        })
+    }
+
+    fn step(&self, root: MachineExprId) -> Option<StepView<'_>> {
+        let at = (*self.roots.get(root.index())?)?;
+        Some(StepView {
+            own: at.own(&self.own),
+            substitutions: at.substitutions(&self.substitutions),
+        })
+    }
 }
 
 /// The cell one structured memory access reads or writes, as a term.
@@ -73,7 +211,7 @@ pub struct Import {
     values: Vec<Option<ImportedValue>>,
     accesses: BTreeMap<StructuredAccessId, ImportedAccess>,
     /// Each imported root's step, by root.
-    roots: Vec<Option<ImportStep>>,
+    roots: Steps,
     /// Entry values whose storage no instruction of the function writes.
     entry_never_redefined: BTreeSet<ValueId>,
 }
@@ -105,7 +243,7 @@ impl Import {
     /// Every rewrite import applied to build an access's cell, in application order.
     pub fn access_trace(&self, access: StructuredAccessId) -> Vec<Rewrite> {
         self.access(access)
-            .map_or_else(Vec::new, |imported| self.flattened(&imported.step))
+            .map_or_else(Vec::new, |imported| self.flattened(imported.step.view()))
     }
 
     /// The producers expanded into a value's term, transitively: rendering the term renders
@@ -121,22 +259,23 @@ impl Import {
         &self,
         access: StructuredAccessId,
     ) -> BTreeSet<CanonicalInstructionId> {
-        self.access(access)
-            .map_or_else(BTreeSet::new, |imported| self.producers(&imported.step))
+        self.access(access).map_or_else(BTreeSet::new, |imported| {
+            self.producers(imported.step.view())
+        })
     }
 
-    fn step(&self, root: MachineExprId) -> Option<&ImportStep> {
-        self.roots.get(root.index())?.as_ref()
+    fn step(&self, root: MachineExprId) -> Option<StepView<'_>> {
+        self.roots.get(root)
     }
 
     /// A step's substitutions' rewrites, each flattened in order, then its own: a post-order walk
     /// on an explicit stack, as a substitution chain may be as deep as the function is long.
-    fn flattened(&self, step: &ImportStep) -> Vec<Rewrite> {
+    fn flattened(&self, step: StepView<'_>) -> Vec<Rewrite> {
         let mut out = Vec::new();
         let mut stack = vec![(step, 0)];
         while let Some((step, next)) = stack.pop() {
             let Some(substitution) = step.substitutions.get(next) else {
-                out.extend_from_slice(&step.own);
+                out.extend_from_slice(step.own);
                 continue;
             };
             stack.push((step, next + 1));
@@ -147,7 +286,7 @@ impl Import {
 
     /// Every producer a step absorbed, directly or through what those absorbed. A producer
     /// has one root, so a producer already collected is a root already walked.
-    fn producers(&self, step: &ImportStep) -> BTreeSet<CanonicalInstructionId> {
+    fn producers(&self, step: StepView<'_>) -> BTreeSet<CanonicalInstructionId> {
         let mut producers = BTreeSet::new();
         let mut stack = vec![step];
         while let Some(step) = stack.pop() {
@@ -392,7 +531,7 @@ struct Importer<'a> {
     projection: &'a MachineProjection,
     arena: &'a mut TermArena,
     policy: &'a ExpansionPolicy<'a>,
-    roots: HashMap<MachineExprId, RootImport>,
+    roots: Completed,
     in_progress: HashSet<MachineExprId>,
     entry_never_redefined: BTreeSet<ValueId>,
     /// Values the machine arena types as an address at some use.
@@ -493,7 +632,7 @@ pub fn import_with(
         projection,
         arena,
         policy,
-        roots: HashMap::new(),
+        roots: Completed::with_roots(projection.arena().len()),
         in_progress: HashSet::new(),
         entry_never_redefined,
         address_typed,
@@ -528,7 +667,6 @@ pub fn import_with(
             *cell = Some(ImportedValue {
                 value,
                 base_root: entity.root(),
-                producer: entity.producer(),
                 term: root.term,
             });
         }
@@ -541,16 +679,7 @@ pub fn import_with(
             accesses.insert(*access, imported);
         }
     }
-    let mut roots = Vec::new();
-    for (root, imported) in importer.roots {
-        if roots.len() <= root.index() {
-            roots.resize(root.index() + 1, None);
-        }
-        roots[root.index()] = Some(ImportStep {
-            own: imported.own.into(),
-            substitutions: imported.substitutions.into(),
-        });
-    }
+    let roots = Steps::of(importer.roots);
     Import {
         values,
         accesses,
@@ -563,20 +692,17 @@ impl Importer<'_> {
     /// A root's step as imported so far: what a load's cell shares with its value.
     fn step(&self, root: MachineExprId) -> ImportStep {
         self.roots
-            .get(&root)
-            .map(|imported| ImportStep {
-                own: imported.own.clone().into(),
-                substitutions: imported.substitutions.clone().into(),
+            .step(root)
+            .map(|step| ImportStep {
+                own: step.own.into(),
+                substitutions: step.substitutions.into(),
             })
             .unwrap_or_default()
     }
 
     fn import_root(&mut self, root: MachineExprId, inst: InstId) -> RootTerm {
-        if let Some(done) = self.roots.get(&root) {
-            return RootTerm {
-                term: done.term,
-                opaque: done.opaque,
-            };
+        if let Some(done) = self.roots.done(root) {
+            return done;
         }
         // Every leaf minted below belongs to this instruction's expression,
         // and the descent is in operand order, so the ordinal plus the graph's
@@ -719,7 +845,7 @@ impl Importer<'_> {
             term: done.term,
             opaque: done.opaque,
         };
-        self.roots.insert(root, done);
+        self.roots.record(root, done);
         term
     }
 

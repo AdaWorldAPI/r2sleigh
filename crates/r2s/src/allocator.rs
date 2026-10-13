@@ -13,10 +13,8 @@ static ALLOCATOR: dhat::Alloc = dhat::Alloc;
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
-#[cfg(all(feature = "alloc-count", not(feature = "dhat-heap")))]
-static ALLOCATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// mimalloc, counting each allocation and reallocation.
+/// mimalloc, counting each allocation and the bytes live in the engine's counters, which its phase
+/// traces read.
 #[cfg(all(feature = "alloc-count", not(feature = "dhat-heap")))]
 struct Counting;
 
@@ -24,21 +22,23 @@ struct Counting;
 #[cfg(all(feature = "alloc-count", not(feature = "dhat-heap")))]
 unsafe impl std::alloc::GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        r2engine::allocation::allocated(layout.size());
         unsafe { mimalloc::MiMalloc.alloc(layout) }
     }
 
     unsafe fn alloc_zeroed(&self, layout: std::alloc::Layout) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        r2engine::allocation::allocated(layout.size());
         unsafe { mimalloc::MiMalloc.alloc_zeroed(layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: std::alloc::Layout, size: usize) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        r2engine::allocation::freed(layout.size());
+        r2engine::allocation::allocated(size);
         unsafe { mimalloc::MiMalloc.realloc(ptr, layout, size) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+        r2engine::allocation::freed(layout.size());
         unsafe { mimalloc::MiMalloc.dealloc(ptr, layout) }
     }
 }
@@ -59,14 +59,16 @@ pub fn profile() -> Profile {
     }
 }
 
-/// The allocation count on stderr where this build counts them and `R2S_ALLOCATIONS` asks
-/// (`census.py time` reads it), and the heap profile written, before a script exits.
+/// The allocation count and heap peak on stderr where this build counts them and
+/// `R2S_ALLOCATIONS` asks (`census.py time` reads them), and the heap profile written, before a
+/// script exits.
 pub fn report(_profile: Profile) {
     #[cfg(all(feature = "alloc-count", not(feature = "dhat-heap")))]
     if std::env::var_os("R2S_ALLOCATIONS").is_some() {
         eprintln!(
             "r2s: allocations: {}",
-            ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed)
+            r2engine::allocation::allocation_count()
         );
+        eprintln!("r2s: heap peak: {}", r2engine::allocation::peak_bytes());
     }
 }

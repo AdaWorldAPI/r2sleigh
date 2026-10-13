@@ -224,8 +224,7 @@ fn a_definitionless_constant_has_a_canonical_value_term() {
     let inst = graph
         .inst_for_op(
             artifact
-                .function()
-                .get_block(0x1000)
+                .named_block(0x1000)
                 .and_then(|block| block.op_id(0))
                 .expect("return operation"),
         )

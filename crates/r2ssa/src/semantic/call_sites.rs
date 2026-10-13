@@ -13,9 +13,10 @@ pub(crate) fn collect_call_sites(
     let mut next_id = 0u32;
 
     for &block_addr in function.block_addrs() {
-        let Some(block) = function.get_block(block_addr) else {
+        let Some(block) = graph.block_id_for_addr(block_addr) else {
             continue;
         };
+        let insts = graph.op_insts(block);
         let fallthrough = match function
             .cfg()
             .get_block(block_addr)
@@ -26,7 +27,10 @@ pub(crate) fn collect_call_sites(
             _ => None,
         };
 
-        for (op_idx, (op_id, op)) in block.sited().enumerate() {
+        for (op_idx, &inst_id) in insts.iter().enumerate() {
+            let Some(op) = graph.op(inst_id) else {
+                continue;
+            };
             let id = CallSiteId(next_id);
             // The transfer names the instruction it was lifted from, and the
             // raw input names which of its instructions are call sites; that
@@ -51,12 +55,11 @@ pub(crate) fn collect_call_sites(
                         raw_identity.is_some_and(|identity| {
                             context.is_tail_call_site(identity)
                                 && match op {
-                                    SSAOp::Branch { .. } => graph
-                                        .value_of(*target)
-                                        .and_then(|value| graph.value(value))
-                                        .is_some_and(|value| {
+                                    SSAOp::Branch { .. } => {
+                                        graph.value(*target).is_some_and(|value| {
                                             value.canonical_storage == Some(identity.target())
-                                        }),
+                                        })
+                                    }
                                     // A slot in memory, or the register the
                                     // jump goes through: both are targets a
                                     // tail transfer can name, and the register
@@ -65,13 +68,9 @@ pub(crate) fn collect_call_sites(
                                     // branch actually reads.
                                     SSAOp::BranchInd { .. } => {
                                         identity.target().space == crate::CanonicalStorageSpace::Ram
-                                            || graph
-                                                .value_of(*target)
-                                                .and_then(|value| graph.value(value))
-                                                .is_some_and(|value| {
-                                                    value.canonical_storage
-                                                        == Some(identity.target())
-                                                })
+                                            || graph.value(*target).is_some_and(|value| {
+                                                value.canonical_storage == Some(identity.target())
+                                            })
                                     }
                                     _ => false,
                                 }
@@ -82,12 +81,7 @@ pub(crate) fn collect_call_sites(
                 }
                 _ => continue,
             };
-            let Some(inst_id) = graph.inst_for_op(op_id) else {
-                continue;
-            };
-            let Some(target_id) = graph.value_of(target) else {
-                continue;
-            };
+            let target_id = target;
             next_id = next_id.saturating_add(1);
             let direct_target = resolve_graph_literal_value(graph, prep_facts, target_id)
                 .or_else(|| raw_identity.and_then(direct_target_from_raw_identity));
@@ -102,7 +96,7 @@ pub(crate) fn collect_call_sites(
                     direct_target,
                     fallthrough: if transfer == CallSiteTransfer::TailCall {
                         None
-                    } else if op_idx + 1 == block.ops().len() {
+                    } else if op_idx + 1 == insts.len() {
                         fallthrough
                     } else {
                         None

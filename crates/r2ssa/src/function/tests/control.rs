@@ -55,10 +55,9 @@ fn unchecked_and_controlled_decompile_builders_produce_identical_artifacts() {
         controlled.function().block_addrs()
     );
     for (lhs, rhs) in unchecked
-        .function()
         .named_blocks()
         .iter()
-        .zip(controlled.function().named_blocks())
+        .zip(controlled.named_blocks())
     {
         assert_eq!(lhs.addr, rhs.addr);
         assert_eq!(lhs.size, rhs.size);
@@ -103,8 +102,8 @@ fn prepared_function_ssa_tracks_mode_and_keeps_named_blocks() {
 
     assert_eq!(prepared.name.as_deref(), Some("prepared_demo"));
 
-    assert_eq!(prepared.function().named_blocks().len(), 1);
-    assert_eq!(prepared.function().named_blocks()[0].addr, 0x1000);
+    assert_eq!(prepared.named_blocks().len(), 1);
+    assert_eq!(prepared.named_blocks()[0].addr, 0x1000);
 
     // Every artifact is sealed, so the symbolic one carries prep facts too:
     // the type says so, where a test used to.
@@ -237,9 +236,8 @@ fn prepared_expression_certificates_render_only_identity_phis() {
     assert!(
         identity_phi
             .certificates()
-            .expressions
-            .get(identity_value)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(identity_value),
         "identity phi over one renderable ValueId should be renderable"
     );
 
@@ -253,9 +251,8 @@ fn prepared_expression_certificates_render_only_identity_phis() {
     assert!(
         mixed_phi
             .certificates()
-            .expressions
-            .get(mixed_value)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(mixed_value),
         "non-memory phi with sibling values should be renderable; divergence handled by structurer"
     );
 }
@@ -362,9 +359,8 @@ fn prepared_expression_certificates_render_loop_carried_recurrence_phi() {
     assert!(
         prepared
             .certificates()
-            .expressions
-            .get(carrier.phi)
-            .is_some_and(|cert| cert.renderable),
+            .renderable_expressions
+            .contains(carrier.phi),
         "loop-header phi is renderable when the loop certificate proves the backedge and the update is pure modulo that phi"
     );
 }
@@ -727,7 +723,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
     assert!(carrier.identity_values.contains(&chained_result_value));
     assert!(loop_fact.validate_carrier_members(
         prepared.graph(),
-        prepared.storage_spans(),
+        &prepared.recomputed_liveness().1,
         Some(prepared.machine_context()),
     ));
     for result in [result_value, chained_result_value] {
@@ -784,7 +780,7 @@ fn loop_carrier_certifies_dominating_initializer_for_zero_iteration_exit() {
     assert!(
         !forged_loop.validate_carrier_members(
             prepared.graph(),
-            prepared.storage_spans(),
+            &prepared.recomputed_liveness().1,
             Some(prepared.machine_context()),
         ),
         "stored membership must not validate against its own tampered rows"
@@ -810,7 +806,7 @@ fn projected_loop_peers_form_one_order_and_name_independent_component() {
             .expect("projected peer loop");
         assert!(loop_fact.validate_carrier_members(
             prepared.graph(),
-            prepared.storage_spans(),
+            &prepared.recomputed_liveness().1,
             Some(prepared.machine_context()),
         ));
         assert_eq!(loop_fact.carriers.len(), 3);
@@ -856,7 +852,7 @@ fn projected_loop_peers_require_one_coherent_storage_run() {
         .expect("separate peer loop");
     assert!(loop_fact.validate_carrier_members(
         prepared.graph(),
-        prepared.storage_spans(),
+        &prepared.recomputed_liveness().1,
         Some(prepared.machine_context()),
     ));
     assert!(
@@ -1464,4 +1460,68 @@ fn test_decompile_prep_facts_collapse_copy_chain_and_trivial_phi_roots() {
         facts.canonical_root(const_root),
         crate::view::Representative::Value(const_root)
     );
+}
+
+/// The graph spells a function's blocks exactly as the function does: each operation and phi
+/// under its own id, a merge with its sources and storage.
+#[test]
+fn the_graph_spells_the_blocks_as_the_function_does() {
+    let arch = make_x86_64_prep_arch();
+    let arm = |addr: u64, value: u64| R2ILBlock {
+        addr,
+        size: 4,
+        ops: vec![
+            R2ILOp::Copy {
+                dst: make_reg(0, 8),
+                src: make_const(value, 8),
+            },
+            R2ILOp::Branch {
+                target: make_const(0x1730, 8),
+            },
+        ],
+        ..Default::default()
+    };
+    let blocks = vec![
+        R2ILBlock {
+            addr: 0x1710,
+            size: 4,
+            ops: vec![R2ILOp::CBranch {
+                target: make_const(0x1724, 8),
+                cond: make_reg(8, 8),
+            }],
+            ..Default::default()
+        },
+        arm(0x1714, 3),
+        arm(0x1724, 5),
+        R2ILBlock {
+            addr: 0x1730,
+            size: 4,
+            ops: vec![R2ILOp::Return {
+                target: make_reg(0, 8),
+            }],
+            ..Default::default()
+        },
+    ];
+    let function = SSAFunction::from_blocks_raw(&blocks, Some(&arch)).expect("renamed SSA");
+    let graph = crate::SsaGraph::from_function_with_storage(&function);
+    let spelled = |blocks: Vec<crate::SSABlock>| {
+        (blocks.iter())
+            .map(|block| {
+                let ops = (0..block.ops().len()).map(|at| (block.op_id(at), &block.ops()[at]));
+                (
+                    block.addr,
+                    block.size,
+                    format!("{:?}", ops.collect::<Vec<_>>()),
+                    format!("{:?}", block.phis()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let from_graph = spelled(graph.named_blocks());
+    assert!(
+        from_graph
+            .iter()
+            .any(|(_, _, _, phis)| phis.contains("canonical_storage"))
+    );
+    assert_eq!(from_graph, spelled(function.named_blocks()));
 }

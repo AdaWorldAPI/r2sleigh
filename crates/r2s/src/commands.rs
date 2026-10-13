@@ -1180,7 +1180,8 @@ pub(crate) fn symbols(session: &Session) -> Result<Table, String> {
         .filter(|symbol| symbol.import && index(symbol).is_some())
         .collect();
     imports.sort_by_key(|symbol| index(symbol));
-    let stubs = session.program.imports();
+    let linkage = session.program.imports();
+    let stubs = &linkage.stubs;
     for symbol in imports {
         let stub = stubs.iter().find(|(_, stub)| stub.symbol == symbol.name);
         let at = stub.map(|(at, _)| *at);

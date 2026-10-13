@@ -163,6 +163,25 @@ const PLT: [u8; 0x26] = [
     0xc3, // ret
 ];
 
+/// A CET `.plt` of PLT0 and one lazy entry, which names no stub, then `.plt.sec`'s stub and a caller.
+const PLT_CET: [u8; 0x36] = [
+    0xff, 0x35, 0xea, 0x0f, 0x00, 0x00, // push qword [rip + 0xfea]
+    0xf2, 0xff, 0x25, 0xeb, 0x0f, 0x00, 0x00, // bnd jmp qword [rip + 0xfeb]
+    0x0f, 0x1f, 0x00, // nop dword [rax]
+    0xf3, 0x0f, 0x1e, 0xfa, // endbr64, the lazy entry
+    0x68, 0x00, 0x00, 0x00, 0x00, // push 0
+    0xf2, 0xe9, 0xe1, 0xff, 0xff, 0xff, // bnd jmp PLT0
+    0x90, // nop
+    0xf3, 0x0f, 0x1e, 0xfa, // endbr64, `.plt.sec`'s stub
+    0xf2, 0xff, 0x25, 0xd5, 0x0f, 0x00, 0x00, // bnd jmp qword [rip + 0xfd5], the slot
+    0x0f, 0x1f, 0x44, 0x00, 0x00, // nop dword [rax + rax]
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // call the stub
+    0xc3, // ret
+];
+
+/// Where [`PLT_CET`]'s `.plt.sec` stub begins.
+pub const PLT_SEC_STUB: u64 = BASE + 0x20;
+
 /// The same `.plt` with a cache-line flush before the stub's jump through the slot: an effect the
 /// jump does not carry, so the body is no import stub.
 const PLT_FENCED: [u8; 0x26] = {
@@ -587,6 +606,27 @@ impl Literal {
         program
     }
 
+    /// [`Self::plt`] as ld lays it out for CET: the stub in `.plt.sec`, PLT0 and the lazy entry in `.plt`.
+    pub fn plt_cet() -> Self {
+        let mut program = Self::plt();
+        program.code = &PLT_CET;
+        program.container.segments = vec![code_segment(BASE, PLT_CET.len() as u64)];
+        let section = |name: &str, vaddr, vsize| Section {
+            name: name.to_owned(),
+            vaddr,
+            vsize,
+            role: SectionRole::Code,
+            loaded: true,
+            ..Section::default()
+        };
+        program.container.sections = vec![
+            section(".plt", BASE, 0x20),
+            section(".plt.sec", PLT_SEC_STUB, 0x10),
+            section(".text", BASE + 0x30, 6),
+        ];
+        program
+    }
+
     /// The same program, stated as Go built by the toolchain of `version`, where one is stated,
     /// its pclntab marking the functions at `assembly` as written in assembly.
     pub fn in_go(mut self, version: Option<(u32, u32)>, assembly: Option<&[u64]>) -> Self {
@@ -639,6 +679,16 @@ impl Literal {
     /// The same program with a section listed ahead of its code.
     pub fn preceded_by(mut self, section: Section) -> Self {
         self.container.sections.insert(0, section);
+        self
+    }
+
+    /// The same program with one more frame its call-frame information states, covering `range`.
+    pub fn unwinding(mut self, range: Range<u64>) -> Self {
+        self.container.unwind.insert(r2abi::frames::UnwindFrame {
+            start: range.start,
+            end: range.end,
+            saves: BTreeMap::new(),
+        });
         self
     }
 

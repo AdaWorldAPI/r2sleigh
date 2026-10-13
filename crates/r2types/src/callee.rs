@@ -1,21 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use r2ssa::SSAVarNameKind;
-use serde::{Deserialize, Serialize};
+use r2ssa::dense::IdMap;
+use r2ssa::{InstId, SSAVarNameKind};
 
 use crate::{CalleeFact, CalleeLinkage, FunctionType, SignatureCertificateSource};
 
 const CALLEE_NAMESPACE_PREFIXES: [&str; 6] = ["sym.imp.", "sym.", "imp.", "reloc.", "dbg.", "fcn."];
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct CallsiteKey {
-    /// The call instruction.
-    pub at: r2ssa::InstId,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CalleeIdentityKey {
     DirectAddress(u64),
-    IndirectSite(CallsiteKey),
+    IndirectSite(InstId),
     Named(String),
 }
 
@@ -87,7 +81,7 @@ pub struct ResolvedCalleeTarget {
 #[derive(Debug, Clone, Copy)]
 pub struct CalleeTargetIdentityRequest<'a> {
     pub resolution: Option<&'a CalleeResolutionFacts>,
-    pub callsite: Option<CallsiteKey>,
+    pub callsite: Option<InstId>,
     pub prepared_identity: Option<&'a CalleeIdentity>,
     pub prepared_direct_target: Option<u64>,
     pub direct_target_context: Option<&'a CalleeIdentityContext<'a>>,
@@ -139,7 +133,7 @@ pub struct CalleeIdentity {
 pub struct CalleeResolutionFacts {
     pub by_key: BTreeMap<CalleeIdentityKey, CalleeIdentity>,
     pub by_direct_addr: BTreeMap<u64, CalleeIdentityKey>,
-    pub by_callsite: BTreeMap<CallsiteKey, CalleeIdentityKey>,
+    pub by_callsite: IdMap<InstId, CalleeIdentityKey>,
     pub by_name: BTreeMap<String, CalleeIdentityKey>,
 }
 
@@ -157,7 +151,7 @@ impl CalleeResolutionFacts {
 
     pub fn from_direct_call_targets<I>(targets: I, ctx: &CalleeIdentityContext<'_>) -> Self
     where
-        I: IntoIterator<Item = (CallsiteKey, u64)>,
+        I: IntoIterator<Item = (InstId, u64)>,
     {
         let mut facts = Self::default();
         facts.index_context(ctx);
@@ -186,12 +180,12 @@ impl CalleeResolutionFacts {
 
     pub fn insert_direct_callsite(
         &mut self,
-        callsite: CallsiteKey,
+        callsite: InstId,
         addr: u64,
         ctx: &CalleeIdentityContext<'_>,
     ) -> Option<&CalleeIdentity> {
         let key = CalleeIdentityKey::DirectAddress(addr);
-        if Self::callsite_binding_conflicts(self.by_callsite.get(&callsite), &key) {
+        if Self::callsite_binding_conflicts(self.by_callsite.get(callsite), &key) {
             return None;
         }
         let key = self.ensure_direct_identity(addr, ctx);
@@ -199,9 +193,9 @@ impl CalleeResolutionFacts {
         self.by_key.get(&key)
     }
 
-    pub fn identity_for_callsite(&self, callsite: CallsiteKey) -> Option<&CalleeIdentity> {
+    pub fn identity_for_callsite(&self, callsite: InstId) -> Option<&CalleeIdentity> {
         self.by_callsite
-            .get(&callsite)
+            .get(callsite)
             .and_then(|key| self.by_key.get(key))
     }
 
@@ -359,8 +353,8 @@ impl CalleeResolutionFacts {
         })
     }
 
-    pub fn key_for_callsite(&self, callsite: CallsiteKey) -> Option<&CalleeIdentityKey> {
-        self.by_callsite.get(&callsite)
+    pub fn key_for_callsite(&self, callsite: InstId) -> Option<&CalleeIdentityKey> {
+        self.by_callsite.get(callsite)
     }
 
     fn identity_matches_raw_or_normalized_name(
@@ -391,8 +385,8 @@ impl CalleeResolutionFacts {
         key
     }
 
-    fn bind_callsite(&mut self, callsite: CallsiteKey, key: CalleeIdentityKey) {
-        self.by_callsite.entry(callsite).or_insert(key);
+    fn bind_callsite(&mut self, callsite: InstId, key: CalleeIdentityKey) {
+        self.by_callsite.get_or_insert_with(callsite, || key);
     }
 
     fn callsite_binding_conflicts(
@@ -1443,9 +1437,7 @@ mod tests {
         let known_signatures = HashMap::new();
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let callsite = CallsiteKey {
-            at: r2ssa::InstId(0x10),
-        };
+        let callsite = r2ssa::InstId(0x10);
         let resolution =
             CalleeResolutionFacts::from_direct_call_targets([(callsite, 0x402000)], &ctx);
         let prepared_identity = CalleeIdentity::from_direct_target(0x401000, &ctx);
@@ -1483,9 +1475,7 @@ mod tests {
         let known_signatures = HashMap::new();
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let callsite = CallsiteKey {
-            at: r2ssa::InstId(0x10),
-        };
+        let callsite = r2ssa::InstId(0x10);
         let resolution =
             CalleeResolutionFacts::from_direct_call_targets([(callsite, 0x402000)], &ctx);
 
@@ -1520,9 +1510,7 @@ mod tests {
         let known_signatures = HashMap::new();
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let callsite = CallsiteKey {
-            at: r2ssa::InstId(0x10),
-        };
+        let callsite = r2ssa::InstId(0x10);
         let resolution =
             CalleeResolutionFacts::from_direct_call_targets([(callsite, 0x401000)], &ctx);
 
@@ -1614,9 +1602,7 @@ mod tests {
         let known_signatures = HashMap::new();
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let unresolved_site = CallsiteKey {
-            at: r2ssa::InstId(0x10),
-        };
+        let unresolved_site = r2ssa::InstId(0x10);
         assert!(
             CalleeResolutionFacts::resolve_target_policy(CalleeTargetResolutionRequest {
                 identity: CalleeTargetIdentityRequest {
@@ -1676,12 +1662,8 @@ mod tests {
         let known_signatures = HashMap::new();
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let imported_site = CallsiteKey {
-            at: r2ssa::InstId(0x10),
-        };
-        let unresolved_site = CallsiteKey {
-            at: r2ssa::InstId(0x20),
-        };
+        let imported_site = r2ssa::InstId(0x10);
+        let unresolved_site = r2ssa::InstId(0x20);
         let resolution =
             CalleeResolutionFacts::from_direct_call_targets([(imported_site, 0x401000)], &ctx);
 
@@ -1710,9 +1692,7 @@ mod tests {
         let known_signatures = HashMap::new();
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let callsite = CallsiteKey {
-            at: r2ssa::InstId(0x10),
-        };
+        let callsite = r2ssa::InstId(0x10);
         let resolution =
             CalleeResolutionFacts::from_direct_call_targets([(callsite, 0x401000)], &ctx);
 
@@ -1893,9 +1873,7 @@ mod tests {
         let known_signatures = HashMap::from([("printf".to_string(), non_variadic_signature(2))]);
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let callsite = CallsiteKey {
-            at: r2ssa::InstId(0x402004),
-        };
+        let callsite = r2ssa::InstId(0x402004);
 
         let facts = CalleeResolutionFacts::from_direct_call_targets([(callsite, 0x401000)], &ctx);
 
@@ -1989,9 +1967,7 @@ mod tests {
         let known_signatures = HashMap::new();
         let ctx =
             empty_identity_context(&function_names, &symbols, &callee_facts, &known_signatures);
-        let callsite = CallsiteKey {
-            at: r2ssa::InstId(0x402004),
-        };
+        let callsite = r2ssa::InstId(0x402004);
         let mut facts = CalleeResolutionFacts::default();
 
         assert!(

@@ -131,7 +131,7 @@ impl Anchored {
 
     /// An indirect transfer the walk stopped at says so, and no case is invented for it; a dispatch or a tail call there is already said.
     fn unresolved(&mut self, prepared: &Prepared) {
-        for stop in &prepared.body().unresolved {
+        for stop in &prepared.outline().unresolved {
             if stop.reason != crate::body::UnresolvedReason::IndirectBranch {
                 continue;
             }

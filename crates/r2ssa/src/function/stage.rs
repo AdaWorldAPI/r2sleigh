@@ -220,6 +220,7 @@ impl Prepared {
             crate::semantic::collect_source_formal_parameter_facts(&graph, machine_context);
         prep.install_exact_formal_parameters(&graph, &formal_parameters);
         validate_ssa_function(&ir)?;
+        ir.drop_operations();
         let folded = Folded {
             prepared: crate::constant::fold_all(&graph, Some(&prep)),
             bare: crate::constant::fold_all(&graph, None),
@@ -241,29 +242,24 @@ impl Deref for Prepared {
     }
 }
 
-/// A sealed function: the blocks, the prep facts collected from them, and
-/// their graph.
+/// A sealed function: its graph, which owns each operation from here, the prep facts collected
+/// from it, and the function's control flow and records; its blocks of operations went at the seal
+/// (doc/adr-one-ir.md, MM.6).
 ///
-/// Nothing reaches the blocks mutably. A sealed function, owned or not,
-/// hands out only shared views of them:
-///
-/// ```compile_fail,E0596
-/// fn edit(mut artifact: r2ssa::SsaArtifact) {
-///     artifact.function().blocks()[0].ops_mut()[0] = r2ssa::SSAOp::Nop;
-/// }
-/// ```
+/// Nothing reaches the graph mutably. A sealed function, owned or not, hands out only shared
+/// views of it:
 ///
 /// ```compile_fail,E0596
 /// fn edit(mut sealed: r2ssa::Sealed) {
-///     sealed.function().blocks()[0].phis_mut().clear();
+///     sealed.graph().blocks.clear();
 /// }
 /// ```
 ///
-/// while reading them is what every consumer does:
+/// while reading its operations is what every consumer does:
 ///
 /// ```no_run
 /// fn read(artifact: &r2ssa::SsaArtifact) -> usize {
-///     artifact.function().blocks()[0].ops().len()
+///     artifact.named_blocks()[0].ops().len()
 /// }
 /// ```
 #[derive(Debug, Clone)]
@@ -348,8 +344,6 @@ impl Sealed {
         );
         let crate::semantic::CollectedLiveness {
             live_out,
-            values,
-            storage_spans,
             ignored_reads,
         } = liveness;
         let unobserved_merges = crate::deadphi::DeadPhis::find(&self.graph, &live_out, &facts);
@@ -375,9 +369,7 @@ impl Sealed {
             provenance: finish.provenance,
             sealed: self,
             liveness: super::ArtifactLiveness {
-                storage_spans,
                 live_out,
-                values,
                 ignored_reads,
             },
             unobserved_merges,

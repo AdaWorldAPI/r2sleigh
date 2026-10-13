@@ -83,20 +83,12 @@ struct Shape {
     dispatches: std::collections::BTreeSet<u64>,
 }
 
-fn shape_of(blocks: &[crate::body::BodyBlock], dispatches: impl Iterator<Item = u64>) -> Shape {
-    let blocks = blocks
-        .iter()
-        .map(|block| {
-            let lifted = &block.lifted;
-            (
-                lifted.addr,
-                u64::from(lifted.size),
-                block.successors.clone(),
-            )
-        })
-        .collect();
+fn shape_of(
+    blocks: impl Iterator<Item = (u64, u64, Vec<(r2source::AdvisorySuccessorKind, u64)>)>,
+    dispatches: impl Iterator<Item = u64>,
+) -> Shape {
     Shape {
-        blocks,
+        blocks: blocks.collect(),
         dispatches: dispatches.collect(),
     }
 }
@@ -142,10 +134,30 @@ pub struct AnalysisRefused {
     pub unresolved: Vec<u64>,
 }
 
+/// What a held rendering keeps of the response it was drawn from: the text, the ledger and the
+/// premises its readers ask for. The facts behind them stay with the analysis, which a session
+/// drops by its own budget (doc/adr-memory-model.md).
+#[derive(Clone)]
+pub struct RenderedResponse {
+    pub output: crate::EngineRendering,
+    pub obligation_ledger: Option<r2dec::ledger::ObligationLedger>,
+    pub premises: std::collections::BTreeSet<r2source::Premise>,
+}
+
+impl From<EngineDecompileResponse> for RenderedResponse {
+    fn from(response: EngineDecompileResponse) -> Self {
+        Self {
+            output: response.output,
+            obligation_ledger: response.obligation_ledger,
+            premises: response.premises,
+        }
+    }
+}
+
 /// A function rendered, with what of its analysis the rendering is shown with.
 #[derive(Clone)]
 pub struct Rendering {
-    pub response: EngineDecompileResponse,
+    pub response: RenderedResponse,
     /// The name the C defines the function under.
     pub definition: String,
     /// The callees the analysis could not read.
@@ -243,6 +255,17 @@ impl<S: Source + 'static> OpenProgram<S> {
     pub fn prepared(&mut self, entry: u64) -> Result<Arc<Prepared>, String> {
         self.start_request();
         self.prepare(entry)
+    }
+
+    /// One function's walk, dispatches followed, walked again where it was dropped.
+    pub fn walk(&mut self, entry: u64) -> Result<Arc<crate::native::Walk>, String> {
+        self.start_request();
+        self.loaded()?;
+        self.assembled()?;
+        let key = (entry, self.view().thumb_at(entry));
+        let walking =
+            (self.db.get::<super::analysis::Walked>(&key)).map_err(|cycle| format!("{cycle:?}"))?;
+        walking.0.clone().map_err(|refusal| refusal.to_string())
     }
 
     /// The analysis, within a request already started.
@@ -400,9 +423,14 @@ impl<S: Source + 'static> OpenProgram<S> {
         let target = self.target(entry)?;
         let reason = match self.analysed(entry) {
             // A defect reading what the analysis proved is an analysis defect like any other.
-            Ok(prepared) => match isolated(|| self.proved_listing(&target, &prepared)) {
-                Ok(listing) => {
-                    let shape = shape_of(&prepared.body().blocks, prepared.dispatches());
+            Ok(prepared) => match isolated(|| self.proved_listing(&target, entry, &prepared)) {
+                Ok(Err(reason)) => reason,
+                Ok(Ok(listing)) => {
+                    let blocks = (prepared.outline().blocks.iter()).map(|block| {
+                        let successors = block.successors.clone();
+                        (block.addr, u64::from(block.size), successors)
+                    });
+                    let shape = shape_of(blocks, prepared.dispatches());
                     return Ok((listing, shape));
                 }
                 Err(panicked) => NativeRefusal::from(panicked),
@@ -418,23 +446,28 @@ impl<S: Source + 'static> OpenProgram<S> {
         })
     }
 
-    /// The listing of a function whose analysis stands, each line carrying what it proved.
+    /// The listing of a function whose analysis stands, each line carrying what it proved. The lift
+    /// is the walk's, asked again: the analysis keeps only the walk's outline.
     fn proved_listing(
         &self,
         target: &crate::native::NativeTarget<'_>,
+        entry: u64,
         prepared: &Prepared,
-    ) -> FunctionListing {
-        let lifted = prepared.lifted();
+    ) -> Result<FunctionListing, NativeRefusal> {
+        let key = (entry, self.view().thumb_at(entry));
+        let walking = (self.db.get::<super::analysis::Walked>(&key))
+            .map_err(|cycle| NativeRefusal::Prepare(format!("{cycle:?}")))?;
+        let lifted = walking.0.as_ref().map_err(Clone::clone)?.lifted();
         let body = WalkedBody::new(&lifted, target.arch);
         let proved = Proved::new(prepared);
         let answered = Answered {
             body: Some(&body),
             ..self.answered(Some(&proved))
         };
-        FunctionListing {
+        Ok(FunctionListing {
             lines: listed_by_block(&answered, &lifted),
             refused: None,
-        }
+        })
     }
 
     /// The listing of the plain walk of a function whose analysis was refused.
@@ -455,7 +488,11 @@ impl<S: Source + 'static> OpenProgram<S> {
             .map(|stop| stop.addr)
             .collect();
         // The plain walk reads no table, so it follows no dispatch.
-        let shape = shape_of(&body.blocks, std::iter::empty());
+        let blocks = (body.blocks.iter()).map(|block| {
+            let successors = block.successors.clone();
+            (block.lifted.addr, u64::from(block.lifted.size), successors)
+        });
+        let shape = shape_of(blocks, std::iter::empty());
         let lifted = body
             .blocks
             .into_iter()
@@ -811,6 +848,19 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Modes {
 /// Where the program states a function begins, and whether it states the code there is Thumb.
 fn stated_functions<S: Source + 'static>(view: &View<'_, S>) -> Vec<(u64, Confidence, bool)> {
     let container = view.source().container();
+    let imports = view.imports();
+    // Each frame the call-frame information states begins a function, which survives a strip
+    // (ROADMAP I); one in a section of linkage code, or holding a stub, is the stub table's.
+    let linkage = view.linkage();
+    let frames = (container.unwind.frames())
+        .filter(|frame| !linkage.holds(frame.start))
+        .filter(|frame| {
+            imports
+                .range(frame.start..frame.end.max(frame.start + 1))
+                .next()
+                .is_none()
+        })
+        .map(|frame| (frame.start, view.thumb_at(frame.start)));
     container
         .entries
         .iter()
@@ -822,7 +872,8 @@ fn stated_functions<S: Source + 'static>(view: &View<'_, S>) -> Vec<(u64, Confid
                 .filter(|symbol| symbol.defined && symbol.kind == SymbolKind::Function)
                 .map(|symbol| (symbol.vaddr, symbol.thumb)),
         )
-        .chain(view.imports().keys().map(|vaddr| (*vaddr, false)))
+        .chain(imports.keys().map(|vaddr| (*vaddr, false)))
+        .chain(frames)
         .map(|(vaddr, thumb)| (vaddr, Confidence::of(Basis::Stated), thumb))
         .collect()
 }

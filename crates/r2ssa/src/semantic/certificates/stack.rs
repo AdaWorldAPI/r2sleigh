@@ -188,11 +188,11 @@ pub(crate) fn collect_callee_stack_allocation_certificates(
     ) else {
         return BTreeMap::new();
     };
-    let contains_call = function.blocks().iter().any(|block| {
-        block.ops().iter().any(|op| {
+    let contains_call = graph.blocks.iter().any(|block| {
+        graph.op_insts(block.id).iter().any(|inst| {
             matches!(
-                op,
-                SSAOp::Call { .. } | SSAOp::CallInd { .. } | SSAOp::CallOther { .. }
+                graph.op(*inst),
+                Some(SSAOp::Call { .. } | SSAOp::CallInd { .. } | SSAOp::CallOther { .. })
             )
         })
     });
@@ -1495,7 +1495,7 @@ pub(crate) fn collect_stack_call_argument_values(
     let Some((block_addr, op_idx)) = graph.walk_start(call_site.at) else {
         return Vec::new();
     };
-    let Some(block) = function.get_block(block_addr) else {
+    let Some(block) = graph.block_id_for_addr(block_addr) else {
         return Vec::new();
     };
 
@@ -1516,7 +1516,10 @@ pub(crate) fn collect_stack_call_argument_values(
         return Vec::new();
     };
     let mut by_offset = BTreeMap::<i64, StackCallArgumentCertificate>::new();
-    for (producer_idx, op) in block.ops()[..op_idx].iter().enumerate().rev() {
+    for &producer in graph.op_insts(block)[..op_idx].iter().rev() {
+        let Some(op) = graph.op(producer) else {
+            continue;
+        };
         if matches!(
             op,
             SSAOp::Call { .. } | SSAOp::CallInd { .. } | SSAOp::Return { .. }
@@ -1531,16 +1534,7 @@ pub(crate) fn collect_stack_call_argument_values(
         else {
             continue;
         };
-        let Some(value) = graph.value_of(*val) else {
-            continue;
-        };
-
-        let Some(producer) = block
-            .op_id(producer_idx)
-            .and_then(|id| graph.inst_for_op(id))
-        else {
-            continue;
-        };
+        let value = *val;
         let accesses = StructuredAccessId {
             inst: producer,
             ordinal: 0,

@@ -17,7 +17,7 @@ fn a_lone_stub_begins_at_its_transfer_not_at_the_pad_before_it() {
             stop: Stop::After(1),
         })
         .expect("it lists");
-    let held = program.imports();
+    let held = program.imports().stubs.clone();
     let imports: Vec<(u64, &str)> = held
         .iter()
         .map(|(at, stub)| (*at, stub.symbol.as_str()))
@@ -39,7 +39,7 @@ fn a_lone_stub_begins_at_its_transfer_not_at_the_pad_before_it() {
 fn a_lone_stub_begins_on_its_section_alignment_not_at_padding_that_does_nothing() {
     let program = OpenProgram::of(Literal::plt_nop_padded());
     program.loaded().expect("it is current");
-    let held = program.imports();
+    let held = program.imports().stubs.clone();
     let imports: Vec<(u64, &str, u64)> = held
         .iter()
         .map(|(at, stub)| (*at, stub.symbol.as_str(), stub.size))
@@ -53,14 +53,14 @@ fn a_section_of_stubs_is_known_by_what_it_holds_not_by_its_name() {
     // jump and a jump through the import's slot, so its stub is named.
     let program = OpenProgram::of(Literal::plt().renamed(0, ".foo"));
     program.loaded().expect("it is current");
-    let held = program.imports();
+    let held = program.imports().stubs.clone();
     let imports: Vec<(u64, &str)> = held
         .iter()
         .map(|(at, stub)| (*at, stub.symbol.as_str()))
         .collect();
     assert_eq!(imports, [(PLT_STUB, "_Exit")]);
     // The code that calls it makes a call, so it is the program's own and holds no stub.
-    assert!(program.imports().range(PLT_CALLER..).next().is_none());
+    assert!(program.imports().stubs.range(PLT_CALLER..).next().is_none());
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn a_stub_that_builds_its_slot_from_two_halves_is_named_for_the_import() {
     };
     let stub = program.listing(listing).expect("it lists");
     // The fold carries `movw` into `movt`, so the load names the slot and the slot names the import.
-    let held = program.imports();
+    let held = program.imports().stubs.clone();
     let imports = held.iter().map(|(at, stub)| (*at, stub.symbol.as_str()));
     assert_eq!(
         imports.collect::<Vec<_>>(),
@@ -101,7 +101,7 @@ fn an_arm_plt0_whose_literal_word_decodes_as_a_conditional_instruction_still_hol
         });
     let program = OpenProgram::of(literal);
     program.loaded().expect("it is current");
-    let held = program.imports();
+    let held = program.imports().stubs.clone();
     let imports: Vec<(u64, &str, u64)> = held
         .iter()
         .map(|(at, stub)| (*at, stub.symbol.as_str(), stub.size))

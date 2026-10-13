@@ -190,7 +190,6 @@ pub(crate) fn collect_unstructured_cycle_blocks(
 }
 
 pub(crate) fn collect_structured_memory_access_facts(
-    function: &SSAFunction,
     graph: &SsaGraph,
     objects: &ObjectModel,
     memory: &MemorySSAFacts,
@@ -202,11 +201,12 @@ pub(crate) fn collect_structured_memory_access_facts(
 ) {
     let mut access_facts = BTreeMap::new();
     let mut member_run_stores = crate::dense::IdMap::default();
-    for block in function.named_blocks() {
-        for (id, op) in block.sited() {
-            let Some(inst) = graph.inst_for_op(id) else {
+    for block in &graph.blocks {
+        for &inst in graph.op_insts(block.id) {
+            let Some(op) = graph.op(inst) else {
                 continue;
             };
+            let op = &graph.named_op(op);
             let mut ordinal = 0u32;
             match op {
                 SSAOp::Load { dst, addr, space }

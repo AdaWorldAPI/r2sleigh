@@ -8,7 +8,7 @@ pub(crate) use shared::exact_copy_chain_to_entry_storage;
 mod stack;
 
 pub use call_results::*;
-pub use expressions::*;
+pub(crate) use expressions::*;
 pub use returns::*;
 pub use shared::*;
 pub use stack::*;
@@ -234,23 +234,6 @@ fn switch_guard(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IfRegionCertificate {
-    pub predicate: PredicateId,
-    pub block_addr: u64,
-    pub true_target: u64,
-    pub false_target: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExpressionCertificate {
-    pub value: ValueId,
-    pub defining_inst: Option<InstId>,
-    pub inputs: Vec<ValueId>,
-    pub width: u32,
-    pub renderable: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryAccessCertificate {
     pub access: StructuredAccessId,
     pub space: SpaceId,
@@ -386,23 +369,42 @@ pub enum CallArgumentLocation {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedProofFailure {
-    pub owner: &'static str,
-    pub anchor: u64,
-    pub obligation: &'static str,
-    pub reason: String,
+/// One value for each direction an instruction accesses memory in: a read and a write by one
+/// instruction are different effects.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ByDirection<T> {
+    pub read: T,
+    pub write: T,
+}
+
+impl<T> ByDirection<T> {
+    /// Both directions, the read's first.
+    pub fn each_mut(&mut self) -> [&mut T; 2] {
+        [&mut self.read, &mut self.write]
+    }
+
+    pub const fn get(&self, is_write: bool) -> &T {
+        if is_write { &self.write } else { &self.read }
+    }
+
+    pub fn get_mut(&mut self, is_write: bool) -> &mut T {
+        if is_write {
+            &mut self.write
+        } else {
+            &mut self.read
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreparedFunctionCertificates {
     pub loops: BTreeMap<LoopId, LoopCertificate>,
     pub switches: BTreeMap<u64, SwitchCertificate>,
-    pub if_regions: BTreeMap<PredicateId, IfRegionCertificate>,
-    pub expressions: crate::dense::IdMap<ValueId, ExpressionCertificate>,
+    /// The values a statement may spell; a value's definition, inputs and width are the graph's.
+    pub renderable_expressions: crate::dense::IdSet<ValueId>,
     pub memory_accesses: BTreeMap<StructuredAccessId, MemoryAccessCertificate>,
-    /// The accesses one instruction performs, by direction.
-    pub memory_accesses_by_inst: BTreeMap<(InstId, bool), Vec<StructuredAccessId>>,
+    /// The accesses each instruction performs, by direction.
+    pub memory_accesses_by_inst: crate::dense::IdMap<InstId, ByDirection<Vec<StructuredAccessId>>>,
     pub stack_slots: BTreeMap<ObjectId, StackSlotCertificate>,
     pub stack_frame_round_trips: BTreeMap<ObjectId, StackFrameRoundTripCertificate>,
     pub stack_frame_round_trip_by_inst: crate::dense::IdMap<InstId, ObjectId>,
@@ -424,14 +426,9 @@ pub struct PreparedFunctionCertificates {
     /// The caller's stack slots read and never written, filled once the artifact is sealed.
     pub caller_stack_slots: BTreeMap<ObjectId, CallerStackSlotCertificate>,
     pub call_results: crate::dense::IdMap<ValueId, CallResultCertificate>,
-    pub call_results_by_inst: crate::dense::IdMap<InstId, ValueId>,
-    pub call_results_by_callsite: BTreeMap<CallSiteId, Vec<ValueId>>,
     pub stack_reloads: crate::dense::IdMap<ValueId, StackReloadSourceCertificate>,
     pub returns: Vec<ReturnValueCertificate>,
     pub returns_by_inst: crate::dense::IdMap<InstId, usize>,
-    /// Merges of two values that the one condition above them selects between.
-    pub two_way_selections: crate::dense::IdMap<InstId, TwoWaySelectionCertificate>,
-    pub failures: Vec<PreparedProofFailure>,
 }
 
 /// Remove the certified byte stride from one offset without manufacturing a
@@ -740,21 +737,17 @@ pub(crate) fn movable_for_clause_value(
     let Some(definition) = graph.def_inst(value) else {
         return false;
     };
-    let Some(op) = graph.op_for_inst(definition) else {
-        return false;
-    };
     graph.block_addr_of(definition) == Some(block_addr)
-        && function.get_block(block_addr).is_some_and(|block| {
-            let Some(suffix) = block
-                .position(op)
-                .and_then(|index| index.checked_add(1))
-                .and_then(|start| block.ops().get(start..))
+        && graph.block_id_for_addr(block_addr).is_some_and(|block| {
+            let insts = graph.op_insts(block);
+            let Some(suffix) = (insts.iter().position(|inst| *inst == definition))
+                .and_then(|index| insts.get(index + 1..))
             else {
                 return false;
             };
             suffix
                 .iter()
-                .all(|op| matches!(op, SSAOp::Branch { .. } | SSAOp::Nop))
+                .all(|inst| matches!(graph.op(*inst), Some(SSAOp::Branch { .. } | SSAOp::Nop)))
         })
 }
 
@@ -828,54 +821,18 @@ pub(crate) fn collect_prepared_function_certificates(
         })
         .collect();
 
-    let if_regions = predicates
-        .predicates
-        .iter()
-        .map(|(id, fact)| {
-            (
-                *id,
-                IfRegionCertificate {
-                    predicate: *id,
-                    block_addr: fact.block_addr,
-                    true_target: fact.true_target,
-                    false_target: fact.false_target,
-                },
-            )
-        })
-        .collect();
-
     let renderable_expressions =
         collect_renderable_expression_values(function, prep, graph, structured);
-    let expressions = graph
-        .values
-        .iter()
-        .map(|value| {
-            let defining_inst = graph.def_of.get(value.id.0 as usize).and_then(|id| *id);
-            let inputs = defining_inst
-                .and_then(|inst| graph.inst(inst))
-                .map(|inst| graph.inputs(inst.id).to_vec())
-                .unwrap_or_default();
-            (
-                value.id,
-                ExpressionCertificate {
-                    value: value.id,
-                    defining_inst,
-                    inputs,
-                    width: value.var.size,
-                    renderable: renderable_expressions.contains(value.id),
-                },
-            )
-        })
-        .collect();
 
-    let mut memory_accesses_by_inst = BTreeMap::<(InstId, bool), Vec<StructuredAccessId>>::new();
+    let mut memory_accesses_by_inst =
+        crate::dense::IdMap::<InstId, ByDirection<Vec<StructuredAccessId>>>::default();
     let memory_accesses = structured
         .memory_accesses
         .iter()
         .map(|(id, fact)| {
             memory_accesses_by_inst
-                .entry((id.inst, fact.is_write))
-                .or_default()
+                .get_or_insert_with(id.inst, ByDirection::default)
+                .get_mut(fact.is_write)
                 .push(*id);
             (
                 *id,
@@ -1259,8 +1216,7 @@ pub(crate) fn collect_prepared_function_certificates(
         .filter_map(|certificate: &CallsiteCertificate| certificate.return_address_store)
         .collect::<crate::dense::IdSet<_>>();
 
-    let (call_results, call_results_by_inst, call_results_by_callsite) =
-        collect_call_result_certificates(body, derived);
+    let call_results = collect_call_result_certificates(body, derived);
     let stack_reloads = collect_stack_reload_source_certificates(
         body,
         objects,
@@ -1336,8 +1292,7 @@ pub(crate) fn collect_prepared_function_certificates(
     PreparedFunctionCertificates {
         loops,
         switches,
-        if_regions,
-        expressions,
+        renderable_expressions,
         memory_accesses,
         memory_accesses_by_inst,
         memory_round_trips,
@@ -1354,13 +1309,9 @@ pub(crate) fn collect_prepared_function_certificates(
         dead_frame_store_values: crate::dense::IdSet::default(),
         caller_stack_slots: BTreeMap::new(),
         call_results,
-        call_results_by_inst,
-        call_results_by_callsite,
         stack_reloads,
         returns,
         returns_by_inst,
-        two_way_selections: collect_two_way_selection_certificates(function, graph),
-        failures: Vec::new(),
     }
 }
 

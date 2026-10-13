@@ -1190,8 +1190,7 @@ mod tests {
             .iter()
             .flat_map(|block| block.ops())
             .filter_map(SSAOp::dst)
-            .filter(|dst| dst.name().eq_ignore_ascii_case("rax"))
-            .last()
+            .rfind(|dst| dst.name().eq_ignore_ascii_case("rax"))
             .cloned()
             .expect("rax written");
         let rbx = function
@@ -1236,8 +1235,7 @@ mod tests {
             .iter()
             .flat_map(|block| block.ops())
             .filter_map(SSAOp::dst)
-            .filter(|dst| dst.name().eq_ignore_ascii_case("rax"))
-            .last()
+            .rfind(|dst| dst.name().eq_ignore_ascii_case("rax"))
             .cloned()
             .expect("rax written");
         let view = views.view(table.id_of(&rax).expect("interned"));

@@ -155,6 +155,28 @@ pub enum SemanticObligationKind {
 }
 
 impl SemanticObligationKind {
+    /// Every kind in declaration order, which is its `Ord` and its seed bit.
+    const ALL: [Self; 18] = [
+        Self::ObservableMemoryRead,
+        Self::ObservableMemoryWrite,
+        Self::Call,
+        Self::CallArgument,
+        Self::CallResult,
+        Self::Return,
+        Self::ReturnValue,
+        Self::ControlPredicate,
+        Self::ControlTransfer,
+        Self::Trap,
+        Self::Atomicity,
+        Self::MemoryOrdering,
+        Self::VolatileOrUnknownEffect,
+        Self::NoNativeSemantics,
+        Self::CompilerInserted,
+        Self::LoopCarriedState,
+        Self::LiveStateTransition,
+        Self::LiveValueProducer,
+    ];
+
     /// Whether this obligation independently proves a program observation.
     ///
     /// Producer and loop-transition obligations are dependency annotations:
@@ -214,19 +236,21 @@ impl SemanticObligationId {
     /// `{instruction}:{kind}:{component}`, the instruction spelled by
     /// [`CanonicalInstructionId::spelled`].
     pub fn spelled(self, graph: &SsaGraph) -> SpelledObligation {
+        let ordinal = self.instruction.spelled(graph).ordinal;
         SpelledObligation {
-            instruction: self.instruction.spelled(graph),
             id: self,
+            ordinal: ordinal.and_then(|ordinal| u32::try_from(ordinal).ok()),
         }
     }
 }
 
 /// A [`SemanticObligationId`] spelled against the sealed function it is about,
-/// ordered as the spelling reads: by instruction, then kind and component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+/// ordered as the spelling reads: by instruction, then kind and component. It
+/// keeps the identity once and only the place its operation holds beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpelledObligation {
-    instruction: SpelledInstruction,
     id: SemanticObligationId,
+    ordinal: Option<u32>,
 }
 
 impl SpelledObligation {
@@ -235,9 +259,29 @@ impl SpelledObligation {
         self.id
     }
 
+    /// The obligation spelled, borrowed.
+    pub const fn identity(&self) -> &SemanticObligationId {
+        &self.id
+    }
+
     /// Its instruction, spelled.
-    pub const fn instruction(&self) -> SpelledInstruction {
-        self.instruction
+    pub fn instruction(&self) -> SpelledInstruction {
+        SpelledInstruction {
+            id: self.id.instruction,
+            ordinal: self.ordinal.map(|ordinal| ordinal as usize),
+        }
+    }
+}
+
+impl Ord for SpelledObligation {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.instruction().cmp(&other.instruction())).then_with(|| self.id.cmp(&other.id))
+    }
+}
+
+impl PartialOrd for SpelledObligation {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -246,7 +290,9 @@ impl std::fmt::Display for SpelledObligation {
         write!(
             f,
             "{}:{}:{:?}",
-            self.instruction, self.id.kind, self.id.component
+            self.instruction(),
+            self.id.kind,
+            self.id.component
         )
     }
 }
@@ -363,11 +409,11 @@ pub struct SemanticObligation {
 pub struct ObligationTable(Vec<SemanticObligation>);
 
 impl ObligationTable {
-    /// The table of these obligations; of two with one identity the later stands, as a map's insert.
+    /// The table of these obligations, whose identities are distinct: sorted in place, since a
+    /// stable sort's scratch was the inventory's peak (doc/adr-memory-model.md, MM.10).
     fn of(mut obligations: Vec<SemanticObligation>) -> Self {
-        obligations.reverse();
-        obligations.sort_by_key(|obligation| obligation.id);
-        obligations.dedup_by_key(|obligation| obligation.id);
+        obligations.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+        debug_assert!(obligations.windows(2).all(|pair| pair[0].id != pair[1].id));
         Self(obligations)
     }
 
@@ -608,7 +654,7 @@ impl SemanticObligationInventory {
         seeding: &SeedingFacts<'_>,
     ) -> Self {
         let (canonical_ids, mut construction_failures) = collect_canonical_instruction_ids(graph);
-        let mut required = ObligationSeeds::default();
+        let mut required = ObligationSeeds::new(graph.insts.len());
         let mut explicit_inputs = BTreeMap::<
             (InstId, SemanticObligationKind, SemanticObligationComponent),
             Vec<ValueId>,
@@ -736,6 +782,7 @@ impl SemanticObligationInventory {
             }
         }
 
+        let mut incomplete_returns = Vec::new();
         for boundary in boundaries.returns.values() {
             seed_instruction(
                 boundary.at,
@@ -803,14 +850,15 @@ impl SemanticObligationInventory {
                     SemanticObligationComponent::Whole,
                     &mut required,
                 );
-                taint_incomplete_boundary_inputs(
-                    graph,
-                    boundary.at,
-                    &mut required,
-                    &mut unsupported,
-                );
+                incomplete_returns.push(boundary.at);
             }
         }
+        taint_incomplete_boundary_inputs(
+            graph,
+            &incomplete_returns,
+            &mut required,
+            &mut unsupported,
+        );
 
         for boundary in boundaries.calls.values() {
             seed_instruction(
@@ -999,12 +1047,13 @@ impl SemanticObligationInventory {
         let mut inventory = Self::empty(graph.insts.len());
         inventory.construction_failures = construction_failures;
         inventory.unstructured_cycle_blocks = structured.unstructured_cycle_blocks.clone();
-        let mut obligations = Vec::new();
+        // One obligation per seed at most: sized once, the table keeps no growth.
+        let mut obligations = Vec::with_capacity(required.len());
         for inst in &graph.insts {
             let Some(id) = canonical_ids.get(inst.id).copied() else {
                 continue;
             };
-            let kinds = required.remove(inst.id).unwrap_or_default();
+            let kinds = required.take(inst.id);
             if !kinds.is_empty()
                 && inst
                     .output
@@ -1500,50 +1549,111 @@ fn collect_canonical_instruction_ids(
     (ids, failures)
 }
 
-type ObligationSeeds =
-    crate::dense::IdMap<InstId, BTreeSet<(SemanticObligationKind, SemanticObligationComponent)>>;
+/// What each instruction owes before the inventory is built: a bit per kind owed of the whole
+/// instruction, and the few partial components sorted (doc/adr-memory-model.md, MM.10).
+struct ObligationSeeds {
+    whole: crate::dense::IdVec<InstId, u32>,
+    parts: crate::dense::IdMap<InstId, Vec<(SemanticObligationKind, SemanticObligationComponent)>>,
+}
 
-#[cfg_attr(
-    dylint_lib = "r2sleigh_lints",
-    allow(
-        entity_keyed_map,
-        reason = "a walk guard of one query: the few ids one walk visits, where a bitset would cost O(values) per query"
-    )
-)]
-fn taint_incomplete_boundary_inputs(
-    graph: &SsaGraph,
-    boundary_inst: InstId,
-    required: &mut ObligationSeeds,
-    unsupported: &mut crate::dense::IdSet<InstId>,
-) {
-    let Some(boundary) = graph.inst(boundary_inst) else {
-        return;
-    };
-    let mut predecessor_blocks = BTreeSet::new();
-    let mut ready = VecDeque::from([boundary.block]);
-    while let Some(block_id) = ready.pop_front() {
-        if !predecessor_blocks.insert(block_id) {
-            continue;
-        }
-        if let Some(block) = graph.block(block_id) {
-            ready.extend(block.predecessors.iter().copied());
+impl ObligationSeeds {
+    fn new(instructions: usize) -> Self {
+        Self {
+            whole: crate::dense::IdVec::filled(instructions, 0),
+            parts: crate::dense::IdMap::default(),
         }
     }
 
-    let boundary_reenters = block_can_reenter(graph, boundary.block);
+    fn insert(
+        &mut self,
+        inst: InstId,
+        kind: SemanticObligationKind,
+        component: SemanticObligationComponent,
+    ) {
+        // A kind past `ALL` would be dropped by `take`.
+        debug_assert_eq!(SemanticObligationKind::ALL.get(kind as usize), Some(&kind));
+        if component == SemanticObligationComponent::Whole {
+            self.whole[inst] |= 1 << kind as u32;
+            return;
+        }
+        let parts = self.parts.get_or_insert_with(inst, Vec::new);
+        if let Err(at) = parts.binary_search(&(kind, component)) {
+            parts.insert(at, (kind, component));
+        }
+    }
 
-    // Without a complete ABI snapshot, SSA has no name-independent way to
-    // identify which reaching register definitions carry implicit arguments or
-    // return values. Conservatively keep every value definition that can reach
-    // the boundary out of the ProvenDead state.
-    for candidate in &graph.insts {
-        if candidate.output.is_none()
-            || candidate.id == boundary_inst
-            || !predecessor_blocks.contains(&candidate.block)
-            || (candidate.block == boundary.block
-                && candidate.ordinal >= boundary.ordinal
-                && !boundary_reenters)
+    fn contains(&self, inst: InstId) -> bool {
+        self.whole[inst] != 0 || self.parts.contains(inst)
+    }
+
+    /// How many (instruction, kind, component) seeds are held.
+    fn len(&self) -> usize {
+        let whole = self
+            .whole
+            .iter()
+            .map(|(_, bits)| bits.count_ones() as usize);
+        whole.sum::<usize>() + self.parts.values().map(Vec::len).sum::<usize>()
+    }
+
+    /// The seeded instructions, in id order.
+    fn keys(&self) -> impl Iterator<Item = InstId> + '_ {
+        (self.whole.iter()).filter_map(|(inst, _)| self.contains(inst).then_some(inst))
+    }
+
+    /// What `inst` owes, in (kind, component) order: `Whole` sorts first among a kind's components.
+    fn take(&mut self, inst: InstId) -> Vec<(SemanticObligationKind, SemanticObligationComponent)> {
+        let whole = std::mem::take(&mut self.whole[inst]);
+        let mut parts = self
+            .parts
+            .remove(inst)
+            .unwrap_or_default()
+            .into_iter()
+            .peekable();
+        let mut owed = Vec::new();
+        for kind in SemanticObligationKind::ALL {
+            if whole & (1 << kind as u32) != 0 {
+                owed.push((kind, SemanticObligationComponent::Whole));
+            }
+            while let Some(part) = parts.next_if(|(at, _)| *at == kind) {
+                owed.push(part);
+            }
+        }
+        owed
+    }
+}
+
+/// Every definition that may reach a return whose interface is unproven: none can be proven dead.
+///
+/// One backward walk from all of them, `O(B + E + I)` (doc/adr-memory-model.md, MM.10): a block
+/// reached through an edge keeps every definition, a return's own block those before its last.
+fn taint_incomplete_boundary_inputs(
+    graph: &SsaGraph,
+    returns: &[InstId],
+    required: &mut ObligationSeeds,
+    unsupported: &mut crate::dense::IdSet<InstId>,
+) {
+    let mut last = crate::dense::IdMap::<crate::graph::BlockId, usize>::default();
+    for inst in returns.iter().filter_map(|inst| graph.inst(*inst)) {
+        let at = last.get_or_insert_with(inst.block, || inst.ordinal);
+        *at = (*at).max(inst.ordinal);
+    }
+    let mut reaching = crate::dense::IdSet::default();
+    let mut ready = (last.keys().filter_map(|block| graph.block(block)))
+        .flat_map(|block| block.predecessors.iter().copied())
+        .collect::<Vec<_>>();
+    while let Some(block) = ready.pop() {
+        if reaching.insert(block)
+            && let Some(block) = graph.block(block)
         {
+            ready.extend(block.predecessors.iter().copied());
+        }
+    }
+    for candidate in &graph.insts {
+        let kept = reaching.contains(candidate.block)
+            || last
+                .get(candidate.block)
+                .is_some_and(|last| candidate.ordinal < *last);
+        if candidate.output.is_none() || !kept {
             continue;
         }
         unsupported.insert(candidate.id);
@@ -1554,31 +1664,6 @@ fn taint_incomplete_boundary_inputs(
             required,
         );
     }
-}
-
-/// The boundary reads a call makes, which sit immediately before it.
-///
-/// The mirror of the `CallDefine` run that follows a call: construction emits
-/// them as one uninterrupted run, so the run ends at the first operation that
-/// is not one.
-fn block_can_reenter(graph: &SsaGraph, start: crate::graph::BlockId) -> bool {
-    let Some(block) = graph.block(start) else {
-        return false;
-    };
-    let mut ready = VecDeque::from_iter(block.successors.iter().copied());
-    let mut visited = crate::dense::IdSet::default();
-    while let Some(block_id) = ready.pop_front() {
-        if block_id == start {
-            return true;
-        }
-        if !visited.insert(block_id) {
-            continue;
-        }
-        if let Some(block) = graph.block(block_id) {
-            ready.extend(block.successors.iter().copied());
-        }
-    }
-    false
 }
 
 fn seed_direct_obligations(
@@ -1804,9 +1889,7 @@ fn seed_instruction(
     component: SemanticObligationComponent,
     required: &mut ObligationSeeds,
 ) {
-    required
-        .get_or_insert_with(inst, Default::default)
-        .insert((kind, component));
+    required.insert(inst, kind, component);
 }
 
 fn seed_instruction_with_inputs(
@@ -1887,6 +1970,37 @@ fn instruction_is_structural(payload: &InstPayload) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// The seeds yield what an ordered set of (kind, component) would, each once.
+    #[test]
+    fn seeds_yield_each_obligation_once_in_order() {
+        use super::{SemanticObligationComponent as Component, SemanticObligationKind as Kind};
+        assert!(
+            Kind::ALL
+                .iter()
+                .enumerate()
+                .all(|(at, kind)| *kind as usize == at)
+        );
+        assert!(Kind::ALL.windows(2).all(|pair| pair[0] < pair[1]));
+        let inst = crate::InstId(1);
+        let mut seeds = super::ObligationSeeds::new(2);
+        let mut ordered = std::collections::BTreeSet::new();
+        for seed in [
+            (Kind::LiveValueProducer, Component::Whole),
+            (Kind::ReturnValue, Component::Index(2)),
+            (Kind::ReturnValue, Component::Whole),
+            (Kind::Call, Component::MemoryAccess(0)),
+            (Kind::ReturnValue, Component::Index(2)),
+            (Kind::Call, Component::Whole),
+        ] {
+            seeds.insert(inst, seed.0, seed.1);
+            ordered.insert(seed);
+        }
+        assert!(seeds.contains(inst) && !seeds.contains(crate::InstId(0)));
+        assert_eq!(seeds.keys().collect::<Vec<_>>(), [inst]);
+        assert_eq!(seeds.take(inst), ordered.into_iter().collect::<Vec<_>>());
+        assert!(!seeds.contains(inst));
+    }
+
     #[test]
     fn late_obligations_merge_into_the_table_in_order_or_not_at_all() {
         let obligation = |block_addr: u64| super::SemanticObligation {
@@ -1929,7 +2043,6 @@ mod tests {
             block_addr,
             site: super::CanonicalInstructionSite::Op(
                 artifact
-                    .function()
                     .named_block(block_addr)
                     .and_then(|block| block.op_id(index))
                     .expect("the fixture's operation"),
@@ -2925,7 +3038,6 @@ mod tests {
         // incomplete makes it an unknown effect: the value is one this
         // function computes and can spell.
         let (block_addr, op_index) = artifact
-            .function()
             .named_block(0x3180)
             .expect("loop block")
             .ops()

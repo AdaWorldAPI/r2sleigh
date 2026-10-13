@@ -208,7 +208,6 @@ fn call_result_certificates_require_a_complete_machine_boundary() {
     );
 
     assert!(first.certificates().call_results.is_empty());
-    assert!(first.certificates().call_results_by_callsite.is_empty());
 
     // With a convention boundary, a read of a contained return-register
     // lane is exact evidence for the result width even when the full
@@ -263,7 +262,6 @@ fn call_result_certificates_require_a_complete_machine_boundary() {
     // The call defines the root once; the lane the program reads is a
     // `Subpiece` of it, certified as that result sliced.
     let eax = prepared
-        .function()
         .named_block(0x16c0)
         .into_iter()
         .flat_map(|block| block.ops().to_vec())
@@ -340,50 +338,38 @@ fn prepared_return_register_subpiece_zext_chain_is_renderable() {
         .and_then(|inst| inst.output)
         .expect("zero-extended return-register value");
 
-    let expr_cert = prepared
-        .certificates()
-        .expressions
-        .get(return_value)
-        .expect("return value expression certificate");
-    let input_debug = expr_cert
-        .inputs
+    let graph = prepared.graph();
+    let inputs_of = |value| {
+        graph
+            .def_inst(value)
+            .map_or(&[][..], |inst| graph.inputs(inst))
+    };
+    let renderable = |value| {
+        prepared
+            .certificates()
+            .renderable_expressions
+            .contains(value)
+    };
+    let name = |value| {
+        prepared
+            .value_var(value)
+            .map(|var| var.display_name())
+            .unwrap_or_else(|| "<unknown>".to_string())
+    };
+    let input_debug = inputs_of(return_value)
         .iter()
-        .map(|value| {
-            let name = prepared
-                .value_var(*value)
-                .map(|var| var.display_name())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            let renderable = prepared
-                .certificates()
-                .expressions
-                .get(*value)
-                .is_some_and(|cert| cert.renderable);
-            format!("{name}:{renderable}")
+        .map(|&value| format!("{}:{}", name(value), renderable(value)))
+        .collect::<Vec<_>>();
+    let tmp_debug = inputs_of(return_value)
+        .iter()
+        .flat_map(|&value| {
+            inputs_of(value).iter().map(move |&input| {
+                format!("{}->{}:{}", name(value), name(input), renderable(input))
+            })
         })
         .collect::<Vec<_>>();
-    let mut tmp_debug = Vec::new();
-    for value in &expr_cert.inputs {
-        if let Some(cert) = prepared.certificates().expressions.get(*value) {
-            let value_name = prepared
-                .value_var(*value)
-                .map(|var| var.display_name())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            for input in &cert.inputs {
-                let input_name = prepared
-                    .value_var(*input)
-                    .map(|var| var.display_name())
-                    .unwrap_or_else(|| "<unknown>".to_string());
-                let renderable = prepared
-                    .certificates()
-                    .expressions
-                    .get(*input)
-                    .is_some_and(|cert| cert.renderable);
-                tmp_debug.push(format!("{value_name}->{input_name}:{renderable}"));
-            }
-        }
-    }
     assert!(
-        expr_cert.renderable,
+        renderable(return_value),
         "return-register subpiece/zext chain should be renderable; ret={:?} inputs={:?} tmp_inputs={:?}",
         prepared.value_var(return_value),
         input_debug,
@@ -425,7 +411,6 @@ fn a_callee_proven_to_preserve_a_register_leaves_it_undefined_by_the_call() {
         .expect("artifact without callee facts");
     let call_defines = |artifact: &SsaArtifact, name: &str| {
         artifact
-            .function()
             .named_block(0x1000)
             .expect("entry block")
             .ops()
@@ -442,7 +427,6 @@ fn a_callee_proven_to_preserve_a_register_leaves_it_undefined_by_the_call() {
     assert_eq!(call_defines(&with, "rax"), 1);
     // The store reads the value rdi held on entry, not a clobber.
     let stored = with
-        .function()
         .named_block(0x1000)
         .expect("entry block")
         .ops()
@@ -504,7 +488,6 @@ fn a_callee_that_returns_an_unaffected_register_defines_it_at_the_call() {
     .expect("artifact without callee facts");
     let call_defines = |artifact: &SsaArtifact| {
         artifact
-            .function()
             .named_block(0x1000)
             .expect("entry block")
             .ops()
@@ -518,7 +501,6 @@ fn a_callee_that_returns_an_unaffected_register_defines_it_at_the_call() {
     assert_eq!(call_defines(&with), 1);
     let stored = |artifact: &SsaArtifact| {
         artifact
-            .function()
             .named_block(0x1000)
             .expect("entry block")
             .ops()

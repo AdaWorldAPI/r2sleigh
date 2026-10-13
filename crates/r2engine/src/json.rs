@@ -156,7 +156,7 @@ impl RenderedFunctionJson {
     /// `definition` is the C name the renderer gives the function, which is
     /// what a unit that defines nothing still names.
     pub(crate) fn of(
-        response: &EngineDecompileResponse,
+        response: &crate::program::RenderedResponse,
         name: &str,
         addr: u64,
         definition: String,

@@ -234,6 +234,51 @@ fn no_instruction_is_lifted_where_the_program_maps_data() {
     );
 }
 
+/// `INTO_DATA` in one executable run whose file holds only its first two bytes: from 0x1002 the
+/// loader fills zeros, as a debug companion's `.text` or a packer's empty segment does.
+struct ZeroFilledTail;
+
+impl r2engine::body::Program for ZeroFilledTail {
+    fn read(&self, vaddr: u64, max: usize) -> Option<Vec<u8>> {
+        r2engine::body::Program::read(&reader(INTO_DATA), vaddr, max)
+    }
+
+    fn region(&self, vaddr: u64) -> Option<r2engine::body::Region> {
+        let region = r2engine::body::Region {
+            start: BASE,
+            end: 0x1003,
+            file_end: 0x1002,
+            execute: true,
+            write: false,
+        };
+        region.holds(vaddr, vaddr + 1).then_some(region)
+    }
+
+    fn is_entry(&self, _vaddr: u64) -> bool {
+        false
+    }
+}
+
+#[test]
+fn no_instruction_is_lifted_from_the_loaders_zero_fill() {
+    // The zero fill decodes (`00 00` is `add [rax], al`), but the file states no byte there, so
+    // the walk stops and an entry there begins no function.
+    let body = lift_body(BASE, &x86_64(), &ZeroFilledTail, &BTreeMap::new()).expect("body");
+    assert_eq!(addrs(&body), vec![0x1000]);
+    assert_eq!(
+        (body.unresolved.iter())
+            .map(|stop| (stop.addr, stop.reason))
+            .collect::<Vec<_>>(),
+        vec![(0x1002, UnresolvedReason::Unbacked)]
+    );
+    let error = lift_body(0x1002, &x86_64(), &ZeroFilledTail, &BTreeMap::new())
+        .expect_err("the zero fill is no entry");
+    assert_eq!(
+        error.to_string(),
+        "the file holds no bytes at 0x1002: the loader fills zeros there"
+    );
+}
+
 /// jmp 0x1010, where another function begins.
 const TAIL: &[u8] = &[
     0xe9, 0x0b, 0x00, 0x00, 0x00, // 0x1000 jmp 0x1010

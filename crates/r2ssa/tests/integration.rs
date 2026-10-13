@@ -242,8 +242,7 @@ mod tests {
         ];
 
         let prepared = prepared_under_system_v(&blocks);
-        let func = prepared.function();
-        let entry = func.named_block(0x401379).expect("entry block");
+        let entry = prepared.named_block(0x401379).expect("entry block");
 
         assert!(
             entry.ops().iter().any(
@@ -339,9 +338,8 @@ mod tests {
         ];
 
         let prepared = prepared_under_system_v(&blocks);
-        let func = prepared.function();
-        let entry = func.named_block(0x402272).expect("entry block");
-        let copy_arm = func.named_block(0x4022ad).expect("copy arm");
+        let entry = prepared.named_block(0x402272).expect("entry block");
+        let copy_arm = prepared.named_block(0x4022ad).expect("copy arm");
 
         assert!(
             entry.ops().iter().any(
