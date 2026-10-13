@@ -2529,8 +2529,7 @@ mod sccp_tests {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }]);
 
         let (consts, _) = sccp(&func);
@@ -2576,8 +2575,7 @@ mod sccp_tests {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }]);
         let (consts, _) = sccp(&func);
         let sized = |size| {
@@ -2623,8 +2621,7 @@ mod sccp_tests {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }]);
 
         let (consts, _) = sccp(&func);
@@ -2644,8 +2641,7 @@ mod sccp_tests {
                     target: make_const(0x1008, 8),
                     cond: make_const(1, 1),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -2659,8 +2655,7 @@ mod sccp_tests {
                         target: make_const(0x100c, 8),
                     },
                 ],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -2674,8 +2669,7 @@ mod sccp_tests {
                         target: make_const(0x100c, 8),
                     },
                 ],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -2690,8 +2684,7 @@ mod sccp_tests {
                         target: make_ram(0, 8),
                     },
                 ],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
         ]);
 
@@ -2724,8 +2717,7 @@ mod sccp_tests {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }]);
 
         let (consts, _) = sccp(&func);
@@ -2750,8 +2742,7 @@ mod sccp_tests {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }]);
 
         let (consts, _) = sccp(&func);
@@ -2776,8 +2767,7 @@ mod sccp_tests {
                     target: make_ram(0, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }]);
 
         let (consts, _) = sccp(&func);
@@ -2794,8 +2784,7 @@ mod sccp_tests {
                     target: make_const(0x1008, 8),
                     cond: make_const(1, 1),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
@@ -2809,8 +2798,7 @@ mod sccp_tests {
                         target: make_const(0x100c, 8),
                     },
                 ],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1008,
@@ -2824,8 +2812,7 @@ mod sccp_tests {
                         target: make_const(0x100c, 8),
                     },
                 ],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x100c,
@@ -2833,8 +2820,7 @@ mod sccp_tests {
                 ops: vec![R2ILOp::Return {
                     target: make_ram(0, 8),
                 }],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
         ]);
 
@@ -2986,8 +2972,7 @@ mod chain_tests {
             addr,
             size: 4,
             ops,
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }
     }
 
@@ -3186,22 +3171,19 @@ mod signed_flag_tests {
                 addr: 0x1000,
                 size: 4,
                 ops,
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
                 size: 4,
                 ops: vec![R2ILOp::Return { target: r(0x80, 8) }],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1010,
                 size: 4,
                 ops: vec![R2ILOp::Return { target: r(0x80, 8) }],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
         ];
         let mut func =
@@ -3252,8 +3234,7 @@ mod signed_flag_tests {
                 },
                 R2ILOp::Return { target: r(0x80, 8) },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }];
         let mut func =
             SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA function should build");
@@ -3332,22 +3313,19 @@ mod signed_flag_tests {
                 addr: 0x1000,
                 size: 4,
                 ops,
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1004,
                 size: 4,
                 ops: vec![R2ILOp::Return { target: r(0x80, 8) }],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
             R2ILBlock {
                 addr: 0x1010,
                 size: 4,
                 ops: vec![R2ILOp::Return { target: r(0x80, 8) }],
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             },
         ];
         let mut func =

@@ -287,6 +287,8 @@ impl<I: DenseId, T> FromIterator<(I, T)> for IdMap<I, T> {
 
 impl<I: DenseId, T> Extend<(I, T)> for IdMap<I, T> {
     fn extend<A: IntoIterator<Item = (I, T)>>(&mut self, entries: A) {
+        let entries = entries.into_iter();
+        self.entries.reserve(entries.size_hint().0);
         for (id, value) in entries {
             self.insert(id, value);
         }
@@ -497,8 +499,12 @@ impl<I: DenseId> FromIterator<I> for IdWorklist<I> {
 }
 
 /// For each id below a bound, a slice of items: an adjacency in compressed
-/// sparse row form, built once from its pairs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// sparse row form, built once from its pairs or a row at a time in id order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(bound(
+    serialize = "T: serde::Serialize",
+    deserialize = "T: serde::Deserialize<'de>"
+))]
 pub struct Csr<I, T> {
     starts: Vec<u32>,
     items: Vec<T>,
@@ -534,6 +540,32 @@ impl<I: DenseId, T> Csr<I, T> {
                 .collect(),
             ids: PhantomData,
         }
+    }
+
+    /// Room for `rows` rows of `items` items in all, holding none yet.
+    pub fn with_capacity(rows: usize, items: usize) -> Self {
+        let mut starts = Vec::with_capacity(rows + 1);
+        starts.push(0);
+        Self {
+            starts,
+            items: Vec::with_capacity(items),
+            ids: PhantomData,
+        }
+    }
+
+    /// Append the next id's row: ids are numbered in the order their rows are pushed.
+    pub fn push_row(&mut self, row: impl IntoIterator<Item = T>) -> I {
+        let id = I::from_index(self.len());
+        self.items.extend(row);
+        self.starts
+            .push(u32::try_from(self.items.len()).expect("fewer than 2^32 items"));
+        id
+    }
+
+    /// Give back the room the rows grew.
+    pub fn shrink_to_fit(&mut self) {
+        self.starts.shrink_to_fit();
+        self.items.shrink_to_fit();
     }
 
     /// `id`'s items; empty for an id at or past the bound.

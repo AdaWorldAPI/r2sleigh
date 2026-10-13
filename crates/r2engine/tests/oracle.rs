@@ -938,12 +938,12 @@ fn read_as_boolean(op: &R2ILOp) -> Vec<&Varnode> {
         .collect()
 }
 
-/// The instructions of a body, from the address each operation's metadata records.
+/// The instructions of a body, from the instruction each operation was lifted from.
 fn instructions(body: &r2engine::body::Body) -> BTreeMap<u64, Instruction> {
     let mut found = BTreeMap::new();
     for block in &body.blocks {
         let lifted = &block.lifted;
-        let at = |index: usize| lifted.op_metadata(index)?.instruction_addr;
+        let at = |index: usize| lifted.instruction_of(index);
         let mut parts: Vec<(u64, Vec<R2ILOp>)> = vec![(lifted.addr, Vec::new())];
         for (index, op) in lifted.ops.iter().enumerate() {
             let at = at(index).unwrap_or(lifted.addr);

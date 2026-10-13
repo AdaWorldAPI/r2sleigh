@@ -216,7 +216,7 @@ impl DeadPhis {
             }
             dead.unobserved_insts.insert(inst.id);
             dead.unobserved_uses
-                .extend((0..inst.inputs.len()).map(|input_idx| UseSite {
+                .extend((0..graph.inputs(inst.id).len()).map(|input_idx| UseSite {
                     inst: inst.id,
                     input_idx,
                 }));
@@ -477,7 +477,7 @@ mod tests {
             .expect("dead merge definition");
         assert!(dead.unobserved_values().contains(zf));
         assert!(dead.unobserved_insts().contains(definition.id));
-        for (input_idx, input) in definition.inputs.iter().copied().enumerate() {
+        for (input_idx, input) in graph.inputs(definition.id).iter().copied().enumerate() {
             assert!(
                 dead.unobserved_values().contains(input),
                 "a value used only by the dead merge belongs to its pure support domain"

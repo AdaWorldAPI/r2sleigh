@@ -162,15 +162,15 @@ pub(crate) fn reaching_format_literals(
         return false;
     };
     match &definition.payload {
-        InstPayload::Phi { .. } | InstPayload::Op(SSAOp::Copy { .. }) => definition
-            .inputs
+        InstPayload::Phi { .. } | InstPayload::Op(SSAOp::Copy { .. }) => graph
+            .inputs(definition.id)
             .iter()
             .all(|input| reaching_format_literals(context, *input, seen, found)),
         // A conditional move selects the format the same way a merge does, and
         // `cmov` is how a compiler spells the choice when it does not branch.
         // Only the two results can be the format; the condition is not one.
-        InstPayload::Op(SSAOp::Select { .. }) => definition
-            .inputs
+        InstPayload::Op(SSAOp::Select { .. }) => graph
+            .inputs(definition.id)
             .iter()
             .skip(1)
             .all(|input| reaching_format_literals(context, *input, seen, found)),
@@ -1658,11 +1658,11 @@ pub(crate) fn exact_return_address_fact(
     return_inst: &crate::graph::GraphInst,
     storage: CanonicalStorageId,
 ) -> Option<SourceReturnAddressFact> {
-    let [target_id] = return_inst.inputs.as_slice() else {
+    let [target_id] = graph.inputs(return_inst.id) else {
         r2il::refusal_evidence!(
             "return-address",
             "return has {} inputs, not one",
-            return_inst.inputs.len()
+            graph.inputs(return_inst.id).len()
         );
         return None;
     };
@@ -1680,7 +1680,7 @@ pub(crate) fn exact_return_address_fact(
     // copy chains, casts, phis, partial aliases, and cross-block/non-terminal
     // definitions need distinct proofs.
     if let Some(producer) = graph.def_inst(target.id).and_then(|id| graph.inst(id))
-        && let [source_id] = producer.inputs.as_slice()
+        && let [source_id] = graph.inputs(producer.id)
         && let Some(source) = graph.value(*source_id)
         && let InstPayload::Op(SSAOp::Copy { dst, src }) = &producer.payload
         && producer.block == return_inst.block
@@ -1715,7 +1715,7 @@ pub(crate) fn exact_return_address_fact(
     {
         let source = match &producer.payload {
             InstPayload::Op(SSAOp::Copy { dst, .. }) if carried.id == *dst => {
-                producer.inputs.first()
+                graph.inputs(producer.id).first()
             }
             InstPayload::Op(SSAOp::IntAnd { dst, b, .. })
                 if carried.id == *dst
@@ -1725,7 +1725,7 @@ pub(crate) fn exact_return_address_fact(
                         .constant_bits()
                         .is_some_and(|mask| mask & 1 == 0) =>
             {
-                producer.inputs.first()
+                graph.inputs(producer.id).first()
             }
             // The word an epilogue reloaded is the address the call pushed.
             InstPayload::Op(SSAOp::Load {
@@ -1765,7 +1765,7 @@ pub(crate) fn exact_return_address_fact(
         .filter(|inst| inst.ordinal < return_inst.ordinal)
         .any(|inst| {
             matches!(inst.payload, InstPayload::Op(SSAOp::Copy { .. }))
-                && inst.inputs.as_slice() == [target.id]
+                && graph.inputs(inst.id) == [target.id]
                 && inst
                     .output
                     .and_then(|output| graph.value(output))
@@ -1937,8 +1937,8 @@ pub(crate) fn storage_is_untouched_on_all_predecessor_paths(
             else {
                 return false;
             };
-            if inst
-                .canonical_storage
+            if graph
+                .written_storage(inst)
                 .is_some_and(|written| register_storages_overlap(written, storage))
             {
                 return false;
@@ -1994,7 +1994,7 @@ pub(crate) fn call_result_values_after_call(
             .saturating_add(*relative_index);
         (block.op_id(at))
             .and_then(|op| graph.inst_for_op(op))
-            .and_then(|inst| graph.inst(inst)?.canonical_storage)
+            .and_then(|inst| graph.written_storage(graph.inst(inst)?))
             .is_some_and(|defined| register_storages_overlap(defined, storage))
     });
     if !defines_storage {
@@ -2016,7 +2016,7 @@ pub(crate) fn call_result_values_after_call(
             // The definition of the slot itself, or of the program root whose
             // low lane the slot is (doc/adr-byte-relation.md, B3).
             let graph_inst = graph.inst(inst)?;
-            let defined = graph_inst.canonical_storage?;
+            let defined = graph.written_storage(graph_inst)?;
             let exact = defined == storage && function.var(*dst).size == storage.size;
             let rooted = defined.space == storage.space
                 && function.var(*dst).size == defined.size

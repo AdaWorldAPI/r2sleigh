@@ -194,12 +194,12 @@ impl<'a> EvidenceBuilder<'a> {
             match &inst.payload {
                 r2ssa::InstPayload::Phi { .. } if unobserved.contains(output) => {}
                 r2ssa::InstPayload::Phi { .. } => {
-                    for input in &inst.inputs {
+                    for input in graph.inputs(inst.id) {
                         pairs.push((output, *input));
                     }
                 }
                 r2ssa::InstPayload::Op(r2ssa::SSAOp::Copy { .. } | r2ssa::SSAOp::New { .. }) => {
-                    if let Some(input) = inst.inputs.first() {
+                    if let Some(input) = graph.inputs(inst.id).first() {
                         pairs.push((output, *input));
                     }
                 }
@@ -476,12 +476,12 @@ impl<'a> EvidenceBuilder<'a> {
             let inst = graph.inst(graph.def_inst(current)?)?;
             match &inst.payload {
                 r2ssa::InstPayload::Op(r2ssa::SSAOp::Copy { .. } | r2ssa::SSAOp::New { .. }) => {
-                    current = *inst.inputs.first()?;
+                    current = *graph.inputs(inst.id).first()?;
                 }
                 r2ssa::InstPayload::Op(
                     r2ssa::SSAOp::IntAdd { .. } | r2ssa::SSAOp::PtrAdd { .. },
                 ) => {
-                    let [left, right] = inst.inputs[..] else {
+                    let [left, right] = graph.inputs(inst.id)[..] else {
                         return None;
                     };
                     return Some((left, right));
@@ -586,7 +586,7 @@ impl<'a> EvidenceBuilder<'a> {
         match &inst.payload {
             r2ssa::InstPayload::Op(op) => Some(AddressIdentity::Computed {
                 op: std::mem::discriminant(op),
-                inputs: inst.inputs.clone(),
+                inputs: graph.inputs(inst.id).to_vec(),
             }),
             r2ssa::InstPayload::Phi { .. } => None,
         }
@@ -864,8 +864,7 @@ mod tests {
                 addr: 0x1000,
                 size: 4,
                 ops: Vec::new(),
-                switch_info: None,
-                op_metadata: Default::default(),
+                ..Default::default()
             }],
             None,
         )

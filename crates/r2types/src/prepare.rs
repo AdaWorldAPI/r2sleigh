@@ -330,8 +330,7 @@ mod tests {
             addr: 0x1000,
             size: 4,
             ops,
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         };
         r2ssa::SsaArtifact::for_decompile_with_interface(
             &[block],

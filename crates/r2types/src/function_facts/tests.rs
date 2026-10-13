@@ -1053,7 +1053,7 @@ fn certified_call_argument_projects_callee_pointer_type_to_caller_parameter() {
     };
     let mut render = FunctionRenderFacts::default();
     render.certified_exprs.insert(
-        r2ssa::SemanticId::expression(value),
+        value,
         CertifiedExpr {
             id: r2ssa::SemanticId::expression(value),
             fact: ExpressionRenderFact {
@@ -1689,7 +1689,7 @@ fn prepared_decompile_evidence_replaces_detached_source_dependent_rows() {
 }
 
 #[test]
-fn source_owned_seal_rederives_render_call_and_control_facts() {
+fn the_enriched_report_holds_the_projection_of_its_final_types() {
     let mut block = R2ILBlock::new(0x401000, 4);
     block.push(R2ILOp::Call {
         target: Varnode::constant(0x402000, 8),
@@ -1708,40 +1708,21 @@ fn source_owned_seal_rederives_render_call_and_control_facts() {
         report
     };
 
-    assert!(
-        SourceOwnedFunctionFacts::seal(Arc::clone(&source), canonical_report()).is_some(),
-        "the independently rederived canonical report must seal"
-    );
-
-    let mut forged_render = canonical_report();
-    forged_render
-        .render
-        .certified_exprs
-        .values_mut()
-        .next()
-        .expect("fixture certified expression")
-        .fact
-        .width = 1;
-    assert!(
-        SourceOwnedFunctionFacts::seal(Arc::clone(&source), forged_render).is_none(),
-        "a detached render-core mutation must not validate against itself"
-    );
-
-    let mut forged_call = canonical_report();
-    assert!(!forged_call.call_render.by_callsite.is_empty());
-    forged_call.call_render.by_callsite.clear();
-    assert!(
-        SourceOwnedFunctionFacts::seal(Arc::clone(&source), forged_call).is_none(),
-        "a detached call-render mutation must not validate against itself"
-    );
-
-    let mut forged_control = canonical_report();
-    assert!(!forged_control.control.control_domains.by_block.is_empty());
-    forged_control.control = FunctionControlFacts::default();
-    assert!(
-        SourceOwnedFunctionFacts::seal(source, forged_control).is_none(),
-        "a detached control projection must not validate against itself"
-    );
+    // The seal compares nothing: the projection enrichment leaves must be what the source
+    // projects under the final types, and projecting writes no type.
+    let report = canonical_report();
+    assert!(!report.call_render.by_callsite.is_empty());
+    assert!(!report.control.control_domains.by_block.is_empty());
+    let mut again = report.clone();
+    SourceOwnedFunctionFacts::project(source.as_ref(), &mut again, &BTreeMap::new());
+    assert_eq!(again.types, report.types);
+    assert_eq!(again.callee_resolution, report.callee_resolution);
+    assert_eq!(again.callsites, report.callsites);
+    assert_eq!(again.call_results, report.call_results);
+    assert_eq!(again.call_render, report.call_render);
+    assert_eq!(again.control, report.control);
+    assert_eq!(again.render, report.render);
+    assert!(SourceOwnedFunctionFacts::seal(source, report).is_some());
 }
 
 #[test]
@@ -2844,8 +2825,8 @@ fn function_facts_owns_canonical_render_facts() {
     let return_at = r2ssa::InstId(9);
     let return_id = r2ssa::SemanticId::return_value(return_at);
     let render = FunctionRenderFacts {
-        certified_exprs: BTreeMap::from([(
-            expression_id,
+        certified_exprs: [(
+            value,
             CertifiedExpr {
                 id: expression_id,
                 fact: ExpressionRenderFact {
@@ -2858,7 +2839,9 @@ fn function_facts_owns_canonical_render_facts() {
                 bindings: BTreeSet::new(),
                 guarded_phi: None,
             },
-        )]),
+        )]
+        .into_iter()
+        .collect(),
         certified_entities: BTreeMap::from([(
             r2ssa::SemanticId::stack_slot(object),
             CertifiedEntity::StackSlot {

@@ -495,6 +495,8 @@ pub struct SourceMachineContext {
     callee_argument_reach: BTreeMap<u64, BTreeMap<usize, crate::interproc::ArgumentReach>>,
     /// The library models of the imports this body calls, by entry.
     callee_library: BTreeMap<u64, crate::interproc::FunctionSemanticSummary>,
+    /// The callees a runtime model says re-enter their caller at its entry.
+    reentering_callees: BTreeSet<u64>,
     /// The register saves the container's call-frame information states.
     frame_saves: Vec<r2source::SourceFrameSave>,
     /// The premises the engine grants its derivations (`r2engine::premises`).
@@ -885,6 +887,7 @@ impl SourceMachineContext {
             callee_names: BTreeMap::new(),
             callee_argument_reach: BTreeMap::new(),
             callee_library: BTreeMap::new(),
+            reentering_callees: BTreeSet::new(),
             frame_saves: Vec::new(),
             accepted_premises: BTreeSet::new(),
             code_pointer_entries: BTreeMap::new(),
@@ -1204,6 +1207,15 @@ impl SourceMachineContext {
         self.callee_library = library;
     }
 
+    pub(crate) fn set_reentering_callees(&mut self, reentering: BTreeSet<u64>) {
+        self.reentering_callees = reentering;
+    }
+
+    /// Whether a call to `target` re-enters its caller at the caller's entry, by a runtime model.
+    pub(crate) fn reenters_caller(&self, target: u64) -> bool {
+        self.reentering_callees.contains(&target)
+    }
+
     /// The library model of the import at `target`, where the engine named one.
     pub(crate) fn callee_library(
         &self,
@@ -1387,10 +1399,7 @@ fn collect_raw_call_site_identities(
     let mut tails = BTreeSet::new();
     for block in blocks {
         for (op_index, op) in block.ops.iter().enumerate() {
-            let Some(instruction) = block
-                .op_metadata(op_index)
-                .and_then(|metadata| metadata.instruction_addr)
-            else {
+            let Some(instruction) = block.instruction_of(op_index) else {
                 continue;
             };
             let identity = match op {

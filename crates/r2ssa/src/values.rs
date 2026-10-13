@@ -113,8 +113,10 @@ pub fn instruction_bound(
 ) -> Option<InstructionBound> {
     let left = graph.left_by_instruction(instruction, storage)?;
     let mut local = BTreeMap::new();
-    let insts = graph.insts_for_instruction(instruction);
-    for inst in insts.iter().filter_map(|inst| graph.inst(*inst)) {
+    for inst in graph
+        .insts_for_instruction(instruction)
+        .filter_map(|inst| graph.inst(inst))
+    {
         let Some(output) = inst.output else {
             continue;
         };
@@ -158,7 +160,7 @@ fn spans_width_written(
             .filter(|_| local.contains_key(&value))
             .and_then(|inst| graph.inst(inst))
             .filter(|inst| matches!(inst.payload, InstPayload::Op(SSAOp::IntZExt { .. })))
-            .and_then(|inst| inst.inputs.first().copied());
+            .and_then(|inst| graph.inputs(inst.id).first().copied());
         let Some(extended) = extended else {
             return false;
         };
@@ -319,7 +321,8 @@ fn transfer(
         .map(|value| width_of(value.var.size))
         .unwrap_or(64);
     let input = |index: usize| -> StridedInterval {
-        inst.inputs
+        graph
+            .inputs(inst.id)
             .get(index)
             .map(|value| lookup(*value))
             .unwrap_or_else(|| StridedInterval::top(width))
@@ -329,8 +332,8 @@ fn transfer(
     let InstPayload::Op(op) = &inst.payload else {
         // A merge is the join of what reaches it, which is the whole reason
         // this is a fixpoint and not a walk.
-        return inst
-            .inputs
+        return graph
+            .inputs(inst.id)
             .iter()
             .map(|value| lookup(*value))
             .map(at_width)
@@ -356,7 +359,7 @@ fn transfer(
         SSAOp::IntSub { .. } => {
             let difference = at_width(input(0)).sub(&at_width(input(1)));
             // `x - d * (x / d)` with an exact quotient is `x % d` (`crate::division`).
-            match (inst.inputs.first(), inst.inputs.get(1)) {
+            match (graph.inputs(inst.id).first(), graph.inputs(inst.id).get(1)) {
                 (Some(x), Some(t)) => match crate::division::remainder_divisor(graph, *x, *t) {
                     Some(divisor) => {
                         difference.meet(&StridedInterval::interval(width, 0, divisor - 1))
@@ -390,7 +393,11 @@ fn transfer(
         // A piece is the source shifted down past `offset` bytes, then read at the narrower width.
         SSAOp::Subpiece { offset, .. } => {
             let source = input(0);
-            let unknown = source.is_top() && inst.inputs.first().is_some_and(|v| wide(graph, *v));
+            let unknown = source.is_top()
+                && graph
+                    .inputs(inst.id)
+                    .first()
+                    .is_some_and(|v| wide(graph, *v));
             match unknown {
                 true => StridedInterval::top(width),
                 false => at_width(source.shr(offset.saturating_mul(8))),
@@ -423,7 +430,7 @@ fn exact(
     lookup: &dyn Fn(ValueId) -> StridedInterval,
 ) -> Option<u64> {
     // A number less itself, or exclusive-or itself, is nought whatever it is: `xor eax, eax`.
-    let (first, second) = (inst.inputs.first(), inst.inputs.get(1));
+    let (first, second) = (graph.inputs(inst.id).first(), graph.inputs(inst.id).get(1));
     if matches!(op, SSAOp::IntXor { .. } | SSAOp::IntSub { .. })
         && first.is_some()
         && first == second
@@ -432,7 +439,7 @@ fn exact(
     }
     // An operation over literals is the one value it computes: `mvn r3, 0` leaves exactly `!0`.
     let narrow = |value: &ValueId| !wide(graph, *value);
-    if !inst.output.iter().chain(&inst.inputs).all(narrow) {
+    if !inst.output.iter().chain(graph.inputs(inst.id)).all(narrow) {
         return None;
     }
     crate::constant::fold_inst(graph, inst, |value| lookup(value).as_constant())
@@ -642,11 +649,11 @@ fn selected_arm(
     // holds, so which arm this is says which way the condition ran; passing
     // that separately would let the two disagree.
     let truth = index == 1;
-    let compare = inst
-        .inputs
+    let compare = graph
+        .inputs(inst.id)
         .first()
         .and_then(|condition| comparison_of(graph, *condition));
-    match (compare, inst.inputs.get(index).copied()) {
+    match (compare, graph.inputs(inst.id).get(index).copied()) {
         (Some(compare), Some(value)) => {
             narrow(&|value| Some(lookup(value)), range, &compare, truth, value)
         }
@@ -751,8 +758,8 @@ fn comparison_of(
     };
     Some(crate::semantic::CompareProvenance {
         kind: comparison_kind(op)?,
-        lhs: *inst.inputs.first()?,
-        rhs: *inst.inputs.get(1)?,
+        lhs: *graph.inputs(inst.id).first()?,
+        rhs: *graph.inputs(inst.id).get(1)?,
     })
 }
 
@@ -1482,7 +1489,7 @@ mod tests {
     /// `mvn r3, 0` computes one value from its literal, and `xor eax, eax` is nought: each instruction alone fixes it.
     #[test]
     fn an_instruction_alone_fixes_what_it_computes_from_literals() {
-        use r2il::{OpMetadata, R2ILBlock, R2ILOp, Varnode};
+        use r2il::{R2ILBlock, R2ILOp, Varnode};
         let r3 = Varnode::register(0, 4);
         let eax = Varnode::register(8, 4);
         let scratch = Varnode::unique(0x100, 4);
@@ -1518,11 +1525,7 @@ mod tests {
         ];
         let mut block = R2ILBlock::new(0x1000, 8);
         for (addr, op) in ops {
-            let meta = OpMetadata {
-                instruction_addr: Some(addr),
-                ..OpMetadata::default()
-            };
-            block.push_with_metadata(op, Some(meta));
+            block.push_from(op, addr);
         }
         let graph = crate::def_use_graph(&[block], None).expect("it builds");
         let fixed = |at: u64, storage: &Varnode| {

@@ -9,14 +9,11 @@ fn tail_slot_identity_unifies_direct_ram_and_loaded_register_targets() {
     let tail = advisory_call_site(0x2010, slot, r2source::AdvisoryCallTransfer::TailSlot);
 
     let mut direct_ram = R2ILBlock::new(0x2000, 0x14);
-    direct_ram.push_with_metadata(
+    direct_ram.push_from(
         R2ILOp::BranchInd {
             target: Varnode::ram(slot, 8),
         },
-        Some(r2il::OpMetadata {
-            instruction_addr: Some(0x2010),
-            ..r2il::OpMetadata::default()
-        }),
+        0x2010,
     );
     let direct_identity = unique_call_site_identity(&[direct_ram], &tail)
         .expect("the terminal branch reads the relocated RAM slot directly");
@@ -41,13 +38,7 @@ fn tail_slot_identity_unifies_direct_ram_and_loaded_register_targets() {
         dst: pc.clone(),
         src: loaded,
     });
-    through_register.push_with_metadata(
-        R2ILOp::BranchInd { target: pc },
-        Some(r2il::OpMetadata {
-            instruction_addr: Some(0x2010),
-            ..r2il::OpMetadata::default()
-        }),
-    );
+    through_register.push_from(R2ILOp::BranchInd { target: pc }, 0x2010);
     let loaded_identity = unique_call_site_identity(&[through_register], &tail)
         .expect("the terminal branch reads a value loaded from the relocated slot");
 
@@ -110,7 +101,7 @@ fn a_call_leaves_the_stack_pointer_where_the_convention_says_it_found_it() {
     // instruction it came from, because that is what says where one call
     // instruction's stack traffic ends.
     let mut ops = Vec::new();
-    let mut op_metadata = std::collections::BTreeMap::new();
+    let mut op_metadata = r2il::InstructionRuns::default();
     for index in 0..3u64 {
         let instr_addr = 0x4000 + index * 5;
         let first = ops.len();
@@ -128,33 +119,22 @@ fn a_call_leaves_the_stack_pointer_where_the_convention_says_it_found_it() {
             target: make_ram(0x401000, 8),
         });
         for op_index in first..ops.len() {
-            op_metadata.insert(
-                op_index,
-                r2il::OpMetadata {
-                    instruction_addr: Some(instr_addr),
-                    ..Default::default()
-                },
-            );
+            op_metadata.stamp(op_index, instr_addr);
         }
     }
     let last = ops.len();
     ops.push(R2ILOp::Return {
         target: make_const(0, 8),
     });
-    op_metadata.insert(
-        last,
-        r2il::OpMetadata {
-            instruction_addr: Some(0x400f),
-            ..Default::default()
-        },
-    );
+    op_metadata.stamp(last, 0x400f);
 
     let blocks = vec![R2ILBlock {
         addr: 0x4000,
         size: 16,
         ops,
         switch_info: None,
-        op_metadata,
+        op_metadata: Default::default(),
+        instructions: op_metadata,
     }];
 
     let interface = SourceFunctionInterface::new_exact(
@@ -246,8 +226,7 @@ fn prepared_function_ssa_recovers_direct_call_target_from_ram_literal() {
             ops: vec![R2ILOp::Call {
                 target: make_ram(0x401239, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1304,
@@ -255,8 +234,7 @@ fn prepared_function_ssa_recovers_direct_call_target_from_ram_literal() {
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -289,8 +267,7 @@ fn symbolic_function_ssa_recovers_indirect_call_target_from_copied_ram_literal()
                 },
                 R2ILOp::CallInd { target: tmp },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1314,
@@ -298,8 +275,7 @@ fn symbolic_function_ssa_recovers_indirect_call_target_from_copied_ram_literal()
             ops: vec![R2ILOp::Return {
                 target: make_const(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -332,8 +308,7 @@ fn resolved_call_target_uses_canonical_copied_const_root_when_fact_is_unresolved
             },
             R2ILOp::CallInd { target: tmp },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
 
     let prepared =
@@ -412,8 +387,7 @@ fn source_declared_entry_parameter_flows_into_an_implicit_call_read() {
         ops: vec![R2ILOp::Call {
             target: target.clone(),
         }],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     blocks[0].stamp_instruction(0, 0x1600);
     let function_interface = SourceFunctionInterface::new_exact(
@@ -532,8 +506,7 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
                 target: make_reg(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     blocks[0].stamp_instruction(2, 0x1602);
 
@@ -588,7 +561,7 @@ fn prepared_certificates_index_call_args_memory_and_returns() {
         producer.payload,
         crate::graph::InstPayload::Op(SSAOp::Copy { .. })
     ));
-    let [input] = producer.inputs.as_slice() else {
+    let [input] = prepared.graph().inputs(producer.id) else {
         panic!("register argument copy must have one exact input");
     };
     assert!(
@@ -781,25 +754,20 @@ fn a_convention_with_no_argument_registers_reads_the_area_it_passes_on() {
             target: make_reg(16, 8),
         },
     ];
-    let mut op_metadata = std::collections::BTreeMap::new();
+    let mut op_metadata = r2il::InstructionRuns::default();
     for (index, instruction_addr) in [0x1000u64, 0x1000, 0x1008, 0x1008, 0x1008, 0x100d]
         .into_iter()
         .enumerate()
     {
-        op_metadata.insert(
-            index,
-            r2il::OpMetadata {
-                instruction_addr: Some(instruction_addr),
-                ..Default::default()
-            },
-        );
+        op_metadata.stamp(index, instruction_addr);
     }
     let block = R2ILBlock {
         addr: 0x1000,
         size: 16,
         ops,
         switch_info: None,
-        op_metadata,
+        op_metadata: Default::default(),
+        instructions: op_metadata,
     };
     let interface = SourceFunctionInterface::new_exact(
         b"convention-stack-argument".to_vec(),

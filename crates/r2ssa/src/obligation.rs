@@ -16,7 +16,7 @@ use crate::graph::{InstId, InstPayload, SsaGraph, UseSite, ValueId};
 use crate::op::SSAOp;
 use crate::semantic::{SourceBoundaryFacts, StructuredDataflowFacts};
 
-pub const SEMANTIC_OBLIGATION_SCHEMA_VERSION: u32 = 10;
+pub const SEMANTIC_OBLIGATION_SCHEMA_VERSION: u32 = 11;
 
 /// Stable identity of one canonical SSA instruction.
 ///
@@ -305,19 +305,19 @@ pub enum SemanticInstructionState {
 
 /// Exact source owner for one semantic site.
 ///
-/// Graph instructions and genuine zero-op native spans are disjoint by type;
-/// callers cannot silently coerce a native span into a fabricated `InstId`.
+/// Graph instructions and genuine zero-op native spans are disjoint by type; a span's geometry
+/// is the inventory's `native_spans`, under the site's instruction identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SemanticSourceSite {
     GraphInstruction(InstId),
-    GenuineNativeSpan(crate::GenuineNativeInstructionSpan),
+    GenuineNativeSpan,
 }
 
 impl SemanticSourceSite {
     pub const fn graph_inst(self) -> Option<InstId> {
         match self {
             Self::GraphInstruction(inst) => Some(inst),
-            Self::GenuineNativeSpan(_) => None,
+            Self::GenuineNativeSpan => None,
         }
     }
 }
@@ -529,7 +529,7 @@ impl Owing {
     fn owes(&self, disposition: &SemanticInstructionDisposition) -> bool {
         match disposition.source {
             SemanticSourceSite::GraphInstruction(inst) => self.graph.contains(inst),
-            SemanticSourceSite::GenuineNativeSpan(_) => self.spans.contains(&disposition.id),
+            SemanticSourceSite::GenuineNativeSpan => self.spans.contains(&disposition.id),
         }
     }
 }
@@ -628,6 +628,7 @@ impl SemanticObligationInventory {
             match &inst.payload {
                 InstPayload::Op(op) => {
                     seed_direct_obligations(
+                        graph,
                         inst,
                         op,
                         &mut required,
@@ -636,7 +637,7 @@ impl SemanticObligationInventory {
                         &mut unsupported,
                     );
                 }
-                InstPayload::Phi { .. } if inst.canonical_storage.is_none() => {
+                InstPayload::Phi { .. } if graph.written_storage(inst).is_none() => {
                     unsupported.insert(inst.id);
                     seed_instruction(
                         inst.id,
@@ -900,7 +901,7 @@ impl SemanticObligationInventory {
                 let Some(inst) = graph.inst(read) else {
                     continue;
                 };
-                for input in &inst.inputs {
+                for input in graph.inputs(inst.id) {
                     seed_value_definition(
                         graph,
                         *input,
@@ -930,7 +931,7 @@ impl SemanticObligationInventory {
                 );
                 let carrier_storage = carrier_inst
                     .and_then(|inst| graph.inst(inst))
-                    .and_then(|inst| inst.canonical_storage);
+                    .and_then(|inst| graph.written_storage(inst));
                 for update in &carrier.updates {
                     if let (Some(carrier_inst), Some(carrier)) = (carrier_inst, carrier_storage)
                         && update.site.inst == carrier_inst
@@ -1037,7 +1038,7 @@ impl SemanticObligationInventory {
                     source: SemanticSourceSite::GraphInstruction(inst.id),
                     inputs: explicit_inputs
                         .remove(&(inst.id, kind, component))
-                        .unwrap_or_else(|| inst.inputs.clone()),
+                        .unwrap_or_else(|| graph.inputs(inst.id).to_vec()),
                     edge_use: explicit_edge_uses.remove(&(inst.id, kind, component)),
                 });
             }
@@ -1100,7 +1101,7 @@ impl SemanticObligationInventory {
                     id,
                     SemanticInstructionDisposition {
                         id,
-                        source: SemanticSourceSite::GenuineNativeSpan(span),
+                        source: SemanticSourceSite::GenuineNativeSpan,
                         state,
                     },
                 )
@@ -1110,7 +1111,7 @@ impl SemanticObligationInventory {
             }
             late.push(SemanticObligation {
                 id: obligation_id,
-                source: SemanticSourceSite::GenuineNativeSpan(span),
+                source: SemanticSourceSite::GenuineNativeSpan,
                 inputs: Vec::new(),
                 edge_use: None,
             });
@@ -1216,7 +1217,7 @@ impl SemanticObligationInventory {
     ) -> Option<&SemanticInstructionDisposition> {
         match source {
             SemanticSourceSite::GraphInstruction(inst) => self.instruction_for_inst(inst),
-            SemanticSourceSite::GenuineNativeSpan(_) => self.span_instructions.get(&id),
+            SemanticSourceSite::GenuineNativeSpan => self.span_instructions.get(&id),
         }
     }
 
@@ -1322,11 +1323,10 @@ impl SemanticObligationInventory {
                 SemanticSourceSite::GraphInstruction(inst) => {
                     self.instruction_for_inst(inst).map(|held| &held.id) != Some(id)
                 }
-                SemanticSourceSite::GenuineNativeSpan(source_span) => {
+                SemanticSourceSite::GenuineNativeSpan => {
                     self.native_spans.get(id).is_none_or(|span| {
                         (span.canonical_op_count() != 0)
                             != (instruction.state == SemanticInstructionState::CompilerInserted)
-                            || *span != source_span
                             || id.block_addr != span.block_addr()
                             || !matches!(
                                 id.site,
@@ -1415,7 +1415,7 @@ impl SemanticObligationInventory {
                 SemanticSourceSite::GraphInstruction(inst) => {
                     owing.graph.insert(inst);
                 }
-                SemanticSourceSite::GenuineNativeSpan(_) => {
+                SemanticSourceSite::GenuineNativeSpan => {
                     owing.spans.insert(obligation.id.instruction);
                 }
             }
@@ -1464,7 +1464,7 @@ fn collect_canonical_instruction_ids(
         };
         let site = match inst.payload {
             InstPayload::Phi { .. } => {
-                let Some(storage) = inst.canonical_storage else {
+                let Some(storage) = graph.written_storage(inst) else {
                     failures.push(ObligationInventoryFailure {
                         inst: inst.id,
                         block_addr: Some(block_addr),
@@ -1582,6 +1582,7 @@ fn block_can_reenter(graph: &SsaGraph, start: crate::graph::BlockId) -> bool {
 }
 
 fn seed_direct_obligations(
+    graph: &SsaGraph,
     inst: &crate::graph::GraphInst,
     op: &SSAOp<crate::graph::ValueId>,
     required: &mut ObligationSeeds,
@@ -1631,7 +1632,7 @@ fn seed_direct_obligations(
             );
             if matches!(op, SSAOp::LoadLinked { .. }) {
                 seed_instruction(inst.id, Kind::Atomicity, Component::Whole, required);
-            } else if let Some(guard) = inst.inputs.last().copied() {
+            } else if let Some(guard) = graph.inputs(inst.id).last().copied() {
                 seed_instruction_with_inputs(
                     inst.id,
                     Kind::ControlPredicate,
@@ -1652,7 +1653,7 @@ fn seed_direct_obligations(
             );
             if matches!(op, SSAOp::StoreConditional { .. }) {
                 seed_instruction(inst.id, Kind::Atomicity, Component::Whole, required);
-            } else if let Some(guard) = inst.inputs.last().copied() {
+            } else if let Some(guard) = graph.inputs(inst.id).last().copied() {
                 seed_instruction_with_inputs(
                     inst.id,
                     Kind::ControlPredicate,
@@ -1678,7 +1679,7 @@ fn seed_direct_obligations(
         }
         SSAOp::Return { .. } => seed_instruction(inst.id, Kind::Return, Component::Whole, required),
         SSAOp::CBranch { .. } | SSAOp::Switch { .. } => {
-            let predicate = inst.inputs.last().copied().into_iter().collect();
+            let predicate = graph.inputs(inst.id).last().copied().into_iter().collect();
             seed_instruction_with_inputs(
                 inst.id,
                 Kind::ControlPredicate,
@@ -1854,7 +1855,7 @@ fn propagate_live_dependencies(
         let Some(inst) = graph.inst(inst_id).filter(|_| !direct.contains(inst_id)) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             let Some(definition) = graph.def_inst(*input) else {
                 continue;
             };
@@ -2568,14 +2569,14 @@ mod tests {
             .insts
             .iter()
             .find(|inst| {
-                inst.canonical_storage
+                used.graph().written_storage(inst)
                     == Some(CanonicalStorageId {
                         space: CanonicalStorageSpace::Unique,
                         offset: 0x80,
                         size: 8,
                     })
             })
-            .and_then(|inst| inst.inputs.first())
+            .and_then(|inst| used.graph().inputs(inst.id).first())
             .copied()
             .expect("copy consumes the exact post-call result");
         assert!(matches!(
@@ -3168,12 +3169,13 @@ mod tests {
     fn storage_less_phi_refuses_complete_inventory() {
         let artifact = SsaArtifact::raw(&loop_carrier_fixture(), None).expect("loop artifact");
         let mut graph = artifact.graph().clone();
-        let phi = graph
+        let merged = graph
             .insts
-            .iter_mut()
+            .iter()
             .find(|inst| matches!(inst.payload, InstPayload::Phi { .. }))
+            .and_then(|phi| phi.output)
             .expect("loop phi");
-        phi.canonical_storage = None;
+        graph.values[merged.0 as usize].canonical_storage = None;
         let inventory = SemanticObligationInventory::collect(
             &graph,
             artifact.structured(),

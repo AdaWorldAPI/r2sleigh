@@ -81,7 +81,7 @@ impl StorageSpans {
                 let Some(storage) = storage_of(output) else {
                     continue;
                 };
-                for input in &inst.inputs {
+                for input in graph.inputs(inst.id) {
                     if storage_of(*input).is_none_or(|other| storage.location() != other.location())
                     {
                         continue;
@@ -120,7 +120,7 @@ impl StorageSpans {
                 if storage_of(output).is_none() {
                     continue;
                 }
-                for source in &inst.inputs {
+                for source in graph.inputs(inst.id) {
                     if storage_of(*source).is_none() {
                         continue;
                     }

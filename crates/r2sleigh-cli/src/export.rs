@@ -549,7 +549,6 @@ mod tests {
                 src: Varnode::constant(1, 8),
             },
             Some(OpMetadata {
-                instruction_addr: None,
                 memory_class: Some(MemoryClass::Stack),
                 endianness: None,
                 memory_ordering: None,

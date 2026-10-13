@@ -123,7 +123,7 @@ fn dispatch_operations(
     let mut outstanding = crate::dense::IdMap::<ValueId, Vec<InstId>>::default();
     let mut pending = vec![transfer];
     while let Some(inst) = pending.pop() {
-        let Some(inputs) = graph.inst(inst).map(|inst| inst.inputs.clone()) else {
+        let Some(inputs) = graph.inst(inst).map(|inst| graph.inputs(inst.id).to_vec()) else {
             continue;
         };
         for value in inputs {
@@ -459,7 +459,7 @@ pub(crate) fn stack_array_element_index(
     let InstPayload::Op(op) = &inst.payload else {
         return None;
     };
-    let input = |index: usize| inst.inputs.get(index).copied();
+    let input = |index: usize| graph.inputs(inst.id).get(index).copied();
     let constant =
         |index: usize| input(index).and_then(|value| graph.value(value)?.var.constant_bits());
     match op {
@@ -853,7 +853,7 @@ pub(crate) fn collect_prepared_function_certificates(
             let defining_inst = graph.def_of.get(value.id.0 as usize).and_then(|id| *id);
             let inputs = defining_inst
                 .and_then(|inst| graph.inst(inst))
-                .map(|inst| inst.inputs.clone())
+                .map(|inst| graph.inputs(inst.id).to_vec())
                 .unwrap_or_default();
             (
                 value.id,
@@ -1075,7 +1075,7 @@ pub(crate) fn collect_prepared_function_certificates(
             let InstPayload::Op(SSAOp::Store { val, .. }) = &inst.payload else {
                 continue;
             };
-            let through_stack_pointer = inst.inputs.first().is_some_and(|address| {
+            let through_stack_pointer = graph.inputs(inst.id).first().is_some_and(|address| {
                 graph
                     .value(*address)
                     .and_then(|value| value.canonical_storage)
@@ -1584,7 +1584,7 @@ fn observed_values(
             _ => false,
         };
         if effect && !silent.contains(inst.id) {
-            pending.extend(inst.inputs.iter().copied());
+            pending.extend(graph.inputs(inst.id).iter().copied());
         }
     }
     while let Some(value) = pending.pop() {
@@ -1597,7 +1597,7 @@ fn observed_values(
         if let Some(definition) = graph.def_inst(value).and_then(|inst| graph.inst(inst))
             && !silent.contains(definition.id)
         {
-            pending.extend(definition.inputs.iter().copied());
+            pending.extend(graph.inputs(definition.id).iter().copied());
         }
     }
     observed

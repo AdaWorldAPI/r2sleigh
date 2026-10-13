@@ -52,6 +52,13 @@ pub struct ValueTable {
 }
 
 impl ValueTable {
+    /// Give back the room growth left, once nothing more is interned.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.vars.shrink_to_fit();
+        self.storage.shrink_to_fit();
+        self.index.shrink_to_fit();
+    }
+
     /// The id `var` is held under, interning it first if it is new.
     pub fn intern(&mut self, var: &SSAVar) -> VarId {
         if let Some(id) = self.index.get(var) {

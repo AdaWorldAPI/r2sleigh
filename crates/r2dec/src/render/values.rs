@@ -419,11 +419,7 @@ impl Demand<'_> {
     /// A merge reads each input on its edge; an operation, what its term reads.
     fn read_definition(&mut self, value: ValueId, def: InstId, merge: bool) {
         if merge {
-            let inputs = self
-                .graph
-                .inst(def)
-                .map(|inst| inst.inputs.clone())
-                .unwrap_or_default();
+            let inputs = self.graph.inputs(def).to_vec();
             for input in inputs {
                 self.operand(input, def);
             }
@@ -635,8 +631,8 @@ impl<'a> Readers<'a> {
             return false;
         };
         let sites = match &reader.payload {
-            InstPayload::Phi { predecessors } => reader
-                .inputs
+            InstPayload::Phi { predecessors } => graph
+                .inputs(reader.id)
                 .iter()
                 .zip(predecessors)
                 .filter(|(input, _)| graph.def_inst(**input) == Some(def.id))
@@ -1902,7 +1898,7 @@ impl<'a> Values<'a> {
             if self.bound[def.0 as usize] || !seen.insert(def) {
                 continue;
             }
-            let inputs = self.graph.inst(def).map_or(&[][..], |i| &i.inputs[..]);
+            let inputs = self.graph.inputs(def);
             work.extend(inputs.iter().copied().filter(|input| {
                 (self.graph.use_sites(*input).iter())
                     .all(|site| seen.contains(&site.inst) || unobserved.contains(site))
@@ -1933,7 +1929,7 @@ impl<'a> Values<'a> {
             let Some(slot) = predecessors.iter().position(|pred| *pred == from_id) else {
                 continue;
             };
-            let input = inst.inputs[slot];
+            let input = self.graph.inputs(inst.id)[slot];
             let reads = match self
                 .readers
                 .absorbed((&self.projection, &self.roots), input, inst.id)
@@ -2058,7 +2054,11 @@ impl<'a> Values<'a> {
                 continue;
             };
             let owed = self.inventory.obligations_for_inst(inst.id);
-            let inputs = inst.inputs.iter().chain(owed.flat_map(|o| o.inputs.iter()));
+            let inputs = self
+                .graph
+                .inputs(inst.id)
+                .iter()
+                .chain(owed.flat_map(|o| o.inputs.iter()));
             let unwritten = |producer: &InstId| {
                 !rendered[producer.0 as usize]
                     && certified_elision(self.artifact, (&self.elisions, &self.dispatch), *producer)

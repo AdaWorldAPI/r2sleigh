@@ -1673,8 +1673,7 @@ fn a_source_member_name_reaches_only_its_own_parameter_s_fields() {
             add(0x40, 8, 8),
             load(0x50, r2il::Varnode::unique(0x40, 8)),
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     };
     let prepared = r2ssa::SsaArtifact::for_decompile_with_interface(
         &[block],

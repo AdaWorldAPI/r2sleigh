@@ -231,8 +231,8 @@ impl FunctionControlFacts {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FunctionRenderFacts {
-    /// Canonical certified expression graph keyed by stable semantic identity.
-    pub certified_exprs: BTreeMap<r2ssa::SemanticId, CertifiedExpr>,
+    /// Canonical certified expression graph, indexed by the value each expression defines.
+    pub certified_exprs: r2ssa::dense::IdMap<r2ssa::ValueId, CertifiedExpr>,
     /// Canonical certified addressable entities keyed by stable semantic identity.
     pub certified_entities: BTreeMap<r2ssa::SemanticId, CertifiedEntity>,
     /// Canonical certified observable-effect graph keyed by stable semantic identity.
@@ -269,18 +269,15 @@ impl FunctionRenderFacts {
     }
 
     pub fn expression_for_value(&self, value: r2ssa::ValueId) -> Option<&ExpressionRenderFact> {
-        self.certified_exprs
-            .get(&r2ssa::SemanticId::expression(value))
-            .map(|cert| &cert.fact)
+        self.certified_exprs.get(value).map(|cert| &cert.fact)
     }
 
     pub fn certified_expr_for_value(&self, value: r2ssa::ValueId) -> Option<&CertifiedExpr> {
-        self.certified_exprs
-            .get(&r2ssa::SemanticId::expression(value))
+        self.certified_exprs.get(value)
     }
 
     pub fn guarded_phi_for_value(&self, value: r2ssa::ValueId) -> Option<&GuardedPhiRenderFact> {
-        self.certified_expr_for_value(value)?.guarded_phi.as_ref()
+        self.certified_expr_for_value(value)?.guarded_phi.as_deref()
     }
 
     pub fn certified_effect(&self, id: r2ssa::SemanticId) -> Option<&CertifiedEffect> {
@@ -337,7 +334,10 @@ impl FunctionRenderFacts {
             if !visited.insert(id) {
                 continue;
             }
-            let Some(expr) = self.certified_exprs.get(&id) else {
+            let r2ssa::SemanticId::Expression(value) = id else {
+                continue;
+            };
+            let Some(expr) = self.certified_exprs.get(value) else {
                 continue;
             };
             for binding in &expr.bindings {
@@ -756,6 +756,39 @@ pub struct SourceOwnedFunctionFacts {
     _callee_signatures: BTreeMap<u64, SourceOwnedCalleeSignature>,
 }
 
+/// A report whose call, control and render facts are the source's projection under its final
+/// types. Only enrichment makes one, the route stamp is its one write, and only the seal takes it.
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectedFacts {
+    report: FunctionFacts,
+    /// Enrichment's evidence solve: its call prototypes are no type pass's to write.
+    evidence_types: crate::EvidenceTypes,
+}
+
+impl ProjectedFacts {
+    pub(crate) fn report(&self) -> &FunctionFacts {
+        &self.report
+    }
+
+    pub(crate) fn into_report(self) -> FunctionFacts {
+        self.report
+    }
+
+    pub(crate) fn stamp_route(
+        &mut self,
+        kind: DecompileRouteKind,
+        reason: impl Into<String>,
+        fallback_comment: Option<String>,
+    ) -> bool {
+        SourceOwnedFunctionFacts::stamp_report_decompile_route(
+            &mut self.report,
+            kind,
+            reason,
+            fallback_comment,
+        )
+    }
+}
+
 /// One C signature derived from the exact retained body that owns it.
 ///
 /// Construction is crate-private: callers may transport this certificate, but
@@ -866,18 +899,29 @@ impl SourceOwnedCalleeSignature {
 impl SourceOwnedFunctionFacts {
     #[cfg(test)]
     pub(crate) fn seal(source: Arc<r2ssa::SsaArtifact>, report: FunctionFacts) -> Option<Self> {
-        Self::seal_with_callee_signatures(source, report, BTreeMap::new()).ok()
+        let ptr_bits = source
+            .machine_context()
+            .memory_model()
+            .default_address_bits();
+        let evidence_types =
+            crate::solve_evidence_types(source.as_ref(), &report.callsite_signatures(), ptr_bits);
+        let projected = ProjectedFacts {
+            report,
+            evidence_types,
+        };
+        Self::seal_with_callee_signatures(source, projected, BTreeMap::new()).ok()
     }
 
     /// The sealed facts, or the report handed back where it is not this source's projection.
     pub(crate) fn seal_with_callee_signatures(
         source: Arc<r2ssa::SsaArtifact>,
-        mut report: FunctionFacts,
+        projected: ProjectedFacts,
         callee_signatures: BTreeMap<u64, SourceOwnedCalleeSignature>,
     ) -> Result<Self, Box<FunctionFacts>> {
-        // Canonicalization is part of sealing. Runtime consumers must observe
-        // this exact report and may not clone then normalize it independently.
-        report.canonicalize_type_facts();
+        let ProjectedFacts {
+            report,
+            evidence_types,
+        } = projected;
         if report.assumptions() != &source.facts().assumptions
             || report
                 .prepared_interproc_summary()
@@ -885,31 +929,6 @@ impl SourceOwnedFunctionFacts {
         {
             return Err(Box::new(report));
         }
-        // Source-owned facts are authoritative only when every source-dependent
-        // projection is exactly what this retained SSA artifact produces. Both
-        // construction and consumers previously read `report`, so a stale
-        // detached render/call/control row could validate against itself. Build
-        // the projection again from the retained source and the final canonical
-        // type payload, then require exact equality before sealing.
-        let mut expected = report.clone();
-        Self::rebuild_source_owned_decompile_evidence(source.as_ref(), &mut expected);
-        expected.apply_source_owned_callee_signatures(source.as_ref(), &callee_signatures);
-        if report.types != expected.types
-            || report.callee_resolution != expected.callee_resolution
-            || report.callsites != expected.callsites
-            || report.call_results != expected.call_results
-            || report.call_render != expected.call_render
-            || report.control != expected.control
-            || report.render != expected.render
-        {
-            return Err(Box::new(report));
-        }
-        let ptr_bits = source
-            .machine_context()
-            .memory_model()
-            .default_address_bits();
-        let evidence_types =
-            crate::solve_evidence_types(source.as_ref(), &report.callsite_signatures(), ptr_bits);
         Ok(Self {
             source,
             report: Arc::new(report),
@@ -1141,7 +1160,14 @@ impl SourceOwnedFunctionFacts {
         source: &r2ssa::SsaArtifact,
         report: &mut FunctionFacts,
     ) -> (BTreeSet<usize>, bool) {
-        Self::enrich_report_from_source_with_callee_signatures(source, report, &BTreeMap::new())
+        let (projected, changed, return_changed) =
+            Self::enrich_report_from_source_with_callee_signatures(
+                source,
+                std::mem::take(report),
+                &BTreeMap::new(),
+            );
+        *report = projected.into_report();
+        (changed, return_changed)
     }
 
     /// The parameter slots whose declared type changed, and whether the return
@@ -1151,21 +1177,16 @@ impl SourceOwnedFunctionFacts {
     /// function. One fact has one owner.
     pub(crate) fn enrich_report_from_source_with_callee_signatures(
         source: &r2ssa::SsaArtifact,
-        report: &mut FunctionFacts,
+        mut enriched: FunctionFacts,
         callee_signatures: &BTreeMap<u64, SourceOwnedCalleeSignature>,
-    ) -> (BTreeSet<usize>, bool) {
-        let prior_signature = report.types.merged_signature.clone();
-        // The report is taken rather than copied: it is written back whole at
-        // the end of this function and nothing reads the original in between,
-        // so the copy was the whole fact set duplicated once for the root and
-        // once for every callee whose contribution is derived.
-        let mut enriched = std::mem::take(report);
+    ) -> (ProjectedFacts, BTreeSet<usize>, bool) {
+        let prior_signature = enriched.types.merged_signature.clone();
         let mut usage = source.facts().assumption_usage.clone();
         usage.extend(enriched.assumption_usage());
         enriched.assumption_usage = usage;
         enriched.display_names.absorb(source.display_names());
-        Self::rebuild_source_owned_decompile_evidence(source, &mut enriched);
-        enriched.apply_source_owned_callee_signatures(source, callee_signatures);
+        enriched.normalize_field_certificates_from_external_layout();
+        Self::project(source, &mut enriched, callee_signatures);
         let ptr_bits = source
             .machine_context()
             .memory_model()
@@ -1177,11 +1198,10 @@ impl SourceOwnedFunctionFacts {
         // a declared signedness or logical projection through a weak scalar.
         enriched.apply_exact_source_signature(source);
         enriched.apply_return_type_fact(source, &evidence);
-        // Type constraints may change advisory member/carrier types. Rebuild
-        // once more so the sealed render projection is a pure function of the
-        // final type facts and the exact retained source.
-        Self::rebuild_source_owned_decompile_evidence(source, &mut enriched);
-        enriched.apply_source_owned_callee_signatures(source, callee_signatures);
+        // The types are final here; the projection the seal holds is built from them once.
+        enriched.normalize_field_certificates_from_external_layout();
+        enriched.canonicalize_type_facts();
+        Self::project(source, &mut enriched, callee_signatures);
         let final_signature = enriched.types.merged_signature.as_ref();
         let changed_parameters = final_signature.map_or_else(BTreeSet::new, |signature| {
             signature
@@ -1202,13 +1222,19 @@ impl SourceOwnedFunctionFacts {
             .as_ref()
             .and_then(|signature| signature.ret_type.as_ref())
             != final_signature.and_then(|signature| signature.ret_type.as_ref());
-        *report = enriched;
-        (changed_parameters, return_type_changed)
+        let projected = ProjectedFacts {
+            report: enriched,
+            evidence_types: evidence,
+        };
+        (projected, changed_parameters, return_type_changed)
     }
 
-    fn rebuild_source_owned_decompile_evidence(
+    /// The source's projection under the report's types: call, control and render facts.
+    /// It writes no type fact, so it is a function of the source, the types and the callees.
+    fn project(
         source: &r2ssa::SsaArtifact,
         report: &mut FunctionFacts,
+        callee_signatures: &BTreeMap<u64, SourceOwnedCalleeSignature>,
     ) {
         let param_slots = exact_source_param_slot_resolver(source);
         report.attach_prepared_decompile_evidence(source);
@@ -1216,7 +1242,6 @@ impl SourceOwnedFunctionFacts {
             report.populate_certified_parameter_exprs(source, param_slots);
         }
         report.populate_parameter_home_reloads();
-        report.normalize_field_certificates_from_external_layout();
         if let Some(param_slots) = param_slots.as_ref() {
             report.populate_member_access_render_facts_from_field_certificates(source, param_slots);
             // Before the declared-slot pass, which reads an array fact to find
@@ -1225,6 +1250,7 @@ impl SourceOwnedFunctionFacts {
             report.populate_member_access_render_facts_from_declared_slots(source, param_slots);
         }
         report.populate_certified_loop_carrier_types();
+        report.apply_source_owned_callee_signatures(source, callee_signatures);
     }
 }
 
@@ -2132,11 +2158,7 @@ impl FunctionFacts {
             let Some(parameter_id) = r2ssa::SemanticId::parameter(slot) else {
                 continue;
             };
-            let Some(cert) = self
-                .render
-                .certified_exprs
-                .get_mut(&r2ssa::SemanticId::expression(value.id))
-            else {
+            let Some(cert) = self.render.certified_exprs.get_mut(value.id) else {
                 continue;
             };
             cert.bindings.insert(parameter_id);
@@ -2171,11 +2193,7 @@ impl FunctionFacts {
             if !slots.is_empty() {
                 continue;
             }
-            let Some(expr) = self
-                .render
-                .certified_exprs
-                .get_mut(&r2ssa::SemanticId::expression(reload.value))
-            else {
+            let Some(expr) = self.render.certified_exprs.get_mut(reload.value) else {
                 continue;
             };
             expr.bindings.insert(r2ssa::SemanticId::Parameter(slot));
@@ -2210,11 +2228,7 @@ impl FunctionFacts {
                 let Some(slot) = parameter_slot_by_value.get(source).copied() else {
                     continue;
                 };
-                let Some(expr) = self
-                    .render
-                    .certified_exprs
-                    .get_mut(&r2ssa::SemanticId::expression(value.id))
-                else {
+                let Some(expr) = self.render.certified_exprs.get_mut(value.id) else {
                     continue;
                 };
                 expr.bindings.insert(r2ssa::SemanticId::Parameter(slot));

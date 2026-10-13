@@ -54,8 +54,7 @@ fn dual_space_artifact(
             addr: 0x1000,
             size: 4,
             ops: prefix,
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }],
         arch,
     )
@@ -2626,8 +2625,7 @@ fn byte_sources_follow_zero_extension_insertion_and_copies() {
             addr: 0x1000,
             size: 4,
             ops,
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }],
         None,
     )
@@ -2638,7 +2636,7 @@ fn byte_sources_follow_zero_extension_insertion_and_copies() {
         .iter()
         .find(|inst| matches!(inst.payload, InstPayload::Op(SSAOp::Store { .. })))
         .expect("the store");
-    let bytes = value_byte_sources(graph, None, store.inputs[1]).expect("byte sources");
+    let bytes = value_byte_sources(graph, None, graph.inputs(store.id)[1]).expect("byte sources");
     assert_eq!(bytes.len(), 16);
     let first = graph
         .insts

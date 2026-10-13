@@ -29,7 +29,9 @@ impl Fates {
         };
         let mut pending = Vec::new();
         for inst in &graph.insts {
-            for (value, built) in reading(inst, |built| steps_at(graph, inst, built)) {
+            for (value, built) in
+                reading(graph.inputs(inst.id), |built| steps_at(graph, inst, built))
+            {
                 fates.mark(value, built, &mut pending);
             }
         }
@@ -38,7 +40,8 @@ impl Fates {
             let Some(defined) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) else {
                 continue;
             };
-            for (input, from) in reading(defined, |from| carried(defined, from) == Some(built)) {
+            let inputs = graph.inputs(defined.id);
+            for (input, from) in reading(inputs, |from| carried(defined, from) == Some(built)) {
                 fates.mark(input, from, &mut pending);
             }
         }
@@ -73,13 +76,13 @@ impl Fates {
 
 /// Each state in which an operation reads one of its inputs, where `holds` accepts the bit.
 fn reading<'a>(
-    inst: &'a GraphInst,
+    inputs: &'a [ValueId],
     holds: impl Fn(bool) -> bool + 'a,
 ) -> impl Iterator<Item = (ValueId, bool)> + 'a {
     [false, true]
         .into_iter()
         .filter(move |built| holds(*built))
-        .flat_map(move |built| inst.inputs.iter().map(move |input| (*input, built)))
+        .flat_map(move |built| inputs.iter().map(move |input| (*input, built)))
 }
 
 /// The bit an operation leaves on its output: a copy or merge passes it, deriving sets it, a test or a use ends the path.

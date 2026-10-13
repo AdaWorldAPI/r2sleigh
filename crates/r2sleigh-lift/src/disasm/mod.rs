@@ -928,13 +928,8 @@ fn genuine_instruction_spans_cover_block(block: &GenuineLiftedBlock) -> bool {
             return false;
         };
         if next_op > block.block.ops.len()
-            || (expected_op..next_op).any(|op_index| {
-                block
-                    .block
-                    .op_metadata(op_index)
-                    .and_then(|metadata| metadata.instruction_addr)
-                    != Some(span.addr)
-            })
+            || (expected_op..next_op)
+                .any(|op_index| block.block.instruction_of(op_index) != Some(span.addr))
         {
             return false;
         }
@@ -961,19 +956,12 @@ fn constant_control_target(target: &Varnode) -> Option<u64> {
 /// of the same instruction still follow: a terminator is the last thing its
 /// instruction does.
 fn control_op_is_intra_instruction(block: &GenuineLiftedBlock, op_index: usize) -> bool {
-    let Some(instruction) = block
-        .block
-        .op_metadata(op_index)
-        .and_then(|metadata| metadata.instruction_addr)
-    else {
+    let Some(instruction) = block.block.instruction_of(op_index) else {
         return false;
     };
-    if (op_index + 1..block.block.ops.len()).any(|later| {
-        block
-            .block
-            .op_metadata(later)
-            .and_then(|metadata| metadata.instruction_addr)
-            == Some(instruction)
+    // A later operation of the same instruction: a run of it ends past this one.
+    if block.block.instructions.iter().any(|run| {
+        run.addr == instruction && (run.first as usize + run.len as usize) > op_index + 1
     }) {
         return true;
     }
@@ -1043,13 +1031,7 @@ fn genuine_block_successors(block: &GenuineLiftedBlock) -> Result<Vec<u64>> {
             R2ILOp::BranchInd { .. } => block.block.switch_info.is_some(),
             _ => false,
         };
-        if decides_successors
-            && block
-                .block
-                .op_metadata(op_index)
-                .and_then(|metadata| metadata.instruction_addr)
-                != Some(last_instruction)
-        {
+        if decides_successors && block.block.instruction_of(op_index) != Some(last_instruction) {
             return Err(LiftError::Parse(format!(
                 "genuine basic block contains instructions after a control terminator:                  op {op_index} {} at {:x?} is not the block's last instruction {last_instruction:#x}",
                 match op {
@@ -1060,10 +1042,7 @@ fn genuine_block_successors(block: &GenuineLiftedBlock) -> Result<Vec<u64>> {
                     R2ILOp::BranchInd { .. } => "branch-ind",
                     _ => "other",
                 },
-                block
-                    .block
-                    .op_metadata(op_index)
-                    .and_then(|metadata| metadata.instruction_addr),
+                block.block.instruction_of(op_index),
             )));
         }
     }

@@ -490,8 +490,9 @@ fn stack_geometry_certificate_closes_equal_root_merge_phi() {
     assert!(geometry.insts.contains(phi_inst));
     assert!(artifact.graph().inst(phi_inst).is_some_and(|inst| {
         matches!(inst.payload, InstPayload::Phi { .. })
-            && inst
-                .inputs
+            && artifact
+                .graph()
+                .inputs(inst.id)
                 .iter()
                 .all(|input| geometry.values.contains(*input))
     }));
@@ -569,7 +570,7 @@ fn stack_geometry_certificate_closes_the_call_restore() {
     );
     assert!(geometry.insts.contains(restore.id));
     assert!(geometry.values.contains(output));
-    assert!(geometry.values.contains(restore.inputs[0]));
+    assert!(geometry.values.contains(graph.inputs(restore.id)[0]));
 }
 
 #[test]
@@ -1057,8 +1058,9 @@ fn dead_store_of(observe: bool, divide: bool) -> (SsaArtifact, InstId) {
             matches!(
                 inst.payload,
                 InstPayload::Op(SSAOp::IntAdd { .. } | SSAOp::IntDiv { .. })
-            ) && inst
-                .inputs
+            ) && artifact
+                .graph()
+                .inputs(inst.id)
                 .iter()
                 .all(|v| artifact.graph().var(*v).size == 1)
         })

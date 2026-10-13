@@ -115,6 +115,8 @@ impl OpSlot {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OpArena {
     slots: Vec<OpSlot>,
+    /// How many slots hold a live operation, kept by `mint` and `kill`.
+    live: usize,
 }
 
 impl OpArena {
@@ -122,6 +124,7 @@ impl OpArena {
     pub(crate) fn mint(&mut self, origin: OpOrigin) -> OpId {
         let id = OpId(u32::try_from(self.slots.len()).expect("fewer than 2^32 operations"));
         self.slots.push(OpSlot::Live(origin));
+        self.live += 1;
         id
     }
 
@@ -131,6 +134,7 @@ impl OpArena {
             && let OpSlot::Live(origin) = *slot
         {
             *slot = OpSlot::Dead { origin, by };
+            self.live -= 1;
         }
     }
 
@@ -138,6 +142,16 @@ impl OpArena {
     /// indexed by [`OpId`] needs.
     pub fn id_limit(&self) -> usize {
         self.slots.len()
+    }
+
+    /// Give back the room growth left, once nothing more is minted.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.slots.shrink_to_fit();
+    }
+
+    /// How many operations and phis live: what a graph of the function holds.
+    pub fn live(&self) -> usize {
+        self.live
     }
 
     pub fn slot(&self, id: OpId) -> Option<&OpSlot> {

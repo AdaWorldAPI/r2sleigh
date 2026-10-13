@@ -596,6 +596,7 @@ fn fresh_run(addr: u64) -> r2il::R2ILBlock {
         ops: Vec::new(),
         switch_info: None,
         op_metadata: BTreeMap::new(),
+        instructions: Default::default(),
     }
 }
 

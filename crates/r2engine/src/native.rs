@@ -1105,12 +1105,14 @@ impl Callees {
     fn evidence(
         &self,
         library: BTreeMap<u64, r2ssa::interproc::FunctionSemanticSummary>,
+        reentering: BTreeSet<u64>,
     ) -> r2ssa::CalleeEvidence {
         r2ssa::CalleeEvidence {
             interfaces: self.interfaces.clone(),
             preserved: self.preserved.clone(),
             reach: self.reach.clone(),
             library,
+            reentering,
         }
     }
 
@@ -1737,6 +1739,7 @@ impl Native<'_> {
         });
         let calls = call_sites(&walked.body, self.program);
         let library = library_evidence(self.program, &calls);
+        let reentering = reentering_calls(&calls);
         let function = NativeFunction {
             address: walked.body.entry,
             name: walked.name.clone(),
@@ -1777,7 +1780,7 @@ impl Native<'_> {
             r2source::native::capture(&self.machine, function).map_err(NativeRefusal::Capture)?;
         let lifted = Disassembler::lift_owned_function(snapshot)
             .map_err(|error| NativeRefusal::Lift(error.to_string()))?;
-        Ok((lifted, callees.evidence(library)))
+        Ok((lifted, callees.evidence(library, reentering)))
     }
 }
 
@@ -1829,11 +1832,7 @@ fn call_sites(body: &crate::body::Body, program: &dyn Program) -> Vec<NativeCall
             let Some((target, transfer)) = site else {
                 continue;
             };
-            let Some(instruction) = block
-                .lifted
-                .op_metadata(index)
-                .and_then(|metadata| metadata.instruction_addr)
-            else {
+            let Some(instruction) = block.lifted.instruction_of(index) else {
                 continue;
             };
             sites.push(NativeCall {
@@ -1867,6 +1866,21 @@ fn library_evidence(
                 crate::library::import_summary(call.target, &name)?,
             ))
         })
+        .collect()
+}
+
+/// The call targets r2abi's runtime model says re-enter their caller at its entry, by the name the
+/// program gives them: a model keyed by name, which the stack check weighs beside its shape.
+fn reentering_calls(calls: &[NativeCall]) -> BTreeSet<u64> {
+    calls
+        .iter()
+        .filter(|call| call.transfer == r2source::AdvisoryCallTransfer::Call)
+        .filter(|call| {
+            call.name
+                .as_deref()
+                .is_some_and(r2abi::runtime::reenters_caller)
+        })
+        .map(|call| call.target)
         .collect()
 }
 
@@ -2281,7 +2295,7 @@ pub fn call_effect(
     bits: u32,
     platform: r2abi::Platform,
     profile: &LanguageProfile,
-    variadic_count: Option<&str>,
+    convention: Option<&r2abi::CallingConvention>,
 ) -> Option<SourceCallEffect> {
     let prototype = profile.default_prototype()?;
     let place = |name: &str| {
@@ -2346,28 +2360,40 @@ pub fn call_effect(
     // A call may read every input register and the psABI's variadic count;
     // a return hands back every output register.
     let mut call_reads = registers(&mut prototype.inputs.iter().map(|entry| &entry.storage));
-    call_reads.extend(variadic_count.and_then(place));
+    call_reads.extend(
+        convention.and_then(|convention| convention.variadic_count_register.and_then(place)),
+    );
     let return_reads = registers(&mut prototype.outputs.iter().map(|entry| &entry.storage));
     SourceBoundaryReads::new(call_reads, return_reads)
         .and_then(|reads| SourceCallEffect::new(clobbered, preserved, reads))
         .and_then(|effect| effect.with_system_reserved(system_reserved))
-        .and_then(
-            |effect| match r2abi::stack_guard(&arch.name, bits, platform) {
-                Some(guard) => match place(guard.register) {
-                    Some(base) => effect.with_stack_guard(r2source::SourceStackGuard {
-                        base,
-                        offset: guard.offset,
-                        width: guard.width,
-                    }),
-                    None => Ok(effect),
-                },
-                None => Ok(effect),
-            },
-        )
+        .and_then(|effect| {
+            effect.with_stack_guard(placed(
+                r2abi::stack_guard(&arch.name, bits, platform),
+                &place,
+            ))
+        })
+        .and_then(|effect| {
+            let bound = convention.and_then(|convention| convention.stack_bound.as_ref());
+            effect.with_stack_bound(placed(bound, &place))
+        })
         .inspect_err(|error| {
             r2il::refusal_evidence!("call-effect", "{}: {error:?}", prototype.name);
         })
         .ok()
+}
+
+/// A stated stack guard at the storage its register is placed in; none where it is unplaced.
+fn placed(
+    guard: Option<&r2abi::StackGuard>,
+    place: &dyn Fn(&str) -> Option<CanonicalStorageId>,
+) -> Option<r2source::SourceStackGuard> {
+    let guard = guard?;
+    Some(r2source::SourceStackGuard {
+        base: place(guard.register)?,
+        offset: guard.offset,
+        width: guard.width,
+    })
 }
 
 /// Whether two storages share a byte.
@@ -2440,7 +2466,10 @@ pub(crate) fn storage(arch: &ArchSpec, name: &str) -> Result<CanonicalStorageId,
 /// The premises the engine grants every derivation: a UB-free source, so a stack-protector check
 /// passes (doc/adr-frame-model.md, P4.4). A consumer that refuses it is item A's.
 pub(crate) fn accepted_premises() -> std::collections::BTreeSet<r2source::Premise> {
-    std::collections::BTreeSet::from([r2source::Premise::UbFreeSource])
+    std::collections::BTreeSet::from([
+        r2source::Premise::UbFreeSource,
+        r2source::Premise::GoRuntime,
+    ])
 }
 
 #[cfg(test)]
@@ -2520,7 +2549,7 @@ mod tests {
             64,
             r2abi::Platform::Unknown,
             &compiler,
-            convention.variadic_count_register,
+            Some(convention),
         );
         let prototypes = r2abi::Prototypes::parse(
             "on_double=func\nfunc.on_double.args=2\nfunc.on_double.arg.0=double,x\n\

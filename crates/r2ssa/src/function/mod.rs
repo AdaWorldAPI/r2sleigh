@@ -504,6 +504,14 @@ pub struct TrustedSsaArtifact {
     arch: crate::Arch,
 }
 
+/// Whether construction recovers an interface the source does not state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Recovery {
+    Recover,
+    /// Built against the convention alone, for a reader that asks no question of the interface.
+    Convention,
+}
+
 /// A trusted lift built and prepared, before the seal.
 struct Constructed {
     function: Prepared,
@@ -1451,7 +1459,7 @@ impl SsaArtifact {
         )
     }
 
-    /// Whether every access to this object is one a decided stack-protector check inserted: the canary.
+    /// Whether every access to this object is one a decided compiler-inserted check made: the canary.
     pub fn compiler_inserted_stack_object(&self, object: crate::ObjectId) -> bool {
         self.object_accessed_only_by(object, &self.certificates().compiler_inserted, false)
     }
@@ -1801,8 +1809,7 @@ fn unique_call_site_identity(
             .filter_map(move |(op_index, op)| {
                 let instruction = || {
                     block
-                        .op_metadata(op_index)
-                        .and_then(|metadata| metadata.instruction_addr)
+                        .instruction_of(op_index)
                         .filter(|instruction| *instruction == call.instruction_address())
                 };
                 let last = op_index + 1 == block.ops.len();
@@ -1859,10 +1866,7 @@ fn reads_after(
             let this = match op {
                 R2ILOp::Call { target } => target.offset == entry,
                 R2ILOp::CallInd { .. } => {
-                    block
-                        .op_metadata(index)
-                        .and_then(|metadata| metadata.instruction_addr)
-                        == Some(identity.instruction())
+                    block.instruction_of(index) == Some(identity.instruction())
                 }
                 _ => false,
             };
@@ -2196,7 +2200,7 @@ fn forwarded_parameter_index(
     };
     match &definition.payload {
         InstPayload::Phi { .. } | InstPayload::Op(SSAOp::Copy { .. }) => {
-            return agreeing(&definition.inputs, shared, seen);
+            return agreeing(graph.inputs(definition.id), shared, seen);
         }
         InstPayload::Op(SSAOp::Load { .. }) => {}
         InstPayload::Op(op) => {
@@ -2291,7 +2295,7 @@ impl TrustedSsaArtifact {
             finish,
             source_block_count,
             arch,
-        } = Self::construct(lifted, arch, control, evidence, premises)?;
+        } = Self::construct(lifted, arch, control, evidence, premises, Recovery::Recover)?;
         let artifact = SsaArtifact::seal_finished(function, machine_context, finish, control)?;
         Ok(Self {
             artifact: Arc::new(artifact),
@@ -2309,30 +2313,49 @@ impl TrustedSsaArtifact {
         evidence: &CalleeEvidence,
         premises: &BTreeSet<r2source::Premise>,
     ) -> Result<Vec<crate::indirect::DispatchTableRead>, SsaPrepareError> {
-        let constructed = Self::construct(lifted, arch, control, evidence, premises)?;
+        // A table's bounds are its guards and the constants the seal states, which no interface
+        // decides: the convention's build is sealed, and nothing is recovered.
+        let constructed = Self::construct(
+            lifted,
+            arch,
+            control,
+            evidence,
+            premises,
+            Recovery::Convention,
+        )?;
         control.poll()?;
         let sealed = (constructed.function)
             .seal(&constructed.machine_context)
             .map_err(integrity_refusal)?;
         control.poll()?;
-        let reads = crate::indirect::sealed_dispatch_table_reads(&sealed);
+        let reads = crate::indirect::prepared_dispatch_table_reads(
+            sealed.function(),
+            sealed.graph(),
+            sealed.decompile_prep_facts(),
+        );
         control.poll()?;
         Ok(reads)
     }
 
     /// The function built against its interface, stated or recovered, and the context it is sealed in.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the trusted lift, its tables, the work budget, the callees' evidence, the accepted premises and the recovery are construction's independent inputs"
+    )]
     fn construct<C: SsaWorkControl + ?Sized>(
         lifted: TrustedLiftedFunction,
         arch: Option<&crate::Arch>,
         control: &C,
         evidence: &CalleeEvidence,
         premises: &BTreeSet<r2source::Premise>,
+        recovery: Recovery,
     ) -> Result<Constructed, SsaPrepareError> {
         let CalleeEvidence {
             interfaces: callee_interfaces,
             preserved: callee_preserved_carriers,
             reach: callee_argument_reach,
             library,
+            reentering,
         } = evidence;
         let callee_statements = crate::machine_context::CalleeStatement::of(callee_interfaces);
         let source = lifted.source().clone();
@@ -2428,6 +2451,7 @@ impl TrustedSsaArtifact {
         let mut result_ambiguous = false;
         let function_interface = match source.function_interface().cloned() {
             Some(interface) => Some(interface),
+            None if recovery == Recovery::Convention => None,
             None => 'recovered: {
                 // Which of the two interfaces a function ends up with decides
                 // how its return boundary is checked, and the difference is
@@ -2461,6 +2485,7 @@ impl TrustedSsaArtifact {
                     .bind_source_string_literals(source.image().string_literals());
                 provisional_machine_context.bind_read_only(source.image().read_only());
                 provisional_machine_context.set_callee_statements(&callee_statements);
+                provisional_machine_context.set_reentering_callees(reentering.clone());
                 // The preliminary build may be the one sealed, so it decides under the same premises.
                 provisional_machine_context.set_accepted_premises(premises.clone());
                 let Ok(preliminary) =
@@ -2571,6 +2596,7 @@ impl TrustedSsaArtifact {
         machine_context.set_callee_names(correlated_call_sites.callee_names);
         machine_context.set_callee_argument_reach(callee_argument_reach.clone());
         machine_context.set_callee_library(library.clone());
+        machine_context.set_reentering_callees(reentering.clone());
         machine_context.set_callee_preserved(callees.preserved().clone());
         machine_context.set_result_owners(result_owners);
         machine_context.set_result_ambiguous(result_ambiguous);
@@ -2791,9 +2817,10 @@ pub struct SSAFunction {
     /// operations, so it is no longer one of the function's memory
     /// operations, and every layer that counts those has to agree.
     promoted_slots: crate::dense::IdSet<crate::arena::OpId>,
-    /// The operations a stack-protector check inserted, decided under `Premise::UbFreeSource`.
+    /// The operations a decided compiler-inserted check is: a canary (under `Premise::UbFreeSource`)
+    /// or a runtime's stack bound (by its model).
     compiler_inserted: crate::dense::IdSet<crate::arena::OpId>,
-    /// The failure blocks a decided stack-protector check removed, whose instructions stay owed.
+    /// The failure blocks a decided compiler-inserted check removed, whose instructions stay owed.
     compiler_inserted_blocks: BTreeSet<u64>,
     /// The premises a rewrite of this function relied on, whatever later became of what it rewrote.
     premises: BTreeSet<r2source::Premise>,
@@ -2959,7 +2986,8 @@ pub(crate) fn uncertified_call_reads(
             )
         })
         .flat_map(|inst| {
-            inst.inputs
+            graph
+                .inputs(inst.id)
                 .iter()
                 .enumerate()
                 .filter(|(_, input)| !passed.contains(&class_of(**input).unwrap_or(**input)))
@@ -3005,6 +3033,12 @@ impl SSAFunction {
     /// Record what each operation writes, before anything rewrites one.
     pub(crate) fn capture_written(&mut self) {
         self.written = crate::lanes::Written::capture(self);
+    }
+
+    /// Give back the room the function's growth left, once it is edited for the last time.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.blocks.shrink_to_fit();
+        self.values.shrink_to_fit();
     }
 
     /// Keep of the record only what the sealed function's readers ask.
@@ -3505,6 +3539,8 @@ pub struct CalleeEvidence {
     pub reach: BTreeMap<u64, BTreeMap<usize, crate::interproc::ArgumentReach>>,
     /// The model of each imported library routine called, from r2abi.
     pub library: BTreeMap<u64, crate::interproc::FunctionSemanticSummary>,
+    /// The callees a runtime model says re-enter their caller at its entry (Go's stack growth).
+    pub reentering: BTreeSet<u64>,
 }
 
 /// What the callees this function calls said about their own boundaries.
@@ -3665,7 +3701,8 @@ impl SSAFunction {
         self.promoted_slots = ops;
     }
 
-    /// The operations a decided stack-protector check inserted (`crate::stack_protector`).
+    /// The operations a decided compiler-inserted check is (`crate::stack_protector`,
+    /// `crate::stack_bound`).
     pub fn compiler_inserted(&self) -> &crate::dense::IdSet<crate::arena::OpId> {
         &self.compiler_inserted
     }
@@ -3689,7 +3726,7 @@ impl SSAFunction {
         &self.premises
     }
 
-    /// The failure blocks a decided stack-protector check removed.
+    /// The failure blocks a decided compiler-inserted check removed.
     pub fn compiler_inserted_blocks(&self) -> &BTreeSet<u64> {
         &self.compiler_inserted_blocks
     }

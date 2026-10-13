@@ -25,7 +25,7 @@ pub(crate) fn loop_carrier_phi_input_matches(
         return false;
     };
 
-    inst.inputs.get(site.input_idx) == Some(&value)
+    graph.inputs(inst.id).get(site.input_idx) == Some(&value)
         && predecessors
             .get(site.input_idx)
             .and_then(|predecessor| graph.block(*predecessor))
@@ -55,7 +55,7 @@ pub(crate) fn code_pointer_run_bytes(
     if entry_bytes == 0 || !size.is_multiple_of(entry_bytes) {
         return None;
     }
-    let address = crate::constant::folded_value(graph, *inst.inputs.first()?)?;
+    let address = crate::constant::folded_value(graph, *graph.inputs(inst.id).first()?)?;
     let mut bytes = Vec::with_capacity(size as usize);
     for entry in 0..size / entry_bytes {
         let at = address.checked_add(u64::from(entry) * u64::from(entry_bytes))?;
@@ -104,30 +104,34 @@ pub(crate) fn value_byte_sources(
             return leaf();
         };
         match &inst.payload {
-            InstPayload::Op(SSAOp::Copy { .. }) => current = *inst.inputs.first()?,
+            InstPayload::Op(SSAOp::Copy { .. }) => current = *graph.inputs(inst.id).first()?,
             InstPayload::Op(SSAOp::Load { space, .. }) => {
                 return code_pointer_run_bytes(graph, machine_context, inst, *space, size)
                     .or_else(leaf);
             }
             InstPayload::Op(SSAOp::IntZExt { .. }) => {
-                let mut bytes = value_byte_sources(graph, machine_context, *inst.inputs.first()?)?;
+                let mut bytes =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).first()?)?;
                 bytes.resize(size as usize, ByteSource::Constant(0));
                 return Some(bytes);
             }
             InstPayload::Op(SSAOp::Piece { .. }) => {
-                let mut bytes = value_byte_sources(graph, machine_context, *inst.inputs.get(1)?)?;
+                let mut bytes =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).get(1)?)?;
                 bytes.extend(value_byte_sources(
                     graph,
                     machine_context,
-                    *inst.inputs.first()?,
+                    *graph.inputs(inst.id).first()?,
                 )?);
                 (bytes.len() == size as usize).then_some(())?;
                 return Some(bytes);
             }
             InstPayload::Op(SSAOp::Insert { .. }) => {
-                let mut bytes = value_byte_sources(graph, machine_context, *inst.inputs.first()?)?;
-                let lane = value_byte_sources(graph, machine_context, *inst.inputs.get(1)?)?;
-                let position = crate::constant::value_of(graph, *inst.inputs.get(2)?)?;
+                let mut bytes =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).first()?)?;
+                let lane =
+                    value_byte_sources(graph, machine_context, *graph.inputs(inst.id).get(1)?)?;
+                let position = crate::constant::value_of(graph, *graph.inputs(inst.id).get(2)?)?;
                 if position % 8 != 0 {
                     return None;
                 }
@@ -501,7 +505,7 @@ pub(crate) fn induction_affine_parts_of_definition(
         return None;
     };
     let mask = induction_mask(width_bits);
-    let operand = |index: usize| inst.inputs.get(index).copied();
+    let operand = |index: usize| graph.inputs(inst.id).get(index).copied();
     let mut visited = BTreeSet::from([value]);
     let mut parts_of = |value: ValueId| {
         induction_affine_parts(graph, phi, value, width_bits, depth - 1, &mut visited)
@@ -740,15 +744,16 @@ fn unrooted_definition_chain(
         let text = match &inst.payload {
             InstPayload::Phi { .. } => format!(
                 "Phi{:?}",
-                inst.inputs
+                graph
+                    .inputs(inst.id)
                     .iter()
                     .map(|input| graph.var(*input).to_string())
                     .collect::<Vec<_>>()
             ),
             InstPayload::Op(op) => format!("{}", graph.named_op(op).map(&mut |var| (*var).clone())),
         };
-        let same_register = inst
-            .inputs
+        let same_register = graph
+            .inputs(inst.id)
             .iter()
             .copied()
             .filter(|source| graph.var(*source).name() == var.name())
@@ -863,7 +868,7 @@ pub(crate) fn preserved_call_carriers(
         .insts
         .iter()
         .filter(|inst| inst.output.is_some())
-        .filter_map(|inst| inst.canonical_storage)
+        .filter_map(|inst| graph.written_storage(inst))
         .collect::<BTreeSet<_>>();
     preserved.retain(|storage| {
         !written
@@ -1152,7 +1157,10 @@ pub(crate) fn reaching_abi_value_before(
         let Some(producer) = block.op_id(op_index).and_then(|id| graph.inst_for_op(id)) else {
             continue;
         };
-        let Some(dst_storage) = graph.inst(producer).and_then(|inst| inst.canonical_storage) else {
+        let Some(dst_storage) = graph
+            .inst(producer)
+            .and_then(|inst| graph.written_storage(inst))
+        else {
             // A definition with no canonical storage is invisible to this
             // walk, and the walk then answers with an older definition or the
             // entry carrier as if nothing had been written here. Say so.
@@ -1198,7 +1206,7 @@ pub(crate) fn reaching_abi_value_before(
                     );
                     return graph
                         .inst(producer)
-                        .and_then(|inst| inst.inputs.get(1).copied())
+                        .and_then(|inst| graph.inputs(inst.id).get(1).copied())
                         .map(|value| ReachingAbiPath::Reaches(ReachingAbiState::Value(value)));
                 }
                 if lsb_bits % 8 == 0 && !register_storages_overlap(lane, storage) {
@@ -1258,7 +1266,7 @@ pub(crate) fn reaching_abi_value_before(
                 .output
                 .map(|value| ReachingAbiPath::Reaches(ReachingAbiState::Value(value)));
         }
-        let [first, rest @ ..] = phi.inputs.as_slice() else {
+        let [first, rest @ ..] = graph.inputs(phi.id) else {
             return None;
         };
         if rest.iter().all(|input| input == first) {
@@ -1268,8 +1276,8 @@ pub(crate) fn reaching_abi_value_before(
         // own stack pointer is that pointer: an early return that never
         // built the frame meets the epilogue that has unwound it.
         if policy.stack_pointer == Some(storage)
-            && phi
-                .inputs
+            && graph
+                .inputs(phi.id)
                 .iter()
                 .all(|input| value_is_entry_stack_pointer(prep, graph, *input, storage))
         {
@@ -1278,7 +1286,7 @@ pub(crate) fn reaching_abi_value_before(
         r2il::refusal_evidence!(
             "reaching-abi-value",
             "{block_addr:#x} merges {storage:?} from inputs that disagree: {:?}",
-            phi.inputs
+            graph.inputs(phi.id)
         );
         return None;
     }
@@ -1440,7 +1448,7 @@ pub(crate) fn observed_convention_call_result_after_call(
                 block.op_id(call_op_index.checked_add(1)?.checked_add(relative_index)?)?,
             )?;
             let graph_inst = graph.inst(inst)?;
-            let storage = graph_inst.canonical_storage?;
+            let storage = graph.written_storage(graph_inst)?;
             if storage != convention_storage
                 && contained_register_storage_offset(convention_storage, storage).is_none()
             {
@@ -1471,201 +1479,6 @@ pub(crate) fn observed_convention_call_result_after_call(
     });
     let selected = widest_candidates.next()?;
     widest_candidates.next().is_none().then_some(selected)
-}
-
-pub(crate) fn entry_storage_state(
-    graph: &SsaGraph,
-    storage: CanonicalStorageId,
-) -> ReachingStorageState {
-    let candidates = graph
-        .values
-        .iter()
-        .filter(|value| {
-            graph.def_inst(value.id).is_none()
-                && value.var.version == 0
-                && value.var.size == storage.size
-                && value.canonical_storage == Some(storage)
-        })
-        .map(|value| value.id)
-        .collect::<Vec<_>>();
-    match candidates.as_slice() {
-        [value] => ReachingStorageState::Value(*value),
-        [] => ReachingStorageState::PreservedEntry,
-        _ => ReachingStorageState::Conflict,
-    }
-}
-
-pub(crate) fn storage_phi_value(
-    function: &SSAFunction,
-    graph: &SsaGraph,
-    block_addr: u64,
-    storage: CanonicalStorageId,
-) -> Result<Option<ValueId>, ()> {
-    let block = function.get_block(block_addr).ok_or(())?;
-    let values = block
-        .phis()
-        .iter()
-        .filter(|phi| phi.canonical_storage == Some(storage))
-        .filter_map(|phi| graph.value_of(phi.dst))
-        .collect::<Vec<_>>();
-    match values.as_slice() {
-        [] => Ok(None),
-        [value] => Ok(Some(*value)),
-        _ => Err(()),
-    }
-}
-
-pub(crate) fn block_entry_storage_state(
-    function: &SSAFunction,
-    graph: &SsaGraph,
-    exits: &BTreeMap<u64, ReachingStorageState>,
-    block_addr: u64,
-    storage: CanonicalStorageId,
-) -> ReachingStorageState {
-    if block_addr == function.root() {
-        return entry_storage_state(graph, storage);
-    }
-    let predecessors = function.predecessors(block_addr);
-    if predecessors.is_empty() {
-        return ReachingStorageState::Conflict;
-    }
-    let known = predecessors
-        .iter()
-        .filter_map(|predecessor| exits.get(predecessor).copied())
-        .filter(|state| *state != ReachingStorageState::Unknown)
-        .collect::<Vec<_>>();
-    let Some(first) = known.first().copied() else {
-        return ReachingStorageState::Unknown;
-    };
-    if known.contains(&ReachingStorageState::Conflict) {
-        return ReachingStorageState::Conflict;
-    }
-    match storage_phi_value(function, graph, block_addr, storage) {
-        Ok(Some(value)) => ReachingStorageState::Value(value),
-        Err(()) => ReachingStorageState::Conflict,
-        Ok(None) => {
-            if known.iter().all(|state| *state == first) {
-                first
-            } else {
-                ReachingStorageState::Conflict
-            }
-        }
-    }
-}
-
-pub(crate) fn transfer_storage_state(
-    graph: &SsaGraph,
-    op: OpId,
-    storage: CanonicalStorageId,
-    state: ReachingStorageState,
-) -> ReachingStorageState {
-    let Some(inst) = graph.inst_for_op(op).and_then(|inst| graph.inst(inst)) else {
-        return ReachingStorageState::Conflict;
-    };
-    let Some(written) = inst.canonical_storage else {
-        return state;
-    };
-    if !register_storages_overlap(written, storage) {
-        return state;
-    }
-    if written != storage {
-        return ReachingStorageState::Conflict;
-    }
-    inst.output
-        .map(ReachingStorageState::Value)
-        .unwrap_or(ReachingStorageState::Conflict)
-}
-
-/// Resolve one exact storage state at every source instruction with a sorted
-/// fixpoint. A recursive predecessor walk cannot prove an unchanged value
-/// through a loop backedge: revisiting the header looks like ambiguity even
-/// when SSA carries one definition around the cycle. The finite state above
-/// only moves from unknown to an exact answer or conflict, so the worklist is
-/// deterministic and each block is revisited only when a predecessor answer
-/// changes.
-pub(crate) fn reaching_storage_states_before(
-    function: &SSAFunction,
-    graph: &SsaGraph,
-    storage: CanonicalStorageId,
-) -> crate::dense::IdMap<InstId, ReachingStorageState> {
-    reaching_storage_boundaries(function, graph, storage).before
-}
-
-/// The same, with the state at each machine instruction's edges.
-pub(crate) fn reaching_storage_boundaries(
-    function: &SSAFunction,
-    graph: &SsaGraph,
-    storage: CanonicalStorageId,
-) -> StorageBoundaries {
-    let block_addrs = function.block_addrs().to_vec();
-    let mut exits = block_addrs
-        .iter()
-        .copied()
-        .map(|addr| (addr, ReachingStorageState::Unknown))
-        .collect::<BTreeMap<_, _>>();
-    let mut pending = block_addrs.iter().copied().collect::<BTreeSet<_>>();
-    while let Some(block_addr) = pending.pop_first() {
-        let mut state = block_entry_storage_state(function, graph, &exits, block_addr, storage);
-        let Some(block) = function.get_block(block_addr) else {
-            exits.insert(block_addr, ReachingStorageState::Conflict);
-            continue;
-        };
-        for (op, _) in block.sited() {
-            state = transfer_storage_state(graph, op, storage, state);
-        }
-        if exits.get(&block_addr).copied() == Some(state) {
-            continue;
-        }
-        exits.insert(block_addr, state);
-        pending.extend(function.successors(block_addr));
-    }
-
-    let mut before = crate::dense::IdMap::new(graph.insts.len());
-    let mut instruction_start = crate::dense::IdMap::new(graph.insts.len());
-    let mut instruction_end = crate::dense::IdMap::new(graph.insts.len());
-    for block_addr in block_addrs {
-        let mut state = block_entry_storage_state(function, graph, &exits, block_addr, storage);
-        let Some(block) = function.get_block(block_addr) else {
-            continue;
-        };
-        // The machine instruction being walked: its stamp, its start state and its insts.
-        let mut pending: (Option<u64>, ReachingStorageState, Vec<InstId>) =
-            (None, state, Vec::new());
-        for (op, _) in block.sited() {
-            let instruction = match function.arena().origin(op) {
-                Some(crate::arena::OpOrigin::Lifted { instruction, .. }) => *instruction,
-                _ => None,
-            };
-            if instruction.is_none() || instruction != pending.0 {
-                for inst in pending.2.drain(..) {
-                    instruction_end.insert(inst, state);
-                }
-                pending.0 = instruction;
-                pending.1 = state;
-            }
-            if let Some(inst) = graph.inst_for_op(op) {
-                before.insert(inst, state);
-                instruction_start.insert(inst, pending.1);
-                pending.2.push(inst);
-            }
-            state = transfer_storage_state(graph, op, storage, state);
-        }
-        for inst in pending.2 {
-            instruction_end.insert(inst, state);
-        }
-    }
-    StorageBoundaries {
-        before,
-        instruction_start,
-        instruction_end,
-    }
-}
-
-/// A storage's state before each inst, and at the start and end of its machine instruction.
-pub(crate) struct StorageBoundaries {
-    pub(crate) before: crate::dense::IdMap<InstId, ReachingStorageState>,
-    pub(crate) instruction_start: crate::dense::IdMap<InstId, ReachingStorageState>,
-    pub(crate) instruction_end: crate::dense::IdMap<InstId, ReachingStorageState>,
 }
 
 /// The gap from a frame object up to the next one the frame lays out above
@@ -1699,8 +1512,7 @@ pub(crate) fn callee_write_spans(
         .convention_slots()
         .map(r2source::SourceConventionSlots::argument_slots)
         .unwrap_or_default();
-    let mut reaching =
-        BTreeMap::<CanonicalStorageId, crate::dense::IdMap<InstId, ReachingStorageState>>::new();
+    let mut reaching = BTreeMap::<CanonicalStorageId, ReachingStorage<'_>>::new();
     let mut spans = Vec::new();
     let mut unbounded = BTreeSet::new();
     for block in function.blocks() {
@@ -1736,9 +1548,9 @@ pub(crate) fn callee_write_spans(
                 let storage = *registers.get(index)?;
                 let states = reaching
                     .entry(storage)
-                    .or_insert_with(|| reaching_storage_states_before(function, graph, storage));
-                match states.get(call)? {
-                    ReachingStorageState::Value(value) => Some(*value),
+                    .or_insert_with(|| ReachingStorage::new(function, graph, storage));
+                match states.before(call)? {
+                    ReachingStorageState::Value(value) => Some(value),
                     _ => None,
                 }
             };
@@ -2419,7 +2231,8 @@ pub(crate) fn loop_carrier_peer_candidates(
             };
             let phi = inst.output?;
             let width = graph.value(phi)?.var.size;
-            if predecessors.len() != inst.inputs.len() || inst.inputs.is_empty() {
+            if predecessors.len() != graph.inputs(inst.id).len() || graph.inputs(inst.id).is_empty()
+            {
                 return None;
             }
             let mut entries = Vec::new();
@@ -2427,7 +2240,7 @@ pub(crate) fn loop_carrier_peer_candidates(
             for (input_idx, (predecessor, value)) in predecessors
                 .iter()
                 .copied()
-                .zip(inst.inputs.iter().copied())
+                .zip(graph.inputs(inst.id).iter().copied())
                 .enumerate()
             {
                 let predecessor = graph.block(predecessor)?.addr;
@@ -2738,7 +2551,10 @@ pub(crate) fn loop_carrier_member_rows(
             let Some(block) = graph.block(inst.block) else {
                 continue;
             };
-            if block.addr == header || loop_body.contains(&block.addr) || inst.inputs.len() < 2 {
+            if block.addr == header
+                || loop_body.contains(&block.addr)
+                || graph.inputs(inst.id).len() < 2
+            {
                 continue;
             }
             pending.insert(inst.id);
@@ -2751,7 +2567,10 @@ pub(crate) fn loop_carrier_member_rows(
         };
         let output = inst.output?;
         let block_addr = graph.block(inst.block)?.addr;
-        if block_addr == header || loop_body.contains(&block_addr) || inst.inputs.len() < 2 {
+        if block_addr == header
+            || loop_body.contains(&block_addr)
+            || graph.inputs(inst.id).len() < 2
+        {
             continue;
         }
         let output_span = storage_spans.span_of(output)?;
@@ -2763,7 +2582,7 @@ pub(crate) fn loop_carrier_member_rows(
             let row = &rows[*root];
             // One pass over the inputs, stopping at the first the row does not own.
             let (mut has_carried_state, mut has_other_state) = (false, false);
-            for input in &inst.inputs {
+            for input in graph.inputs(inst.id) {
                 let Some(roles) = row.get(input) else {
                     return false;
                 };
@@ -2899,7 +2718,7 @@ pub(crate) fn dependence_cone(graph: &SsaGraph, value: ValueId) -> BTreeSet<Valu
         let Some(inst) = graph.def_inst(current).and_then(|inst| graph.inst(inst)) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             if cone.insert(*input) {
                 pending.push(*input);
             }

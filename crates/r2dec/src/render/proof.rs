@@ -13,11 +13,14 @@ fn proof_columns(
     let split = ledger.split_rendered();
     let mut line = String::new();
     if closure.compiler_inserted > 0 {
-        let premise = r2source::Premise::UbFreeSource.spelled();
+        // Each decided check passes under its premise: a canary the UB-free source, Go's stack
+        // check the runtime's contract.
+        let premises = ledger.premises().iter().map(|premise| premise.spelled());
         let _ = write!(
             &mut line,
-            ", {} compiler-inserted (assuming {premise})",
-            closure.compiler_inserted
+            ", {} compiler-inserted (assuming {})",
+            closure.compiler_inserted,
+            premises.collect::<Vec<_>>().join(", ")
         );
     }
     if closure.assumed > 0 {

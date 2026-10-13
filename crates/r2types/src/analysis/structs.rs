@@ -494,7 +494,7 @@ pub(crate) fn multiply_local_affine_value(
 )]
 pub(crate) fn local_affine_value(
     var: &SSAVar,
-    definitions: &HashMap<SSAVar, SSAOp>,
+    definitions: &HashMap<&SSAVar, &SSAOp>,
     ptr_bits: u32,
     memo: &mut HashMap<SSAVar, Option<LocalAffineValue>>,
     visiting: &mut HashSet<SSAVar>,
@@ -512,7 +512,7 @@ pub(crate) fn local_affine_value(
     if !visiting.insert(var.clone()) {
         return None;
     }
-    let result = (|| match definitions.get(var) {
+    let result = (|| match definitions.get(var).copied() {
         None
         | Some(SSAOp::Load {
             space: r2il::SpaceId::Ram,
@@ -669,13 +669,13 @@ pub(crate) fn local_expr_for_memory_versions(
     selected
 }
 
+/// `blocks` are `prepared`'s, named: the caller's copy, which it reads too.
 pub(crate) fn infer_local_struct_artifacts_from_prepared_ssa(
     prepared: &SsaArtifact,
+    blocks: &[SSABlock],
     ptr_bits: u32,
     diagnostics: &mut TypeAnalysisDiagnostics,
 ) -> LocalStructArtifacts {
-    let named_blocks = prepared.function().named_blocks();
-    let blocks = named_blocks.as_slice();
     let memory_versions = LocalMemoryVersionFacts::from_prepared(prepared);
     let pointer_arg_slots = collect_prepared_pointer_arg_slot_map(prepared);
     let stack_roots = |var: &SSAVar| {
@@ -777,10 +777,11 @@ pub(crate) fn infer_local_struct_artifacts_from_blocks(
     let mut slot_stride_evidence = HashMap::<usize, BTreeSet<u64>>::new();
     let mut indexed_accesses = Vec::new();
     let offset_bound = 0x4000i64;
+    // Borrowed from the blocks: a copy of every operation was the largest allocation at the peak.
     let definitions = ssa_blocks
         .iter()
         .flat_map(|block| block.ops().iter())
-        .filter_map(|op| op.dst().map(|dst| (dst.clone(), op.clone())))
+        .filter_map(|op| op.dst().map(|dst| (dst, op)))
         .collect::<HashMap<_, _>>();
     let mut affine_memo = HashMap::<SSAVar, Option<LocalAffineValue>>::new();
 

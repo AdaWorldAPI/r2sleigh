@@ -6,6 +6,7 @@ pub mod declarations;
 pub mod frames;
 pub mod platform;
 pub mod prototypes;
+pub mod runtime;
 mod spelling;
 pub mod statement;
 pub mod syscalls;

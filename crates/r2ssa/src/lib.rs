@@ -71,6 +71,7 @@ pub(crate) mod semantic;
 mod slice;
 pub(crate) mod slot_promotion;
 pub mod span;
+pub(crate) mod stack_bound;
 pub(crate) mod stack_protector;
 mod strided;
 #[cfg(test)]

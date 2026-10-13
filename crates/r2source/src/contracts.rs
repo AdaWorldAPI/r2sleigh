@@ -3433,10 +3433,13 @@ pub struct SourceCallEffect {
     system_reserved: Box<[CanonicalStorageId]>,
     /// Where the platform keeps the stack guard, addressed from one of `system_reserved`.
     stack_guard: Option<SourceStackGuard>,
+    /// Where the convention keeps the lowest stack pointer a function may run with.
+    stack_bound: Option<SourceStackGuard>,
     reads: SourceBoundaryReads,
 }
 
-/// Memory at a constant offset from a reserved register's value, where a stack protector's guard is.
+/// Memory at a constant offset from a register's entry value: a stack protector's guard, or a
+/// convention's stack bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct SourceStackGuard {
     pub base: CanonicalStorageId,
@@ -3504,6 +3507,7 @@ impl SourceCallEffect {
             preserved,
             system_reserved: Box::default(),
             stack_guard: None,
+            stack_bound: None,
             reads,
         })
     }
@@ -3535,16 +3539,17 @@ impl SourceCallEffect {
         })
     }
 
-    /// The same effect, with where the platform keeps the stack guard; its base must be reserved.
+    /// The same effect, with where the platform keeps the stack guard, where it states one; its
+    /// base must be reserved.
     pub fn with_stack_guard(
         self,
-        guard: SourceStackGuard,
+        guard: Option<SourceStackGuard>,
     ) -> Result<Self, SourceMachineRolesError> {
-        if !self.reserves(guard.base) {
+        if guard.is_some_and(|guard| !self.reserves(guard.base)) {
             return Err(SourceMachineRolesError::ContradictoryCallEffect);
         }
         Ok(Self {
-            stack_guard: Some(guard),
+            stack_guard: guard,
             ..self
         })
     }
@@ -3552,6 +3557,27 @@ impl SourceCallEffect {
     /// Where the platform keeps the stack guard, where it states one.
     pub const fn stack_guard(&self) -> Option<&SourceStackGuard> {
         self.stack_guard.as_ref()
+    }
+
+    /// The same effect, with where the convention keeps the stack bound, where it states one; its
+    /// base must survive every call, preserved or reserved.
+    pub fn with_stack_bound(
+        self,
+        bound: Option<SourceStackGuard>,
+    ) -> Result<Self, SourceMachineRolesError> {
+        if bound.is_some_and(|bound| !self.reserves(bound.base) && !self.preserves(bound.base)) {
+            return Err(SourceMachineRolesError::ContradictoryCallEffect);
+        }
+        Ok(Self {
+            stack_bound: bound,
+            ..self
+        })
+    }
+
+    /// Where the convention keeps the lowest stack pointer a function may run with (Go's
+    /// `g.stackguard0`), where it states one.
+    pub const fn stack_bound(&self) -> Option<&SourceStackGuard> {
+        self.stack_bound.as_ref()
     }
 
     /// The registers the convention names as destroyed, sorted.

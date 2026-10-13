@@ -39,7 +39,7 @@ pub(crate) fn constant_root_through_copies(graph: &SsaGraph, value: ValueId) -> 
         let inst = graph.inst(definition)?;
         match &inst.payload {
             crate::graph::InstPayload::Op(SSAOp::Copy { .. }) => {
-                at = *inst.inputs.first()?;
+                at = *graph.inputs(inst.id).first()?;
             }
             _ => return None,
         }
@@ -57,7 +57,7 @@ pub(crate) fn collect_two_way_selection_certificates(
         let crate::graph::InstPayload::Phi { predecessors } = &inst.payload else {
             continue;
         };
-        if inst.inputs.len() != 2 || predecessors.len() != 2 {
+        if graph.inputs(inst.id).len() != 2 || predecessors.len() != 2 {
             continue;
         }
         let Some(merge) = graph.block(inst.block).map(|block| block.addr) else {
@@ -175,7 +175,7 @@ pub(crate) fn collect_two_way_selection_certificates(
                     let inst = graph.inst(*id)?;
                     match &inst.payload {
                         crate::graph::InstPayload::Op(SSAOp::CBranch { .. }) => {
-                            inst.inputs.last().copied()
+                            graph.inputs(inst.id).last().copied()
                         }
                         _ => None,
                     }
@@ -199,7 +199,9 @@ pub(crate) fn collect_two_way_selection_certificates(
                     .is_some_and(|block| function.dominates(block.addr, merge))
             })
         };
-        if !means_the_same(inst.inputs[true_input]) || !means_the_same(inst.inputs[false_input]) {
+        if !means_the_same(graph.inputs(inst.id)[true_input])
+            || !means_the_same(graph.inputs(inst.id)[false_input])
+        {
             continue;
         }
         certificates.insert(
@@ -207,8 +209,8 @@ pub(crate) fn collect_two_way_selection_certificates(
             TwoWaySelectionCertificate {
                 branch,
                 condition,
-                if_true: inst.inputs[true_input],
-                if_false: inst.inputs[false_input],
+                if_true: graph.inputs(inst.id)[true_input],
+                if_false: graph.inputs(inst.id)[false_input],
             },
         );
     }
@@ -265,22 +267,25 @@ pub(crate) fn collect_renderable_expression_values(
                     | SSAOp::Cast { .. }
             )
         ) {
-            let input_renderable = inst.inputs.iter().all(|i| renderable.contains(*i));
+            let input_renderable = graph
+                .inputs(inst.id)
+                .iter()
+                .all(|i| renderable.contains(*i));
             if input_renderable {
                 renderable.insert(output);
                 ready.push_back(output);
             } else {
                 eligible[inst.id.0 as usize] = true;
-                missing_inputs[inst.id.0 as usize] = inst
-                    .inputs
+                missing_inputs[inst.id.0 as usize] = graph
+                    .inputs(inst.id)
                     .iter()
                     .filter(|input| !renderable.contains(**input))
                     .count();
             }
         } else {
             eligible[inst.id.0 as usize] = true;
-            missing_inputs[inst.id.0 as usize] = inst
-                .inputs
+            missing_inputs[inst.id.0 as usize] = graph
+                .inputs(inst.id)
                 .iter()
                 .filter(|input| !renderable.contains(**input))
                 .count();
@@ -393,10 +398,10 @@ fn expression_phi_is_identity_renderable(
     env: &ExpressionRenderEnv<'_>,
     inst: &crate::graph::GraphInst,
 ) -> bool {
-    let Some(first) = inst.inputs.first() else {
+    let Some(first) = env.graph.inputs(inst.id).first() else {
         return false;
     };
-    expression_phi_is_identity(inst) && !env.reads_memory.contains(*first)
+    expression_phi_is_identity(env.graph, inst) && !env.reads_memory.contains(*first)
 }
 
 fn expression_phi_is_renderable(
@@ -419,8 +424,8 @@ fn expression_phi_has_single_canonical_root(
     // bits at the same width, as the view states them. A representative the
     // graph holds no value for -- the literal a constant lane determines --
     // is compared as the variable it is.
-    let mut roots = inst
-        .inputs
+    let mut roots = graph
+        .inputs(inst.id)
         .iter()
         .filter(|input| graph.value(**input).is_some())
         .map(|input| {
@@ -479,14 +484,17 @@ fn expression_loop_phi_is_renderable(
     let Some(loop_fact) = structured.loops.values().find(|fact| fact.header == header) else {
         return false;
     };
-    if inst.inputs.len() != predecessors.len() {
+    if graph.inputs(inst.id).len() != predecessors.len() {
         return false;
     }
 
     let latches = loop_fact.latches.iter().copied().collect::<BTreeSet<_>>();
     let mut saw_entry = false;
     let mut saw_backedge = false;
-    for (pred_id, input) in predecessors.iter().zip(inst.inputs.iter().copied()) {
+    for (pred_id, input) in predecessors
+        .iter()
+        .zip(graph.inputs(inst.id).iter().copied())
+    {
         let Some(pred_addr) = graph.block(*pred_id).map(|block| block.addr) else {
             return false;
         };
@@ -532,7 +540,7 @@ pub(crate) fn value_renderable_modulo_loop_phi(
         }
         let inst = env.graph.def_inst(at).and_then(|id| env.graph.inst(id));
         if inputs_done {
-            let inputs = inst.map_or(&[][..], |inst| inst.inputs.as_slice());
+            let inputs = inst.map_or(&[][..], |inst| env.graph.inputs(inst.id));
             let all = inputs
                 .iter()
                 .all(|input| decided.get(*input).copied().unwrap_or(false));
@@ -549,7 +557,12 @@ pub(crate) fn value_renderable_modulo_loop_phi(
             continue;
         };
         stack.push((at, true));
-        stack.extend(inst.inputs.iter().map(|input| (*input, false)));
+        stack.extend(
+            env.graph
+                .inputs(inst.id)
+                .iter()
+                .map(|input| (*input, false)),
+        );
     }
     decided.get(value).copied().unwrap_or(false)
 }

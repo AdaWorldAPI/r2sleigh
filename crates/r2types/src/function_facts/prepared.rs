@@ -247,7 +247,8 @@ pub struct CertifiedExpr {
     pub fact: ExpressionRenderFact,
     pub inputs: Vec<r2ssa::SemanticId>,
     pub bindings: BTreeSet<r2ssa::SemanticId>,
-    pub guarded_phi: Option<GuardedPhiRenderFact>,
+    /// Boxed: few expressions are a guarded merge, and inline it would double every entry.
+    pub guarded_phi: Option<Box<GuardedPhiRenderFact>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1120,7 +1121,7 @@ pub(crate) fn prepared_callee_resolution_facts(
     prepared: &r2ssa::SsaArtifact,
     function_facts: &FunctionFacts,
 ) -> CalleeResolutionFacts {
-    let type_facts = function_facts.types.clone().canonicalized();
+    let type_facts = &function_facts.types;
     // These were empty maps, so every direct call resolved to nothing and
     // rendered as `sub_<addr>` even when radare2 had the name all along.
     let function_names = function_facts
@@ -1142,7 +1143,7 @@ pub(crate) fn prepared_callee_resolution_facts(
         .collect::<HashMap<_, _>>();
     // The linkage radare2 read off the symbol or relocation that named each
     // call target is the fact import policy rests on; a name's shape is not.
-    let mut callee_facts = type_facts.callee_facts;
+    let mut callee_facts = type_facts.callee_facts.clone();
     for cert in prepared.certificates().callsites.values() {
         let linkage = match cert.callee_linkage {
             r2source::AdvisoryCalleeLinkage::Unknown => continue,
@@ -1549,7 +1550,9 @@ impl<'a> AddressBases<'a> {
             return AddressStep::Settled(Some((value, 0)));
         };
         let op = match &inst.payload {
-            r2ssa::InstPayload::Phi { .. } => return AddressStep::Merge(inst.inputs.clone()),
+            r2ssa::InstPayload::Phi { .. } => {
+                return AddressStep::Merge(graph.inputs(inst.id).to_vec());
+            }
             r2ssa::InstPayload::Op(op) => op,
         };
         let displaced = |base: &r2ssa::ValueId, delta: Option<i64>| match delta {
@@ -1653,13 +1656,16 @@ pub(crate) fn prepared_guarded_phi_render_fact(
     let r2ssa::InstPayload::Phi { predecessors } = &inst.payload else {
         return None;
     };
-    if predecessors.len() < 2 || predecessors.len() != inst.inputs.len() {
+    if predecessors.len() < 2 || predecessors.len() != graph.inputs(inst.id).len() {
         return None;
     }
     let merge_block = graph.block(inst.block)?.addr;
     let predicates = prepared.predicates();
     let mut arms = Vec::with_capacity(predecessors.len());
-    for (predecessor, source) in predecessors.iter().zip(inst.inputs.iter().copied()) {
+    for (predecessor, source) in predecessors
+        .iter()
+        .zip(graph.inputs(inst.id).iter().copied())
+    {
         let predecessor = graph.block(*predecessor)?.addr;
         let domain = prepared.control_domains().for_block(predecessor)?;
         if !domain.complete {
@@ -1819,7 +1825,7 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
                 renderable: cert.renderable || call_result.is_some(),
             };
             (
-                r2ssa::SemanticId::expression(value),
+                value,
                 CertifiedExpr {
                     id: r2ssa::SemanticId::expression(value),
                     fact,
@@ -1830,11 +1836,11 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
                         .map(r2ssa::SemanticId::expression)
                         .collect(),
                     bindings,
-                    guarded_phi: prepared_guarded_phi_render_fact(prepared, value),
+                    guarded_phi: prepared_guarded_phi_render_fact(prepared, value).map(Box::new),
                 },
             )
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<r2ssa::dense::IdMap<_, _>>();
     let mut certified_memory_effects = certificates
         .memory_accesses
         .iter()
@@ -2001,7 +2007,7 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
         else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in prepared.graph().inputs(inst.id) {
             if observable_values.insert(*input) {
                 pending.push(*input);
             }
@@ -2026,7 +2032,7 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
         carrier_edge_roots.extend(carrier.entries.iter().map(|entry| entry.value));
         carrier_edge_roots.extend(carrier.updates.iter().map(|update| update.value));
         for value in carrier.members.iter().map(|member| member.value) {
-            if let Some(expr) = certified_exprs.get_mut(&r2ssa::SemanticId::expression(value)) {
+            if let Some(expr) = certified_exprs.get_mut(value) {
                 expr.bindings.insert(carrier.id);
             }
         }
@@ -2164,7 +2170,7 @@ pub(crate) fn expression_inline_multiplicity(
         let Some(inst) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) else {
             continue;
         };
-        for input in &inst.inputs {
+        for input in graph.inputs(inst.id) {
             if carrier_identities.contains(*input) {
                 continue;
             }

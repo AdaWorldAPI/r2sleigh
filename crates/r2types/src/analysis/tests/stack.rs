@@ -331,7 +331,9 @@ fn prepared_local_inference_certifies_cross_block_spill_reload() {
     .expect("prepared SSA");
     let mut diagnostics = TypeAnalysisDiagnostics::default();
 
-    let artifacts = infer_local_struct_artifacts_from_prepared_ssa(&prepared, 64, &mut diagnostics);
+    let blocks = prepared.function().named_blocks();
+    let artifacts =
+        infer_local_struct_artifacts_from_prepared_ssa(&prepared, &blocks, 64, &mut diagnostics);
 
     assert!(
         artifacts.indexed_accesses.iter().any(|candidate| {

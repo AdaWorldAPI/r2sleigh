@@ -142,7 +142,9 @@ impl Basis {
 /// A premise is not evidence. It is the condition under which the evidence
 /// means what the fact says, and a consumer that cannot grant it must not
 /// act on the fact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Premise {
     /// Every transfer into the code is one the image shows: no caller outside
     /// it -- another image, a callback registered at run time, generated
@@ -154,6 +156,10 @@ pub enum Premise {
     /// so what the compiler was entitled to assume of it holds of the machine
     /// code too: a signed add does not wrap, an access stays in its object.
     UbFreeSource,
+    /// The routine the container names `runtime.morestack` keeps the Go runtime's contract: it
+    /// grows the stack and resumes the caller after the call, which then re-enters. A name states
+    /// the routine; only this premise says it behaves as the runtime does.
+    GoRuntime,
 }
 
 impl Premise {
@@ -162,6 +168,7 @@ impl Premise {
         match self {
             Self::ClosedWorld => "closed-world",
             Self::UbFreeSource => "ub-free",
+            Self::GoRuntime => "go-runtime",
         }
     }
 }

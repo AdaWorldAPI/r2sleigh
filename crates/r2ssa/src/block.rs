@@ -504,9 +504,7 @@ pub fn to_ssa(block: &R2ILBlock, spell: Spelling<'_>) -> SSABlock {
     let mut ssa_block = SSABlock::new(block.addr, block.size);
 
     for (op_index, op) in block.ops.iter().enumerate() {
-        let instruction = block
-            .op_metadata(op_index)
-            .and_then(|metadata| metadata.instruction_addr);
+        let instruction = block.instruction_of(op_index);
         let ssa_op = convert_op(op, instruction, spell, &mut ctx);
         ctx.commit_deferred_versions();
         ssa_block.push(ssa_op);

@@ -102,11 +102,16 @@ impl FormalDependence {
             .argument_storages()
             .filter(|_| indirect)
             .map(|storage| {
-                let states = crate::semantic::reaching_storage_states_before(
-                    prepared.function(),
-                    graph,
-                    storage,
-                );
+                // Read only where a call's arguments are: the boundaries `passed_to_call` asks.
+                let mut reaching =
+                    crate::semantic::ReachingStorage::new(prepared.function(), graph, storage);
+                let states = prepared
+                    .facts()
+                    .boundaries
+                    .calls
+                    .values()
+                    .filter_map(|boundary| Some((boundary.at, reaching.before(boundary.at)?)))
+                    .collect();
                 (storage, states)
             })
             .collect();

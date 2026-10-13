@@ -455,8 +455,7 @@ pub(crate) fn member_run_store(
     // The lifted store reads its address then its value, and the ledger needs
     // the exact operand it is about to call unrendered.
     let input_idx = graph
-        .inst(inst)?
-        .inputs
+        .inputs(inst)
         .iter()
         .position(|input| *input == value)?;
     Some(MemberRunStoreCertificate {

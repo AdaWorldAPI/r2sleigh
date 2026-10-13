@@ -397,9 +397,7 @@ mod tests {
         let mut walked = std::collections::BTreeMap::<u64, Vec<r2il::R2ILOp>>::new();
         for lifted in body.blocks.iter().map(|block| &block.lifted) {
             for (index, op) in lifted.ops.iter().enumerate() {
-                let at = lifted
-                    .op_metadata(index)
-                    .and_then(|meta| meta.instruction_addr);
+                let at = lifted.instruction_of(index);
                 walked
                     .entry(at.expect("stamped"))
                     .or_default()

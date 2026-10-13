@@ -1,5 +1,4 @@
 use super::*;
-use r2il::OpMetadata;
 
 const PINNED_ARM64_O2_LOAD_BLOCK_ADDR: u64 = 0x1_0000_05b4;
 const PINNED_ARM64_O2_LOAD_BLOCK: &[u8] = &[
@@ -459,16 +458,12 @@ fn genuine_lift_binds_full_bytes_to_one_opaque_session() {
         pinned_block.block().ops.last(),
         Some(R2ILOp::Return { target }) if target == &Varnode::register(648, 8)
     ));
-    for metadata in function.blocks()[0].block().op_metadata.values() {
-        let mut canonical = metadata.clone();
-        assert!(canonical.instruction_addr.is_some());
-        canonical.instruction_addr = None;
-        assert_eq!(
-            canonical,
-            OpMetadata::default(),
-            "certifying lift must not retain inferred semantic metadata"
-        );
-    }
+    let block = function.blocks()[0].block();
+    assert!(
+        block.op_metadata.is_empty(),
+        "certifying lift must not retain inferred semantic metadata"
+    );
+    assert!((0..block.ops.len()).all(|op| block.instruction_of(op).is_some()));
 
     let second_blocks = vec![
         second
@@ -521,7 +516,7 @@ fn genuine_zero_op_instructions_preserve_exact_native_spans_without_changing_pco
         .lift_genuine_block(BYTES, ADDR, BYTES.len())
         .expect("genuine NOP/XOR/NOP block");
     let canonical_ops = lifted.block().ops.clone();
-    let canonical_metadata = lifted.block().op_metadata.clone();
+    let canonical_instructions = lifted.block().instructions.clone();
     let spans = lifted
         .instruction_spans()
         .iter()
@@ -553,15 +548,12 @@ fn genuine_zero_op_instructions_preserve_exact_native_spans_without_changing_pco
             .iter()
             .any(|op| matches!(op, R2ILOp::Unimplemented))
     );
-    assert!(
-        canonical_metadata
-            .values()
-            .all(|metadata| metadata.instruction_addr == Some(ADDR + 1))
-    );
+    assert!((0..canonical_ops.len()).all(|op| canonical_instructions.of(op) == Some(ADDR + 1)));
 
     assert_eq!(lifted.source_bytes(), BYTES);
     assert_eq!(lifted.block().ops, canonical_ops);
-    assert_eq!(lifted.block().op_metadata, canonical_metadata);
+    assert_eq!(lifted.block().instructions, canonical_instructions);
+    assert!(lifted.block().op_metadata.is_empty());
 }
 
 #[test]

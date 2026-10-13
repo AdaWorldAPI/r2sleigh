@@ -738,7 +738,7 @@ impl Importer<'_> {
         ) {
             return false;
         }
-        (0..graph_inst.inputs.len()).all(|input_idx| {
+        (0..graph.inputs(graph_inst.id).len()).all(|input_idx| {
             matches!(
                 self.projection.use_disposition(UseSite { inst, input_idx }),
                 Some(MachineUseDisposition::Exact(_) | MachineUseDisposition::MemoryAddress(_))

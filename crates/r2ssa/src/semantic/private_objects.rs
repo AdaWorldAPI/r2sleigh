@@ -98,7 +98,7 @@ pub(crate) fn collect_memory_round_trips(
             .and_then(|inst| graph.inst(inst))
             .and_then(|inst| match &inst.payload {
                 crate::graph::InstPayload::Op(crate::SSAOp::Copy { .. }) => {
-                    inst.inputs.first().copied()
+                    graph.inputs(inst.id).first().copied()
                 }
                 _ => None,
             })

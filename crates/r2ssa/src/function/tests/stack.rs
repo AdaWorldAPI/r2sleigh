@@ -133,8 +133,7 @@ fn stack_root_follows_a_displacement_materialised_into_a_temp() {
                 target: make_reg(0x20, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     let artifact = SsaArtifact::for_decompile_with_interface(
         &blocks,
@@ -214,8 +213,7 @@ fn decompile_artifact_two_address_stack_updates_read_incoming_versions() {
                 target: make_reg(32, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     let interface = SourceFunctionInterface::new_exact(
         b"two-address-stack-updates".to_vec(),
@@ -293,8 +291,7 @@ fn prepared_function_ssa_refuses_display_named_stack_object_facts() {
                     cond: make_reg(8, 1),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1104,
@@ -302,8 +299,7 @@ fn prepared_function_ssa_refuses_display_named_stack_object_facts() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1108,
@@ -311,8 +307,7 @@ fn prepared_function_ssa_refuses_display_named_stack_object_facts() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -415,8 +410,7 @@ fn prepared_function_refuses_display_named_stack_reload_at_control_return() {
                     target: make_const(0x1890, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1890,
@@ -424,8 +418,7 @@ fn prepared_function_refuses_display_named_stack_reload_at_control_return() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0x30, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -490,8 +483,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
                     cond,
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1904,
@@ -506,8 +498,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
                     target: make_const(0x190c, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x1908,
@@ -521,8 +512,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
                     target: make_const(0x190c, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
         R2ILBlock {
             addr: 0x190c,
@@ -530,8 +520,7 @@ fn prepared_function_refuses_display_named_stack_merge_at_control_return() {
             ops: vec![R2ILOp::Return {
                 target: make_reg(0x30, 8),
             }],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         },
     ];
 
@@ -608,8 +597,7 @@ fn an_apple_arm64_variadic_tail_is_read_from_the_stack() {
         addr: 0x1600,
         size: 4,
         ops,
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     };
     block.stamp_instruction(3, 0x1603);
     let blocks = vec![block];
@@ -706,8 +694,7 @@ fn prepared_stack_reload_refuses_display_named_param_home() {
                 src: loaded,
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
 
     let prepared = SsaArtifact::for_decompile(&blocks, Some(&crate::Arch::from(arch.clone())))
@@ -756,8 +743,7 @@ fn prepared_callsite_refuses_display_named_stack_home_arguments() {
                 target: make_const(0x401000, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
 
     let prepared = prepared_preserving(&blocks, &arch, &["rbx", "rsp", "rbp"])
@@ -805,8 +791,7 @@ fn test_decompile_prep_facts_refuse_display_named_stack_roots() {
         ops: vec![R2ILOp::Return {
             target: make_const(0, 8),
         }],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
 
     let mut func = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
@@ -916,8 +901,7 @@ fn test_decompile_prep_facts_use_only_exact_typed_stack_carriers() {
                 target: make_const(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     let sp_storage = CanonicalStorageId {
         space: crate::CanonicalStorageSpace::Register,
@@ -1106,8 +1090,7 @@ fn artifact_projects_typed_stack_roots_by_value_id_without_register_aliases() {
                 target: make_ram(0, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     let sp_storage = CanonicalStorageId {
         space: crate::CanonicalStorageSpace::Register,
@@ -1155,7 +1138,7 @@ fn artifact_projects_typed_stack_roots_by_value_id_without_register_aliases() {
         .inst_spelled_at(0x3400, 0)
         .and_then(|inst| artifact.graph().inst(inst))
         .expect("frame setup graph instruction");
-    let entry_sp = frame_setup.inputs[0];
+    let entry_sp = artifact.graph().inputs(frame_setup.id)[0];
     let local_address = artifact
         .graph()
         .inst_spelled_at(0x3400, 1)
@@ -1255,8 +1238,7 @@ fn a_mask_that_aligns_the_stack_pointer_opens_a_frame_of_its_own() {
                 target: make_reg(0x20, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     let artifact = SsaArtifact::for_decompile_with_interface(
         &blocks,
@@ -1375,8 +1357,7 @@ fn entry_stack_roots_use_call_preservation_but_refuse_unknown_effects() {
                     target: make_reg(0x20, 8),
                 },
             ],
-            switch_info: None,
-            op_metadata: Default::default(),
+            ..Default::default()
         }];
         let artifact = crate::testing::prepared(
             &blocks,
@@ -1459,8 +1440,7 @@ fn new_subregister_result_cannot_inherit_stack_address_authority() {
                 target: make_reg(32, 8),
             },
         ],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     let artifact = SsaArtifact::for_decompile_with_interface(
         &blocks,
@@ -1515,8 +1495,7 @@ fn test_decompile_prep_facts_refuse_renamed_stack_carriers() {
         ops: vec![R2ILOp::Return {
             target: make_ram(0, 8),
         }],
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     }];
     let mut func = SSAFunction::from_blocks_raw_no_arch(&blocks).expect("raw SSA should build");
     func.edit_block(0x1000).expect("entry").replace_ops(

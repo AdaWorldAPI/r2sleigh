@@ -223,6 +223,8 @@ pub struct ObligationLedger {
     /// operation by identity, so this order is taken from the sealed
     /// function once, when the ledger opens.
     reading_order: Vec<SpelledObligation>,
+    /// The premises the function's decided checks rely on; none where a runtime model decided them.
+    premises: BTreeSet<r2source::Premise>,
 }
 
 impl ObligationLedger {
@@ -248,7 +250,17 @@ impl ObligationLedger {
             conflicts: BTreeMap::new(),
             split: BTreeSet::new(),
             reading_order,
+            premises: BTreeSet::new(),
         }
+    }
+
+    /// The same ledger, stating the premises the function's decided checks rely on.
+    pub fn with_premises(self, premises: BTreeSet<r2source::Premise>) -> Self {
+        Self { premises, ..self }
+    }
+
+    pub const fn premises(&self) -> &BTreeSet<r2source::Premise> {
+        &self.premises
     }
 
     /// Every obligation, spelled, in the order the spelling reads.
@@ -636,7 +648,7 @@ mod tests {
     fn a_serialized_ledger_without_its_reading_order_is_rejected() {
         let without = r#"{"outcomes":{},"conflicts":{},"split":[]}"#;
         assert!(serde_json::from_str::<ObligationLedger>(without).is_err());
-        let with = r#"{"outcomes":{},"conflicts":{},"split":[],"reading_order":[]}"#;
+        let with = r#"{"outcomes":{},"conflicts":{},"split":[],"reading_order":[],"premises":[]}"#;
         assert!(serde_json::from_str::<ObligationLedger>(with).is_ok());
     }
 

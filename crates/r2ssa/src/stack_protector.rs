@@ -122,7 +122,7 @@ pub(crate) fn decide(func: &mut SSAFunction, machine: &SourceMachineContext) {
 
 /// The temporary address arithmetic only inserted operations read: the guard's address the
 /// compiler computed for its reads. One pass counts reads; each operation is taken once.
-fn inserted_addresses(func: &SSAFunction, inserted: &IdSet<OpId>) -> IdSet<OpId> {
+pub(crate) fn inserted_addresses(func: &SSAFunction, inserted: &IdSet<OpId>) -> IdSet<OpId> {
     let values = func.values().len();
     let mut reads = IdMap::<VarId, usize>::new(values);
     let mut arithmetic = IdMap::<VarId, (OpId, Vec<VarId>)>::new(values);

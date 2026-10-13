@@ -205,6 +205,8 @@ impl Prepared {
             ir.apply_edits(released);
             graph = SsaGraph::from_function_with_storage(&ir);
         }
+        // The last edit is behind: the sealed function lives as long as the analysis.
+        ir.shrink_to_fit();
         let mut prep = ir
             .collect_decompile_prep_facts_with_control(
                 &graph,
@@ -213,6 +215,7 @@ impl Prepared {
             )
             .expect("an unchecked control never stops");
         crate::semantic::ensure_source_formal_parameter_values(&mut graph, machine_context);
+        graph.shrink_to_fit();
         let formal_parameters =
             crate::semantic::collect_source_formal_parameter_facts(&graph, machine_context);
         prep.install_exact_formal_parameters(&graph, &formal_parameters);

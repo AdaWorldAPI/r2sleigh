@@ -2640,7 +2640,10 @@ fn displacement_step(prepared: &SsaArtifact, value_id: ValueId) -> Option<Displa
         SSAOp::PtrSub { element_size, .. } => (-1, i64::from(*element_size)),
         _ => return None,
     };
-    let (&left, &right) = (inst.inputs.first()?, inst.inputs.get(1)?);
+    let (&left, &right) = (
+        graph.inputs(inst.id).first()?,
+        graph.inputs(inst.id).get(1)?,
+    );
     let constant = |value| summary_const_value(prepared, value);
     let offset = |k: u64| (k as i64).checked_mul(scale)?.checked_mul(sign);
     match (constant(left), constant(right)) {
@@ -2671,7 +2674,8 @@ fn is_an_index(prepared: &SsaArtifact, value_id: ValueId) -> bool {
         return false;
     };
     let constant = |index: usize| {
-        inst.inputs
+        graph
+            .inputs(inst.id)
             .get(index)
             .and_then(|value| summary_const_value(prepared, *value))
     };
@@ -3076,7 +3080,7 @@ fn exact_return_address_use(
     (return_address.value == target_value
         && graph
             .inst(inst)
-            .and_then(|return_inst| return_inst.inputs.first())
+            .and_then(|return_inst| graph.inputs(return_inst.id).first())
             == Some(&target_value)
         && graph.use_sites(target_value).contains(&use_site))
     .then_some(inst)

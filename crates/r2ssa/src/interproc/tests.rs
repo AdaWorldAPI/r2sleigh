@@ -202,8 +202,7 @@ fn block(addr: u64, ops: Vec<R2ILOp>) -> R2ILBlock {
         addr,
         size: 4,
         ops,
-        switch_info: None,
-        op_metadata: Default::default(),
+        ..Default::default()
     };
     for op_index in 0..block.ops.len() {
         if matches!(
@@ -281,8 +280,7 @@ fn exact_untyped_artifact(
                             revision.to_vec(),
                             crate::SourceCallSiteIdentity::new(
                                 block
-                                    .op_metadata(op_index)
-                                    .and_then(|metadata| metadata.instruction_addr)
+                                    .instruction_of(op_index)
                                     .expect("test transfers are lifted from an instruction"),
                                 crate::CanonicalStorageId::from_varnode(target),
                             ),
@@ -1549,7 +1547,7 @@ fn symbolic_store_plus_constant_preserves_arg_offset_range() {
         .expect("store addr value id");
     let def_inst = prepared.graph().def_inst(addr_id).expect("store addr def");
     let inst = prepared.graph().inst(def_inst).expect("store addr inst");
-    let [left_id, right_id] = match inst.inputs.as_slice() {
+    let [left_id, right_id] = match prepared.graph().inputs(inst.id) {
         [left, right] => [*left, *right],
         _ => panic!("expected additive store addr inputs"),
     };
@@ -1623,7 +1621,7 @@ fn symbolic_store_minus_constant_preserves_arg_offset_range() {
         .expect("store addr value id");
     let def_inst = prepared.graph().def_inst(addr_id).expect("store addr def");
     let inst = prepared.graph().inst(def_inst).expect("store addr inst");
-    let [left_id, right_id] = match inst.inputs.as_slice() {
+    let [left_id, right_id] = match prepared.graph().inputs(inst.id) {
         [left, right] => [*left, *right],
         _ => panic!("expected additive store addr inputs"),
     };

@@ -44,7 +44,8 @@ pub mod varnode;
 pub use endianness::Endianness;
 pub use memory::{AtomicKind, MemoryOrdering, MemoryPermissions, MemoryRange};
 pub use metadata::{
-    FloatEncodingHint, MemoryClass, OpMetadata, PointerHint, ScalarKind, StorageClass,
+    FloatEncodingHint, InstructionRun, InstructionRuns, MemoryClass, OpMetadata, PointerHint,
+    ScalarKind, StorageClass,
 };
 pub use opcode::{
     BlockStop, BlockTransfer, BlockTransferKind, ControlTransfer, R2ILBlock, R2ILOp, SwitchCase,

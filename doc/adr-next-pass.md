@@ -38,7 +38,13 @@ memory accesses, `C` call sites, `L` storage locations the function names,
    `O(B + writes + reads)`: the stack's top at a point is the version that
    reaches it (the `readVariable` recursion of Braun et al. 2013, run once for
    every reader). It is an index over what renaming and K1 compute, not a
-   second SSA form; D9 stands.
+   second SSA form; D9 stands. Until that index holds every point, a pass
+   asks one storage at a time (`semantic/reaching.rs`, LX3): a block's entry
+   is solved over the blocks backward-reachable from it through blocks that
+   do not write the storage. The reaching walk's equations are monotone over
+   a flat lattice and that region is closed under them, so its least
+   fixpoint is the walk's; it is kept for the next ask, and a queried block
+   is scanned once.
 3. **Interprocedural facts compose bottom-up over the call graph.** A summary
    is a function of the callee's body and its callees' summaries (Sharir and
    Pnueli 1981). Tarjan's components order the call graph in `O(F + Ec)`; a

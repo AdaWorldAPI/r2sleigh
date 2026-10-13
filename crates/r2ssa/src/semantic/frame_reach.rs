@@ -158,11 +158,14 @@ impl FrameReach {
         let mut barriers = compiler_slots(function, graph, model, machine_context);
         barriers.extend(graph.insts.iter().filter_map(|inst| match &inst.payload {
             crate::graph::InstPayload::Op(SSAOp::Store { space, .. }) => {
-                let (address, mut value) = (*inst.inputs.first()?, *inst.inputs.get(1)?);
+                let (address, mut value) = (
+                    *graph.inputs(inst.id).first()?,
+                    *graph.inputs(inst.id).get(1)?,
+                );
                 // Through copies and low lanes, as a save of `x29` reads it.
                 for _ in 0..graph.values.len() {
                     let definition = graph.def_inst(value).and_then(|inst| graph.inst(inst));
-                    match definition.map(|inst| (&inst.payload, inst.inputs.first())) {
+                    match definition.map(|inst| (&inst.payload, graph.inputs(inst.id).first())) {
                         Some((
                             crate::graph::InstPayload::Op(
                                 SSAOp::Copy { .. } | SSAOp::Subpiece { offset: 0, .. },
@@ -339,8 +342,8 @@ fn compiler_slots(
                     matches!(
                         inst.payload,
                         crate::graph::InstPayload::Op(SSAOp::Subpiece { offset: 0, .. })
-                    ) && inst
-                        .inputs
+                    ) && graph
+                        .inputs(inst.id)
                         .first()
                         .copied()
                         .and_then(entry)
@@ -356,7 +359,10 @@ fn compiler_slots(
         .iter()
         .filter_map(|inst| match &inst.payload {
             crate::graph::InstPayload::Op(SSAOp::Store { space, .. }) => {
-                let (address, value) = (*inst.inputs.first()?, *inst.inputs.get(1)?);
+                let (address, value) = (
+                    *graph.inputs(inst.id).first()?,
+                    *graph.inputs(inst.id).get(1)?,
+                );
                 (saved(value) || canary.contains(inst.id)).then_some(MemoryObjectKey {
                     value: address,
                     space: *space,
@@ -605,7 +611,7 @@ fn call_reaches(
         .convention_slots()
         .and_then(r2source::SourceConventionSlots::stack_arguments)
         .map_or(0, |placement| placement.first_offset().max(0));
-    let states = reaching_storage_states_before(function, graph, stack_pointer);
+    let mut states = ReachingStorage::new(function, graph, stack_pointer);
     for block in function.named_blocks() {
         for (op_id, op) in block.sited() {
             let instruction = match op {
@@ -617,9 +623,9 @@ fn call_reaches(
             let Some(call) = graph.inst_for_op(op_id) else {
                 continue;
             };
-            let sp = match states.get(call) {
+            let sp = match states.before(call) {
                 Some(ReachingStorageState::Value(value)) => graph
-                    .value(*value)
+                    .value(value)
                     .and_then(|value| entry_offset(facts, value.id)),
                 _ => None,
             };

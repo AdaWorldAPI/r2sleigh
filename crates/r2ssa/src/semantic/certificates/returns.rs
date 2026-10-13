@@ -40,7 +40,7 @@ pub(crate) fn collect_machine_return_control_certificates(
         let Some(return_inst) = graph.inst(at) else {
             continue;
         };
-        if return_inst.inputs.first() != Some(&return_address.value)
+        if graph.inputs(return_inst.id).first() != Some(&return_address.value)
             || !matches!(return_inst.payload, InstPayload::Op(SSAOp::Return { .. }))
         {
             continue;
@@ -70,7 +70,7 @@ pub(crate) fn collect_machine_return_control_certificates(
                 InstPayload::Op(SSAOp::Copy { dst, src }) => {
                     let source = *src;
                     if definition.output != Some(current)
-                        || definition.inputs.as_slice() != [source]
+                        || graph.inputs(definition.id) != [source]
                         || graph.var(*dst).size != return_address.storage.size
                         || graph.var(source).size != return_address.storage.size
                         || !insts.insert(inst)
@@ -111,7 +111,7 @@ pub(crate) fn collect_machine_return_control_certificates(
                     if !stack_object
                         || graph.var(*dst).size != return_address.storage.size
                         || definition.output != Some(current)
-                        || definition.inputs.as_slice() != [access.address]
+                        || graph.inputs(definition.id) != [access.address]
                         || !insts.insert(inst)
                     {
                         complete = false;
@@ -197,7 +197,7 @@ pub(crate) fn collect_machine_return_control_certificates(
             .iter()
             .flat_map(|inst| {
                 graph.inst(*inst).into_iter().flat_map(move |definition| {
-                    (0..definition.inputs.len()).map(move |input_idx| UseSite {
+                    (0..graph.inputs(definition.id).len()).map(move |input_idx| UseSite {
                         inst: *inst,
                         input_idx,
                     })
@@ -542,7 +542,7 @@ pub(crate) fn exact_logical_lane_input(
         if producer.output != Some(at) {
             return None;
         }
-        let (lane, lane_var) = match (&producer.payload, producer.inputs.as_slice()) {
+        let (lane, lane_var) = match (&producer.payload, graph.inputs(producer.id)) {
             (
                 InstPayload::Op(SSAOp::IntZExt { dst, src } | SSAOp::IntSExt { dst, src }),
                 [input],

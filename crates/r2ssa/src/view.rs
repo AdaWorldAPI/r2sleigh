@@ -229,7 +229,7 @@ impl ValueViews<ValueId> {
             if let crate::graph::InstPayload::Op(op) = &inst.payload {
                 record_offset(op, |id| facts[*id], &mut offsets);
             }
-            if let Some((dst, definition)) = graph_definition(&facts, inst) {
+            if let Some((dst, definition)) = graph_definition(graph, &facts, inst) {
                 nodes.push(dst);
                 definitions.push(definition);
             }
@@ -918,13 +918,15 @@ struct Work<I> {
 
 /// How one graph instruction defines its output, where the view reads it.
 fn graph_definition(
+    graph: &crate::graph::SsaGraph,
     facts: &IdVec<ValueId, Facts>,
     inst: &crate::graph::GraphInst,
 ) -> Option<(ValueId, Definition<ValueId>)> {
     match &inst.payload {
-        crate::graph::InstPayload::Phi { .. } => {
-            Some((inst.output?, Definition::Phi(inst.inputs.clone())))
-        }
+        crate::graph::InstPayload::Phi { .. } => Some((
+            inst.output?,
+            Definition::Phi(graph.inputs(inst.id).to_vec()),
+        )),
         crate::graph::InstPayload::Op(op) => definition_of(op, |id| facts[*id]),
     }
 }

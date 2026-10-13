@@ -363,8 +363,9 @@ impl MachineValueUse {
             .graph()
             .inst(site.inst)
             .ok_or(MachineBuildError::MissingUseDisposition(site))?;
-        let used_value = *inst
-            .inputs
+        let used_value = *artifact
+            .graph()
+            .inputs(inst.id)
             .get(site.input_idx)
             .ok_or(MachineBuildError::MissingUseDisposition(site))?;
         let is_memory_address = site.input_idx == 0
@@ -1115,17 +1116,12 @@ impl MachineExprKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MachineExpr {
     ty: MachineType,
-    origin: Option<CanonicalInstructionId>,
     kind: MachineExprKind,
 }
 
 impl MachineExpr {
     pub const fn ty(&self) -> &MachineType {
         &self.ty
-    }
-
-    pub const fn origin(&self) -> Option<CanonicalInstructionId> {
-        self.origin
     }
 
     pub const fn kind(&self) -> &MachineExprKind {
@@ -1334,7 +1330,7 @@ impl MachineProjection {
                 .value(output_id)
                 .ok_or(MachineBuildError::MissingGraphValue(output_id))?;
             let output = binding_for_value(graph_value)?;
-            match builder.lower_inst(artifact, inst, disposition.id, output) {
+            match builder.lower_inst(artifact, inst, output) {
                 Ok(root) => {
                     // The write decision is deferred. Whether a partial write
                     // preserves anything depends on what reads the carrier
@@ -1469,7 +1465,7 @@ impl MachineProjection {
                 .and_then(|output| self.machine.entity_for_output(output))
                 .and_then(|entity| self.machine.expr(entity.root()));
             let children = root.map(|root| root.kind.children());
-            for (input_idx, input) in inst.inputs.iter().enumerate() {
+            for (input_idx, input) in graph.inputs(inst.id).iter().enumerate() {
                 let Some(source) = graph
                     .value(*input)
                     .and_then(|value| binding_for_value(value).ok())
@@ -1666,7 +1662,7 @@ impl MachineProjection {
                         .ok_or(MachineBuildError::TopologyMismatch)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            if row.len() != inst.inputs.len() {
+            if row.len() != graph.inputs(inst.id).len() {
                 return Err(MachineBuildError::TopologyMismatch);
             }
             let expected_refusal = inst
@@ -1684,8 +1680,8 @@ impl MachineProjection {
                     inst: inst.id,
                     input_idx,
                 };
-                let input = *inst
-                    .inputs
+                let input = *graph
+                    .inputs(inst.id)
                     .get(input_idx)
                     .ok_or(MachineBuildError::MissingUseDisposition(site))?;
                 let graph_value = graph
@@ -1946,11 +1942,11 @@ fn canonical_machine_use_dispositions(
         if inst.id.0 as usize != inst_index
             || end < start
             || end > slots.len()
-            || end - start != inst.inputs.len()
+            || end - start != graph.inputs(inst.id).len()
         {
             return Err(MachineBuildError::TopologyMismatch);
         }
-        for (input_idx, input) in inst.inputs.iter().enumerate() {
+        for (input_idx, input) in graph.inputs(inst.id).iter().enumerate() {
             let site = UseSite {
                 inst: inst.id,
                 input_idx,
@@ -2291,7 +2287,7 @@ fn exact_zero_extend_write(
     ) {
         return None;
     }
-    let [input] = inst.inputs.as_slice() else {
+    let [input] = artifact.graph().inputs(inst.id) else {
         return None;
     };
     let graph_value = artifact.graph().value(*input)?;
@@ -2619,18 +2615,13 @@ impl MachineFunction {
                 .obligations()
                 .instruction_for_inst(inst_id)
                 .ok_or(MachineBuildError::MissingInstructionDisposition(inst_id))?;
-            if disposition.id != entity.producer
-                || self
-                    .arena
-                    .get(entity.root)
-                    .is_none_or(|root| root.origin != Some(entity.producer))
-            {
+            if disposition.id != entity.producer || self.arena.get(entity.root).is_none() {
                 r2il::refusal_evidence!(
                     "machine-entity",
-                    "{inst_id:?}: the disposition names {:?}, the entity names {:?}, the root names {:?}",
+                    "{inst_id:?}: the disposition names {:?}, the entity names {:?}, its root {:?}",
                     disposition.id,
                     entity.producer,
-                    self.arena.get(entity.root).and_then(|root| root.origin)
+                    entity.root
                 );
                 return Err(MachineBuildError::EntityMismatch(inst_id));
             }
@@ -2665,7 +2656,7 @@ impl MachineFunction {
                         && fact.provenance_complete
                         && fact.is_write
                         && fact.id.ordinal == 0
-                        && inst.inputs.first() == Some(&fact.address)
+                        && graph.inputs(inst.id).first() == Some(&fact.address)
                 })
                 .ok_or(MachineBuildError::EntityMismatch(access.inst))?;
             let source_space = fact.space;
@@ -3093,14 +3084,14 @@ impl MachineFunction {
             )));
         }
         let inputs = root.kind.children();
-        if inputs.len() != inst.inputs.len() {
+        if inputs.len() != artifact.graph().inputs(inst.id).len() {
             return Err(mismatch(&format!(
                 "the root takes {} operands and the instruction has {}",
                 inputs.len(),
-                inst.inputs.len()
+                artifact.graph().inputs(inst.id).len()
             )));
         }
-        for (child, expected) in inputs.iter().zip(&inst.inputs) {
+        for (child, expected) in inputs.iter().zip(artifact.graph().inputs(inst.id)) {
             let binding = operand_leaf_binding(&self.arena, *child)
                 .ok_or_else(|| mismatch(&format!("operand {child:?} is not a leaf")))?;
             if binding.value != *expected {
@@ -3179,7 +3170,11 @@ impl MachineFunction {
                     && !fact.is_write
                     && fact.id.ordinal == 0
                     && fact.value == Some(entity.output.value)
-                    && read_operands_are_exact(source_op_of(inst), &inst.inputs, fact.address)
+                    && read_operands_are_exact(
+                        source_op_of(inst),
+                        artifact.graph().inputs(inst.id),
+                        fact.address,
+                    )
             })
             .ok_or(MachineBuildError::EntityMismatch(inst.id))?;
         let source_space = fact.space;
@@ -3274,7 +3269,7 @@ impl MachineBuilder {
                 let mut total = 0u32;
                 offsets.push(total);
                 for inst in &graph.insts {
-                    total += inst.inputs.len() as u32;
+                    total += graph.inputs(inst.id).len() as u32;
                     offsets.push(total);
                 }
                 offsets
@@ -3284,7 +3279,7 @@ impl MachineBuilder {
                 graph
                     .insts
                     .iter()
-                    .map(|inst| inst.inputs.len())
+                    .map(|inst| graph.inputs(inst.id).len())
                     .sum::<usize>()
             ],
             ..Self::default()
@@ -3302,8 +3297,8 @@ impl MachineBuilder {
             inst: inst.id,
             input_idx,
         };
-        let input = *inst
-            .inputs
+        let input = *graph
+            .inputs(inst.id)
             .get(input_idx)
             .ok_or(MachineBuildError::MissingUseDisposition(site))?;
         let source = binding_for_value(
@@ -3334,13 +3329,12 @@ impl MachineBuilder {
         inst: &GraphInst,
         input_idx: usize,
     ) -> Result<(), MachineBuildError> {
-        let input = *inst
-            .inputs
-            .get(input_idx)
-            .ok_or(MachineBuildError::MissingUseDisposition(UseSite {
+        let input = *graph.inputs(inst.id).get(input_idx).ok_or(
+            MachineBuildError::MissingUseDisposition(UseSite {
                 inst: inst.id,
                 input_idx,
-            }))?;
+            }),
+        )?;
         let source = binding_for_value(
             graph
                 .value(input)
@@ -3363,7 +3357,7 @@ impl MachineBuilder {
         inst: &GraphInst,
         refusal: MachineUseRefusal,
     ) -> Result<(), MachineBuildError> {
-        for input in inst.inputs.iter().copied() {
+        for input in graph.inputs(inst.id).iter().copied() {
             let graph_value = graph
                 .value(input)
                 .ok_or(MachineBuildError::MissingGraphValue(input))?;
@@ -3374,7 +3368,7 @@ impl MachineBuilder {
         let row = self
             .use_row_range(inst.id)
             .ok_or(MachineBuildError::MissingInstruction(inst.id))?;
-        if row.len() != inst.inputs.len() {
+        if row.len() != graph.inputs(inst.id).len() {
             return Err(MachineBuildError::TopologyMismatch);
         }
         self.use_slots[row].fill(MachineUseDisposition::Refused(refusal));
@@ -3421,7 +3415,7 @@ impl MachineBuilder {
                     .member_run_stores
                     .get(access.id.inst),
             )
-            || inst.inputs.first() != Some(&access.address)
+            || graph.inputs(inst.id).first() != Some(&access.address)
             || !model.is_available()
             || !model.is_coherent()
         {
@@ -3445,14 +3439,9 @@ impl MachineBuilder {
         Ok(())
     }
 
-    fn push(
-        &mut self,
-        ty: MachineType,
-        origin: Option<CanonicalInstructionId>,
-        kind: MachineExprKind,
-    ) -> MachineExprId {
+    fn push(&mut self, ty: MachineType, kind: MachineExprKind) -> MachineExprId {
         let id = MachineExprId(self.nodes.len() as u32);
-        self.nodes.push(MachineExpr { ty, origin, kind });
+        self.nodes.push(MachineExpr { ty, kind });
         id
     }
 
@@ -3528,7 +3517,7 @@ impl MachineBuilder {
                 storage: value.canonical_storage,
             }
         };
-        let id = self.push(ty, None, kind);
+        let id = self.push(ty, kind);
         self.value_nodes.insert(key, id);
         Ok(id)
     }
@@ -3573,7 +3562,7 @@ impl MachineBuilder {
                 storage: value.canonical_storage,
             }
         };
-        let id = self.push(ty, None, kind);
+        let id = self.push(ty, kind);
         self.address_nodes.insert(key, id);
         Ok(id)
     }
@@ -3584,15 +3573,15 @@ impl MachineBuilder {
         inst: &GraphInst,
         expected: usize,
     ) -> Result<Vec<MachineExprId>, MachineBuildError> {
-        if inst.inputs.len() != expected {
+        if graph.inputs(inst.id).len() != expected {
             return Err(MachineBuildError::WrongOperandCount {
                 inst: inst.id,
                 expected,
-                actual: inst.inputs.len(),
+                actual: graph.inputs(inst.id).len(),
             });
         }
         let mut nodes = Vec::with_capacity(expected);
-        for (input_idx, value) in inst.inputs.iter().copied().enumerate() {
+        for (input_idx, value) in graph.inputs(inst.id).iter().copied().enumerate() {
             let graph_value = graph
                 .value(value)
                 .ok_or(MachineBuildError::MissingGraphValue(value))?;
@@ -3609,11 +3598,11 @@ impl MachineBuilder {
         expected: usize,
         result_bits: u32,
     ) -> Result<Vec<MachineExprId>, MachineBuildError> {
-        if inst.inputs.len() != expected {
+        if graph.inputs(inst.id).len() != expected {
             return Err(MachineBuildError::WrongOperandCount {
                 inst: inst.id,
                 expected,
-                actual: inst.inputs.len(),
+                actual: graph.inputs(inst.id).len(),
             });
         }
         let mut inputs = Vec::with_capacity(expected);
@@ -3630,13 +3619,12 @@ impl MachineBuilder {
         input_idx: usize,
         result_bits: u32,
     ) -> Result<MachineExprId, MachineBuildError> {
-        let value = *inst
-            .inputs
-            .get(input_idx)
-            .ok_or(MachineBuildError::MissingUseDisposition(UseSite {
+        let value = *graph.inputs(inst.id).get(input_idx).ok_or(
+            MachineBuildError::MissingUseDisposition(UseSite {
                 inst: inst.id,
                 input_idx,
-            }))?;
+            }),
+        )?;
         let graph_value = graph
             .value(value)
             .ok_or(MachineBuildError::MissingGraphValue(value))?;
@@ -3665,7 +3653,6 @@ impl MachineBuilder {
         }
         Ok(self.push(
             integer_type(result_bits, MachineSignedness::Unsigned),
-            None,
             MachineExprKind::Extract { input, lsb_bits: 0 },
         ))
     }
@@ -3677,13 +3664,12 @@ impl MachineBuilder {
         input_idx: usize,
         expected_bits: u32,
     ) -> Result<MachineExprId, MachineBuildError> {
-        let value = *inst
-            .inputs
-            .get(input_idx)
-            .ok_or(MachineBuildError::MissingUseDisposition(UseSite {
+        let value = *graph.inputs(inst.id).get(input_idx).ok_or(
+            MachineBuildError::MissingUseDisposition(UseSite {
                 inst: inst.id,
                 input_idx,
-            }))?;
+            }),
+        )?;
         let graph_value = graph
             .value(value)
             .ok_or(MachineBuildError::MissingGraphValue(value))?;
@@ -3707,11 +3693,11 @@ impl MachineBuilder {
         expected: usize,
         expected_bits: u32,
     ) -> Result<Vec<MachineExprId>, MachineBuildError> {
-        if inst.inputs.len() != expected {
+        if graph.inputs(inst.id).len() != expected {
             return Err(MachineBuildError::WrongOperandCount {
                 inst: inst.id,
                 expected,
-                actual: inst.inputs.len(),
+                actual: graph.inputs(inst.id).len(),
             });
         }
         let mut inputs = Vec::with_capacity(expected);
@@ -3745,13 +3731,12 @@ impl MachineBuilder {
         inst: &GraphInst,
         input_idx: usize,
     ) -> Result<u32, MachineBuildError> {
-        let value = *inst
-            .inputs
-            .get(input_idx)
-            .ok_or(MachineBuildError::MissingUseDisposition(UseSite {
+        let value = *graph.inputs(inst.id).get(input_idx).ok_or(
+            MachineBuildError::MissingUseDisposition(UseSite {
                 inst: inst.id,
                 input_idx,
-            }))?;
+            }),
+        )?;
         let graph_value = graph
             .value(value)
             .ok_or(MachineBuildError::MissingGraphValue(value))?;
@@ -3766,16 +3751,16 @@ impl MachineBuilder {
         expected: usize,
         expected_bits: u32,
     ) -> Result<Vec<MachineExprId>, MachineBuildError> {
-        if inst.inputs.len() != expected {
+        if graph.inputs(inst.id).len() != expected {
             return Err(MachineBuildError::WrongOperandCount {
                 inst: inst.id,
                 expected,
-                actual: inst.inputs.len(),
+                actual: graph.inputs(inst.id).len(),
             });
         }
         let float = self.float_type(inst, expected_bits)?;
         let mut inputs = Vec::with_capacity(expected);
-        for (input_idx, value) in inst.inputs.iter().copied().enumerate() {
+        for (input_idx, value) in graph.inputs(inst.id).iter().copied().enumerate() {
             let graph_value = graph
                 .value(value)
                 .ok_or(MachineBuildError::MissingGraphValue(value))?;
@@ -4452,9 +4437,7 @@ fn value_has_boolean_producer(graph: &crate::graph::SsaGraph, value: ValueId) ->
                     | SSAOp::FloatLess { .. }
                     | SSAOp::FloatLessEqual { .. },
                 ) => true,
-                InstPayload::Op(SSAOp::Copy { .. }) => inst
-                    .inputs
-                    .as_slice()
+                InstPayload::Op(SSAOp::Copy { .. }) => graph.inputs(inst.id)
                     .first()
                     .is_some_and(|input| visit(graph, *input, visiting)),
                 // A selection is boolean only when both values it can produce
@@ -4471,21 +4454,19 @@ fn value_has_boolean_producer(graph: &crate::graph::SsaGraph, value: ValueId) ->
                 InstPayload::Op(
                     SSAOp::IntAnd { .. } | SSAOp::IntOr { .. } | SSAOp::IntXor { .. },
                 ) => {
-                    inst.inputs.len() == 2
-                        && inst
-                            .inputs
+                    graph.inputs(inst.id).len() == 2
+                        && graph.inputs(inst.id)
                             .iter()
                             .all(|input| visit(graph, *input, visiting))
                 }
                 InstPayload::Op(SSAOp::Select { .. }) => {
-                    inst.inputs.len() == 3
-                        && visit(graph, inst.inputs[1], visiting)
-                        && visit(graph, inst.inputs[2], visiting)
+                    graph.inputs(inst.id).len() == 3
+                        && visit(graph, graph.inputs(inst.id)[1], visiting)
+                        && visit(graph, graph.inputs(inst.id)[2], visiting)
                 }
                 InstPayload::Phi { .. } => {
-                    !inst.inputs.is_empty()
-                        && inst
-                            .inputs
+                    !graph.inputs(inst.id).is_empty()
+                        && graph.inputs(inst.id)
                             .iter()
                             .all(|input| visit(graph, *input, visiting))
                 }

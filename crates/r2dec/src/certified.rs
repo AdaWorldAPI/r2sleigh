@@ -29,7 +29,7 @@ fn certified_return_transfer_sites(source: &r2ssa::SsaArtifact) -> BTreeSet<UseS
                     matches!(
                         inst.payload,
                         r2ssa::InstPayload::Op(r2ssa::SSAOp::Return { .. })
-                    ) && inst.inputs.as_slice() == [fact.value]
+                    ) && graph.inputs(inst.id) == [fact.value]
                 })
                 && graph.use_sites(fact.value).contains(&site))
             .then_some(site)
@@ -83,7 +83,7 @@ fn close_over_control_copies(graph: &r2ssa::SsaGraph, values: &mut BTreeSet<Valu
         ) {
             continue;
         }
-        for input in carrier.inputs.iter().copied() {
+        for input in graph.inputs(carrier.id).iter().copied() {
             if values.contains(&input) {
                 continue;
             }
@@ -112,7 +112,7 @@ pub(crate) fn certified_return_control_values(source: &r2ssa::SsaArtifact) -> BT
     let sites = certified_return_transfer_sites(source);
     let mut values = sites
         .iter()
-        .filter_map(|site| graph.inst(site.inst)?.inputs.get(site.input_idx).copied())
+        .filter_map(|site| graph.inputs(site.inst).get(site.input_idx).copied())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter(|value| {
@@ -162,8 +162,9 @@ pub(crate) fn certified_direct_call_target_sites(source: &r2ssa::SsaArtifact) ->
                 inst: certificate.at,
                 input_idx: 0,
             };
-            (inst.inputs.first().copied() == Some(value) && graph.use_sites(value).contains(&site))
-                .then_some(site)
+            (graph.inputs(inst.id).first().copied() == Some(value)
+                && graph.use_sites(value).contains(&site))
+            .then_some(site)
         })
         .collect()
 }
@@ -176,7 +177,7 @@ pub(crate) fn certified_direct_call_target_values(
     let sites = certified_direct_call_target_sites(source);
     let mut values = sites
         .iter()
-        .filter_map(|site| graph.inst(site.inst)?.inputs.get(site.input_idx).copied())
+        .filter_map(|site| graph.inputs(site.inst).get(site.input_idx).copied())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter(|value| {

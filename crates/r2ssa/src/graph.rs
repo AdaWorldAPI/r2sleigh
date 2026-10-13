@@ -74,6 +74,50 @@ mod tests {
         .expect("two phi merge SSA")
     }
 
+    /// A phi that states no storage writes none, whatever its variable's table says.
+    #[test]
+    fn a_phi_without_storage_writes_none() {
+        let mut func = two_phi_merge();
+        let cleared = func.named_block(0x100c).expect("merge").phis()[0]
+            .dst
+            .clone();
+        let mut merge = func.edit_block(0x100c).expect("merge block");
+        merge.edit_phi(0, |phi| phi.canonical_storage = None);
+        let graph = SsaGraph::from_function(&func);
+        for inst in &graph.insts {
+            let Some(output) = inst
+                .output
+                .filter(|_| matches!(inst.payload, InstPayload::Phi { .. }))
+            else {
+                continue;
+            };
+            let is_cleared = graph
+                .value(output)
+                .is_some_and(|value| value.var == cleared);
+            assert_eq!(graph.written_storage(inst).is_none(), is_cleared);
+        }
+    }
+
+    /// The arena's live count is every phi and operation the blocks hold, a removed phi gone.
+    #[test]
+    fn the_arena_counts_what_the_blocks_hold() {
+        let held = |func: &SSAFunction| {
+            func.blocks()
+                .iter()
+                .map(|block| block.phis().len() + block.ops().len())
+                .sum::<usize>()
+        };
+        let mut func = two_phi_merge();
+        assert_eq!(func.arena().live(), held(&func));
+        let removed = func.named_block(0x100c).expect("merge").phis()[0]
+            .dst
+            .clone();
+        let mut merge = func.edit_block(0x100c).expect("merge block");
+        merge.retain_phis(crate::Pass::Fixture, |phi| phi.dst != removed);
+        assert_eq!(func.arena().live(), held(&func));
+        assert_eq!(SsaGraph::from_function(&func).insts.len(), held(&func));
+    }
+
     /// A merge's storage belongs to the merge, not to its position in the block.
     ///
     /// This arrived with copy propagation, which asserted it by collapsing one
@@ -111,7 +155,7 @@ mod tests {
             .find(|inst| matches!(inst.payload, InstPayload::Phi { .. }))
             .expect("retained graph phi");
         assert_eq!(
-            graph_phi.canonical_storage,
+            graph.written_storage(graph_phi),
             Some(retained_storage),
             "the graph must carry the surviving merge's own storage"
         );
@@ -182,11 +226,7 @@ pub struct GraphInst {
     pub id: InstId,
     pub block: BlockId,
     pub ordinal: usize,
-    pub inputs: Vec<ValueId>,
     pub output: Option<ValueId>,
-    /// Name-independent lifted storage identity for phi nodes and for ordinary
-    /// definitions when the graph is built with a source machine context.
-    pub canonical_storage: Option<CanonicalStorageId>,
     pub payload: InstPayload,
 }
 
@@ -208,6 +248,8 @@ pub struct SsaGraph {
     pub insts: Vec<GraphInst>,
     pub values: Vec<GraphValue>,
     pub def_of: Vec<Option<InstId>>,
+    /// The values each instruction reads, in operand order: one array for the function.
+    pub(crate) inputs: crate::dense::Csr<InstId, ValueId>,
     /// Where each value is read, grouped by value.
     ///
     /// Flat, with an offset per value, rather than a vector per value: a
@@ -240,13 +282,11 @@ pub struct SsaGraph {
     pub(crate) inst_by_op: Vec<Option<InstId>>,
     /// The operation or phi each instruction is, indexed by [`InstId`].
     pub(crate) op_by_inst: Vec<OpId>,
-    /// Which machine instruction each operation came from.
-    ///
-    /// Carried here from the function so a consumer holding only the graph can
-    /// ask. Absent for a phi and for anything the lifter stamped no address on.
-    pub(crate) instruction_by_inst: crate::dense::IdMap<InstId, u64>,
-    /// The inverse: every operation one machine instruction became, in order.
-    pub(crate) insts_by_instruction: BTreeMap<u64, Vec<InstId>>,
+    /// The machine instruction each operation came from, as runs over [`InstId`]; a phi and an
+    /// operation the lifter stamped no address on are in none.
+    pub(crate) instructions: r2il::InstructionRuns,
+    /// Each instruction's runs, by address then run: a block the CFG split holds one in two.
+    pub(crate) runs_by_instruction: Vec<(u64, u32)>,
     /// Entry-lane projections by value, valued by the lane's storage
     /// (`SSAFunction::mint_entry_lane_projections`).
     pub(crate) formal_projections: crate::dense::IdMap<ValueId, CanonicalStorageId>,
@@ -257,18 +297,20 @@ pub struct SsaGraph {
     pub(crate) entry_lanes: Vec<(SSAVar, SSAVar)>,
 }
 
-/// Record which machine instruction one operation came from, both ways round.
-fn record_instruction(
-    by_inst: &mut crate::dense::IdMap<InstId, u64>,
-    by_instruction: &mut BTreeMap<u64, Vec<InstId>>,
-    inst: InstId,
-    from: Option<u64>,
-) {
-    let Some(from) = from else {
-        return;
-    };
-    by_inst.insert(inst, from);
-    by_instruction.entry(from).or_default().push(inst);
+/// Each instruction's runs, by address, so the insts one instruction became are found by search.
+pub(crate) fn runs_by_instruction(instructions: &r2il::InstructionRuns) -> Vec<(u64, u32)> {
+    let mut runs = instructions
+        .iter()
+        .enumerate()
+        .map(|(index, run)| {
+            (
+                run.addr,
+                u32::try_from(index).expect("fewer than 2^32 runs"),
+            )
+        })
+        .collect::<Vec<_>>();
+    runs.sort_unstable();
+    runs
 }
 
 /// Every value, addressed by its variable's hash.
@@ -430,24 +472,33 @@ impl SsaGraph {
         }
 
         let mut numbering = ValueNumbering::new(function);
-        let mut insts = Vec::new();
+        // Sized from the arena's live count: an array grown by doubling holds up to twice its
+        // instructions at the peak.
+        let count = function.arena().live();
+        let mut insts = Vec::with_capacity(count);
+        let mut inputs = crate::dense::Csr::with_capacity(count, 2 * count);
+        let mut reads = Vec::new();
         let mut inst_by_op = vec![None; function.id_limit()];
-        let mut op_by_inst = Vec::new();
-        let mut instruction_by_inst = crate::dense::IdMap::default();
-        let mut insts_by_instruction: BTreeMap<u64, Vec<InstId>> = BTreeMap::new();
+        let mut op_by_inst = Vec::with_capacity(count);
+        let mut instructions = r2il::InstructionRuns::default();
 
         for block in function.blocks() {
             let block_id = block_by_addr[&block.addr];
 
             for (phi_idx, (op_id, phi)) in block.sited_phis().enumerate() {
-                let inputs = phi
-                    .sources
-                    .iter()
-                    .map(|(_, value)| numbering.intern(*value))
-                    .collect::<Vec<_>>();
+                reads.clear();
+                reads.extend(
+                    phi.sources
+                        .iter()
+                        .map(|(_, value)| numbering.intern(*value)),
+                );
                 let output = numbering.intern(phi.dst);
-                let inst_id = InstId(insts.len() as u32);
-                numbering.record(inst_id, &inputs, Some(output));
+                // A merge's storage is the phi's to state, a cleared one included.
+                if let Some(value) = numbering.values.get_mut(output.0 as usize) {
+                    value.canonical_storage = phi.canonical_storage;
+                }
+                let inst_id = inputs.push_row(reads.iter().copied());
+                numbering.record(inst_id, &reads, Some(output));
                 let predecessors = phi
                     .sources
                     .iter()
@@ -462,9 +513,7 @@ impl SsaGraph {
                     id: inst_id,
                     block: block_id,
                     ordinal: phi_idx,
-                    inputs,
                     output: Some(output),
-                    canonical_storage: phi.canonical_storage,
                     payload: InstPayload::Phi { predecessors },
                 });
                 blocks[block_id.0 as usize].insts.push(inst_id);
@@ -473,35 +522,29 @@ impl SsaGraph {
             }
 
             for (op_idx, (op_id, op)) in block.sited().enumerate() {
-                let inputs = op
-                    .sources()
-                    .into_iter()
-                    .map(|value| numbering.intern(*value))
-                    .collect::<Vec<_>>();
+                reads.clear();
+                reads.extend(
+                    op.sources()
+                        .into_iter()
+                        .map(|value| numbering.intern(*value)),
+                );
                 let output = op.dst().map(|dst| numbering.intern(*dst));
                 let payload = InstPayload::Op(op.map(&mut |operand| numbering.value_of(*operand)));
-                let inst_id = InstId(insts.len() as u32);
-                numbering.record(inst_id, &inputs, output);
+                let inst_id = inputs.push_row(reads.iter().copied());
+                numbering.record(inst_id, &reads, output);
                 insts.push(GraphInst {
                     id: inst_id,
                     block: block_id,
                     ordinal: block.phis().len() + op_idx,
-                    inputs,
                     output,
-                    canonical_storage: output
-                        .and_then(|value| numbering.values.get(value.0 as usize))
-                        .and_then(|value| value.canonical_storage),
                     payload,
                 });
                 blocks[block_id.0 as usize].insts.push(inst_id);
                 inst_by_op[op_id.index()] = Some(inst_id);
                 op_by_inst.push(op_id);
-                record_instruction(
-                    &mut instruction_by_inst,
-                    &mut insts_by_instruction,
-                    inst_id,
-                    function.instruction_of(op_id),
-                );
+                if let Some(from) = function.instruction_of(op_id) {
+                    instructions.stamp(inst_id.0 as usize, from);
+                }
             }
         }
         let ValueNumbering {
@@ -541,6 +584,7 @@ impl SsaGraph {
             insts,
             values,
             def_of,
+            inputs,
             use_offsets: use_offsets_of(&uses_of),
             use_sites: uses_of.into_iter().flatten().collect(),
             value_of_var: value_by_var,
@@ -548,8 +592,8 @@ impl SsaGraph {
             value_index,
             inst_by_op,
             op_by_inst,
-            instruction_by_inst,
-            insts_by_instruction,
+            runs_by_instruction: runs_by_instruction(&instructions),
+            instructions,
             formal_projections,
             formal_roots,
             entry_lanes,
@@ -685,7 +729,7 @@ impl SsaGraph {
     /// index space instead was wrong from the first operation renaming added
     /// to a block, and wrong in silence.
     pub fn instruction_for_inst(&self, id: InstId) -> Option<u64> {
-        self.instruction_by_inst.get(id).copied()
+        self.instructions.of(id.0 as usize)
     }
 
     /// Every operation one machine instruction became, in order.
@@ -693,10 +737,14 @@ impl SsaGraph {
     /// This used to be answered by finding the instruction's span of *lifted*
     /// operations and reading that range out of the graph, which is a range in
     /// the wrong index space and misses a block the CFG split.
-    pub fn insts_for_instruction(&self, from: u64) -> &[InstId] {
-        self.insts_by_instruction
-            .get(&from)
-            .map_or(&[], Vec::as_slice)
+    pub fn insts_for_instruction(&self, from: u64) -> impl DoubleEndedIterator<Item = InstId> + '_ {
+        let runs = &self.runs_by_instruction;
+        let first = runs.partition_point(|(at, _)| *at < from);
+        let end = runs.partition_point(|(at, _)| *at <= from);
+        runs[first..end]
+            .iter()
+            .filter_map(|(_, run)| self.instructions.get(*run as usize))
+            .flat_map(|run| (run.first..run.first + run.len).map(InstId))
     }
 
     /// What one instruction leaves in each storage it writes: the last value it defines there, in the order it leaves them.
@@ -704,10 +752,9 @@ impl SsaGraph {
         let mut seen = BTreeSet::new();
         let mut left = self
             .insts_for_instruction(from)
-            .iter()
             .rev()
-            .filter_map(|inst| self.inst(*inst))
-            .filter_map(|inst| Some((inst.canonical_storage?, inst.output?)))
+            .filter_map(|inst| self.inst(inst))
+            .filter_map(|inst| Some((self.written_storage(inst)?, inst.output?)))
             .filter(|(storage, _)| seen.insert(*storage))
             .collect::<Vec<_>>();
         left.reverse();
@@ -727,6 +774,23 @@ impl SsaGraph {
 
     pub fn inst(&self, id: InstId) -> Option<&GraphInst> {
         self.insts.get(id.0 as usize)
+    }
+
+    /// The values an instruction reads, in operand order; a phi's in its predecessors' order.
+    pub fn inputs(&self, id: InstId) -> &[ValueId] {
+        self.inputs.get(id)
+    }
+
+    /// Give back the room the values grew, once the seal has added the last entry value.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.values.shrink_to_fit();
+        self.def_of.shrink_to_fit();
+        self.inputs.shrink_to_fit();
+    }
+
+    /// The storage an instruction writes: its output value's, which a phi shares with its merge.
+    pub fn written_storage(&self, inst: &GraphInst) -> Option<CanonicalStorageId> {
+        self.value(inst.output?)?.canonical_storage
     }
 
     pub fn value(&self, id: ValueId) -> Option<&GraphValue> {

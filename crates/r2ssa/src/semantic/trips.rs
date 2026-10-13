@@ -352,7 +352,7 @@ impl<'a> TripCounter<'a> {
         let InstPayload::Op(op) = &inst.payload else {
             return None;
         };
-        let input = |index: usize| inst.inputs.get(index).copied();
+        let input = |index: usize| self.graph.inputs(inst.id).get(index).copied();
         let (first, second) = (input(0)?, input(1));
         Some(match op {
             SSAOp::Copy { .. }

@@ -9,7 +9,7 @@ impl MachineBuilder {
         inst: &GraphInst,
     ) -> Result<(), MachineBuildError> {
         let graph = artifact.graph();
-        for (input_idx, input) in inst.inputs.iter().copied().enumerate() {
+        for (input_idx, input) in graph.inputs(inst.id).iter().copied().enumerate() {
             let graph_value = graph
                 .value(input)
                 .ok_or(MachineBuildError::MissingGraphValue(input))?;
@@ -32,22 +32,21 @@ impl MachineBuilder {
         &mut self,
         artifact: &SsaArtifact,
         inst: &GraphInst,
-        producer: CanonicalInstructionId,
         output: MachineValueBinding,
     ) -> Result<MachineExprId, MachineBuildError> {
         let graph = artifact.graph();
         let output_unsigned = integer_type(output.width_bits, MachineSignedness::Unsigned);
         let (ty, kind) = match &inst.payload {
             InstPayload::Phi { .. } => {
-                if inst.inputs.is_empty() {
+                if graph.inputs(inst.id).is_empty() {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 1,
                         actual: 0,
                     });
                 }
-                let mut inputs = Vec::with_capacity(inst.inputs.len());
-                for (input_idx, value) in inst.inputs.iter().enumerate() {
+                let mut inputs = Vec::with_capacity(graph.inputs(inst.id).len());
+                for (input_idx, value) in graph.inputs(inst.id).iter().enumerate() {
                     inputs.push(
                         self.intern_value(
                             graph
@@ -66,7 +65,7 @@ impl MachineBuilder {
             }
             InstPayload::Op(op) => self.lower_op(artifact, inst, op, output)?,
         };
-        Ok(self.push(ty, Some(producer), kind))
+        Ok(self.push(ty, kind))
     }
 
     pub(crate) fn lower_op(
@@ -77,6 +76,7 @@ impl MachineBuilder {
         output: MachineValueBinding,
     ) -> Result<(MachineType, MachineExprKind), MachineBuildError> {
         let graph = artifact.graph();
+        let inputs = graph.inputs(inst.id);
         let unsigned = integer_type(output.width_bits, MachineSignedness::Unsigned);
         let signed = integer_type(output.width_bits, MachineSignedness::Signed);
         match op {
@@ -87,7 +87,7 @@ impl MachineBuilder {
             // the machine.
             SSAOp::StoreConditional { .. } => {
                 let mut operands = Vec::with_capacity(2);
-                for (input_idx, input) in inst.inputs.iter().enumerate() {
+                for (input_idx, input) in inputs.iter().enumerate() {
                     let value = graph
                         .value(*input)
                         .ok_or(MachineBuildError::MissingGraphValue(*input))?;
@@ -148,7 +148,7 @@ impl MachineBuilder {
                         ))
                     // A guarded read states its condition beside the
                     // address; every other read names the address alone.
-                    || !read_operands_are_exact(Some(op), &inst.inputs, access.address)
+                    || !read_operands_are_exact(Some(op), inputs, access.address)
                     || width_bits == 0
                     || width_bits != output.width_bits
                     || !model.is_available()
@@ -173,7 +173,7 @@ impl MachineBuilder {
                     space_model.address_bits(),
                 )?;
                 self.record_whole_use(graph, inst, 0)?;
-                let Some(guard) = inst.inputs.get(1).copied() else {
+                let Some(guard) = inputs.get(1).copied() else {
                     return Ok((
                         unsigned,
                         MachineExprKind::MemoryRead {
@@ -283,16 +283,16 @@ impl MachineBuilder {
                 ))
             }
             SSAOp::PopCount { .. } => {
-                if inst.inputs.len() != 1 {
+                if inputs.len() != 1 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 1,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let input_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let input_bits = binding_for_value(input_value)?.width_bits;
                 let required_output_bits = u32::BITS - input_bits.leading_zeros();
                 if input_bits == 0 || output.width_bits < required_output_bits {
@@ -351,16 +351,16 @@ impl MachineBuilder {
                 Ok((unsigned, MachineExprKind::BitwiseNot { input: inputs[0] }))
             }
             SSAOp::BoolNot { .. } => {
-                if inst.inputs.len() != 1 {
+                if inputs.len() != 1 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 1,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let input_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let input = self.intern_boolean_value(graph, input_value, inst.id)?;
                 self.record_whole_use(graph, inst, 0)?;
                 Ok((
@@ -371,19 +371,19 @@ impl MachineBuilder {
                 ))
             }
             SSAOp::BoolAnd { .. } | SSAOp::BoolOr { .. } | SSAOp::BoolXor { .. } => {
-                if inst.inputs.len() != 2 {
+                if inputs.len() != 2 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 2,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let left_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let right_value = graph
-                    .value(inst.inputs[1])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[1]))?;
+                    .value(inputs[1])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[1]))?;
                 let left = self.intern_boolean_value(graph, left_value, inst.id)?;
                 let right = self.intern_boolean_value(graph, right_value, inst.id)?;
                 self.record_whole_use(graph, inst, 0)?;
@@ -402,11 +402,11 @@ impl MachineBuilder {
                 ))
             }
             SSAOp::IntLeft { .. } | SSAOp::IntRight { .. } | SSAOp::IntSRight { .. } => {
-                if inst.inputs.len() != 2 {
+                if inputs.len() != 2 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 2,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 // A shift does not prove a projection from a wider carrier.
@@ -416,8 +416,8 @@ impl MachineBuilder {
                 // source width.
                 let value = self.exact_width_operand_node(graph, inst, 0, output.width_bits)?;
                 let count_value = graph
-                    .value(inst.inputs[1])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[1]))?;
+                    .value(inputs[1])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[1]))?;
                 let count = self.intern_value(count_value)?;
                 self.record_whole_use(graph, inst, 1)?;
                 let (kind, overshift, ty) = match op {
@@ -603,16 +603,16 @@ impl MachineBuilder {
                 Ok((ty, MachineExprKind::Cast { kind, input }))
             }
             SSAOp::IntZExt { .. } | SSAOp::IntSExt { .. } | SSAOp::Cast { .. } => {
-                if inst.inputs.len() != 1 {
+                if inputs.len() != 1 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 1,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let input_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let input = self.intern_value(input_value)?;
                 let from = self.nodes[input.index()].ty.width_bits();
                 let (kind, ty, valid) = match op {
@@ -658,16 +658,16 @@ impl MachineBuilder {
                 Ok((ty, MachineExprKind::Cast { kind, input }))
             }
             SSAOp::Subpiece { offset, .. } => {
-                if inst.inputs.len() != 1 {
+                if inputs.len() != 1 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 1,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let input_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let input = self.intern_value(input_value)?;
                 let source_bits = self.nodes[input.index()].ty.width_bits();
                 let lsb_bits = offset
@@ -711,19 +711,19 @@ impl MachineBuilder {
                 Ok((unsigned, MachineExprKind::Extract { input, lsb_bits }))
             }
             SSAOp::Piece { .. } => {
-                if inst.inputs.len() != 2 {
+                if inputs.len() != 2 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 2,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let high_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let low_value = graph
-                    .value(inst.inputs[1])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[1]))?;
+                    .value(inputs[1])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[1]))?;
                 let high_bits = binding_for_value(high_value)?.width_bits;
                 let low_bits = binding_for_value(low_value)?.width_bits;
                 let Some(actual_bits) = high_bits.checked_add(low_bits) else {
@@ -750,27 +750,27 @@ impl MachineBuilder {
                 // A lane written into its root (doc/adr-register-identity.md
                 // §2): the root read whole, the lane value, and a constant
                 // bit position. The projection of the write says the rest.
-                if inst.inputs.len() != 3 {
+                if inputs.len() != 3 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 3,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let root_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let lane_value = graph
-                    .value(inst.inputs[1])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[1]))?;
+                    .value(inputs[1])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[1]))?;
                 let position_value = graph
-                    .value(inst.inputs[2])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[2]))?;
+                    .value(inputs[2])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[2]))?;
                 let position = position_value
                     .var
                     .constant_bits()
                     .and_then(|bits| u32::try_from(bits).ok())
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[2]))?;
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[2]))?;
                 let root_bits = binding_for_value(root_value)?.width_bits;
                 let lane_bits = binding_for_value(lane_value)?.width_bits;
                 if root_bits != output.width_bits
@@ -802,23 +802,23 @@ impl MachineBuilder {
                 ))
             }
             SSAOp::Select { .. } => {
-                if inst.inputs.len() != 3 {
+                if inputs.len() != 3 {
                     return Err(MachineBuildError::WrongOperandCount {
                         inst: inst.id,
                         expected: 3,
-                        actual: inst.inputs.len(),
+                        actual: inputs.len(),
                     });
                 }
                 let condition_value = graph
-                    .value(inst.inputs[0])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[0]))?;
+                    .value(inputs[0])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[0]))?;
                 let condition = self.intern_boolean_value(graph, condition_value, inst.id)?;
                 let if_true_value = graph
-                    .value(inst.inputs[1])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[1]))?;
+                    .value(inputs[1])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[1]))?;
                 let if_false_value = graph
-                    .value(inst.inputs[2])
-                    .ok_or(MachineBuildError::MissingGraphValue(inst.inputs[2]))?;
+                    .value(inputs[2])
+                    .ok_or(MachineBuildError::MissingGraphValue(inputs[2]))?;
                 let if_true = self.intern_value_with_type(if_true_value, unsigned)?;
                 let if_false = self.intern_value_with_type(if_false_value, unsigned)?;
                 self.record_whole_use(graph, inst, 0)?;
