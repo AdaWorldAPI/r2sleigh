@@ -166,14 +166,10 @@
    "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O1::narrow64": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint32_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O1::narrow8": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint8_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O1::opaque_self_xor": {
    "status": "equal"
@@ -256,9 +252,7 @@
    "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O2::inverted_goto": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns int; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O2::inverted_guard": {
    "status": "equal"
@@ -275,14 +269,10 @@
    "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O2::narrow64": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint32_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O2::narrow8": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint8_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-clang-O2::opaque_self_xor": {
    "status": "equal"
@@ -482,14 +472,10 @@
    "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-gcc-O1::narrow64": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint32_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-gcc-O1::narrow8": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint8_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-gcc-O1::opaque_self_xor": {
    "status": "equal"
@@ -587,14 +573,10 @@
    "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-gcc-O2::narrow64": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint32_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-gcc-O2::narrow8": {
-   "cause": "[r2ssa recover_interface, arm64 result width] The source returns uint8_t; AAPCS64 leaves a narrow result's upper bits to the callee, and on some path x0 is returned as the entry value or a narrower write (narrow8 at -O1/-O2 is a bare `ret`), so the engine does not prove the result and the rendered return is a counted residual (ROADMAP D6).",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/branchy.c::aarch64-gcc-O2::opaque_self_xor": {
    "status": "equal"
