@@ -322,37 +322,6 @@ impl FunctionRenderFacts {
         slots.next().is_none().then_some(slot)
     }
 
-    /// Resolve an expression to one unambiguous ABI parameter dependency.
-    ///
-    /// The walk follows only the certified expression graph and its stable
-    /// `SemanticId::Parameter` bindings. Rendered names and register spellings
-    /// are deliberately excluded.
-    pub fn unique_parameter_dependency_slot_for_value(
-        &self,
-        graph: &r2ssa::SsaGraph,
-        value: r2ssa::ValueId,
-    ) -> Option<usize> {
-        let mut pending = vec![value];
-        let mut visited = r2ssa::dense::IdSet::default();
-        let mut slots = BTreeSet::new();
-        // Each value is expanded once (`visited`), so the walk is O(values + inputs).
-        while let Some(value) = pending.pop() {
-            if !visited.insert(value) {
-                continue;
-            }
-            for binding in self.bindings_of(value) {
-                if let r2ssa::SemanticId::Parameter(slot) = binding {
-                    slots.insert(usize::try_from(*slot).ok()?);
-                }
-            }
-            if let Some(inst) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) {
-                pending.extend(graph.inputs(inst.id).iter().copied());
-            }
-        }
-        let slot = slots.pop_first()?;
-        slots.is_empty().then_some(slot)
-    }
-
     pub fn return_effect_id_for_inst(&self, inst: r2ssa::InstId) -> Option<r2ssa::SemanticId> {
         self.return_effects_by_inst.get(inst).copied()
     }
@@ -1212,7 +1181,6 @@ impl SourceOwnedFunctionFacts {
             .machine_context()
             .memory_model()
             .default_address_bits();
-        enriched.apply_certified_call_argument_type_constraints(source.graph(), ptr_bits);
         enriched.apply_recovered_evidence_types(source, &solved.evidence, ptr_bits);
         // Exact immutable interface evidence outranks advisory propagation.
         // Apply it after recovered call evidence so the latter cannot rewrite
@@ -2540,123 +2508,6 @@ impl FunctionFacts {
                 *carrier_type = Some(ty.clone());
             }
         }
-    }
-
-    /// Project exact callee parameter types back onto caller parameters.
-    ///
-    /// A constraint is accepted only when the callsite argument has a unique
-    /// certified path to one ABI parameter and the callee identity carries a
-    /// typed signature. Conflicting callees leave the caller type unchanged.
-    pub fn apply_certified_call_argument_type_constraints(
-        &mut self,
-        graph: &r2ssa::SsaGraph,
-        ptr_bits: u32,
-    ) -> usize {
-        let type_db = &self.types.external_type_db;
-        let mut constraints = BTreeMap::<usize, CTypeLike>::new();
-        let mut conflicted = BTreeSet::new();
-        for (callsite, arguments) in &self.callsites.by_callsite {
-            let identity = self.callee_resolution.identity_for_callsite(callsite);
-            let signature = arguments
-                .callee_signature
-                .as_ref()
-                .or_else(|| identity.and_then(crate::CalleeIdentity::known_signature));
-            let Some(signature) = signature else {
-                continue;
-            };
-            for argument in &arguments.argument_values {
-                let Some(hint) = signature.params.get(argument.index) else {
-                    continue;
-                };
-                let Some(slot) = self
-                    .render
-                    .unique_parameter_dependency_slot_for_value(graph, argument.value)
-                else {
-                    continue;
-                };
-                if conflicted.contains(&slot) {
-                    continue;
-                }
-                match constraints.get(&slot) {
-                    None => {
-                        constraints.insert(slot, hint.clone());
-                    }
-                    Some(existing) if existing == hint => {}
-                    Some(existing)
-                        if crate::signature_hint_can_replace_existing(
-                            existing,
-                            Some(hint),
-                            ptr_bits,
-                            type_db,
-                        ) =>
-                    {
-                        constraints.insert(slot, hint.clone());
-                    }
-                    Some(existing)
-                        if crate::signature_hint_can_replace_existing(
-                            hint,
-                            Some(existing),
-                            ptr_bits,
-                            type_db,
-                        ) => {}
-                    Some(_) => {
-                        constraints.remove(&slot);
-                        conflicted.insert(slot);
-                    }
-                }
-            }
-        }
-
-        let protects_existing = self.types.certified_signature().is_some();
-        let Some(signature) = self.types.merged_signature.as_mut() else {
-            return 0;
-        };
-        let mut applied = BTreeMap::new();
-        for (slot, hint) in constraints {
-            let Some(param) = signature.params.get_mut(slot) else {
-                continue;
-            };
-            let replace = match param.ty.as_ref() {
-                None => true,
-                Some(existing) if existing == &hint => false,
-                Some(existing) => {
-                    !protects_existing
-                        && crate::signature_hint_can_replace_existing(
-                            existing,
-                            Some(&hint),
-                            ptr_bits,
-                            type_db,
-                        )
-                }
-            };
-            if replace {
-                param.ty = Some(hint.clone());
-                applied.insert(slot, hint);
-                // A callee's prototype through the call that hands it the parameter.
-                self.types
-                    .parameter_bases
-                    .insert(slot, r2source::Basis::Solved);
-            }
-        }
-        if applied.is_empty() {
-            return 0;
-        }
-        for (slot, hint) in &applied {
-            if let Some(param) = self.types.register_params.get_mut(*slot) {
-                param.ty = Some(hint.clone());
-            }
-            for binding in self
-                .types
-                .visible_bindings
-                .iter_mut()
-                .filter(|binding| binding.param_index == Some(*slot))
-            {
-                binding.ty = Some(hint.clone());
-            }
-        }
-        self.types
-            .certify_current_signature_with_source(SignatureCertificateSource::CalleeSignature);
-        applied.len()
     }
 
     /// Take the whole signature from the immutable source interface where it
