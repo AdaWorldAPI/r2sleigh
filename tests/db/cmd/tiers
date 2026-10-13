@@ -1,7 +1,10 @@
----
-source: crates/r2s/tests/commands.rs
-expression: run.out
----
+# One function at each tier. A lowering change moves exactly one of these; read the new output and
+# judge it before blessing it.
+
+NAME=fnv1a32 low IL
+FILE=tests/coverage/pinned/hashes_gcc_x64_O2
+CMDS=s 0x401330; pdil
+EXPECT=<<EOF
 Entry: 0x401330
 Blocks: 5
 
@@ -89,3 +92,48 @@ Block 0x401360 (6 bytes, 4 ops)
     1: RIP = LOAD [ram]RSP
     2: RSP = RSP + 0x8:8
     3: RETURN RIP
+
+EOF
+RUN
+
+NAME=fnv1a32 C
+FILE=tests/coverage/pinned/hashes_gcc_x64_O2
+CMDS=s 0x401330; pdd
+EXPECT=<<EOF
+uint64_t fnv1a32(uint64_t arg0, uint64_t arg1)
+{
+    uint64_t rsi_1;
+    uint64_t rax_2;
+    uint64_t rdi_1;
+    uint8_t tmp_11e00_1;
+    uint64_t rdi_2;
+    uint64_t rax_4;
+
+    /* r2dec proof: no individual construct is marked; 40 source obligations: 32 rendered, 8 elided, 0 refused; 14 statements rendered */
+    {
+        if ((uint8_t)((uint64_t)arg1 == (uint64_t)0U)) {
+            return (uint64_t)0x811c9dc5U;
+        } else {
+            rsi_1 = (uint64_t)((uint64_t)arg1 + (uint64_t)arg0);
+            rax_2 = (uint64_t)0x811c9dc5U;
+            rdi_1 = arg0;
+            for (; ; ) {
+                tmp_11e00_1 = r2sleigh_load_u8((void*)rdi_1);
+                rdi_2 = (uint64_t)((uint64_t)rdi_1 + (uint64_t)1U);
+                rax_4 = (uint64_t)(uint32_t)((uint64_t)((uint64_t)(int32_t)((uint32_t)(uint8_t)tmp_11e00_1 ^ (uint32_t)((uint64_t)rax_2 >> 0U)) * (uint64_t)0x1000193U) >> 0U);
+                if ((uint8_t)((uint64_t)rsi_1 != (uint64_t)rdi_2)) {
+                    rax_2 = rax_4;
+                    rdi_1 = rdi_2;
+                } else {
+                    break;
+                }
+            }
+            {
+                return (uint64_t)rax_4;
+            }
+        }
+    }
+}
+
+EOF
+RUN

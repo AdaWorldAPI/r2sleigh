@@ -152,7 +152,8 @@ Keep the public surface small and the common path automatic. Before adding a
 command, ask: does radare2 have a name for it (use it)? should it be automatic?
 should it enrich an existing view? is it only a debug surface? A command is one
 entry in `VERBS` in `crates/r2s/src/commands.rs` plus one handler, with
-happy- and failure-path tests in `crates/r2s/tests/`. Maintainer tier:
+happy- and failure-path tests: golden files in `tests/db/`, or `crates/r2s/tests/`
+where a fact needs logic. Maintainer tier:
 `pdil`, `pddo`.
 
 ## Task Protocol
@@ -187,7 +188,8 @@ helper names or incidental traversal order.
 |---|---|
 | A lowering, predicate, certificate or fold | inline `#[cfg(test)]` beside it |
 | A crate's public surface | `crates/<crate>/tests/` |
-| A command's output | `crates/r2s/tests/` |
+| A command's whole output | a golden file in `tests/db/` (r2r's format, [tests/db/README.md](tests/db/README.md)) |
+| A command fact that needs logic (an exit status, two commands compared) | `crates/r2s/tests/` |
 | What a whole function renders | the certification gate, plus a unit test for the rule |
 | Discovery, naming or decoding | the differential gate, with the disagreement judged |
 
