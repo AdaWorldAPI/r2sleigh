@@ -36,8 +36,11 @@ The parameter's entry value P is **field-addressed** when both hold:
 1. Every certified RAM access whose `parameter_expression` names P has no
    index terms. Its offset `c` and width `w` are constants.
 2. Every memory operation whose address P reaches is one of those certified
-   accesses. P reaches a value through def-use: any operation or merge with
-   an input P reaches, and the reloads of P's certified home. A loop that
+   accesses. P reaches a value through def-use: a copy, an extension,
+   arithmetic, a merge, or a reload of P's certified home. Reach ends at a
+   load's output. That value is memory contents, a new root, which r2ssa
+   states as a `PointeeAddressExpression`. A followed pointer field
+   (`n->next`) is therefore the pointee's business, not P's layout. A loop that
    walks `p += 8` reaches its merge, and the merge has no parameter
    expression. An access through it therefore refuses, and so does any
    access r2ssa could not certify, because the layout would miss or
@@ -45,11 +48,18 @@ The parameter's entry value P is **field-addressed** when both hold:
    a constant field`.
 
 Other uses of P do not bear on its pointee: a call argument, a comparison,
-or a return. C spells each of them on a structure pointer.
+a spill to its home, or a return. C spells each of them on a structure
+pointer. A callee handed P may read more fields. The layout is a lower
+bound, which is how the lattice's width subtyping reads a structure.
 
 The accesses give fields `(c, w)`. Two accesses at the same `(c, w)` are one
-field. Two fields that overlap but differ in extent refuse. Reason:
-`fields overlap at +c`. At least two distinct offsets are required. A single
+field. Its type is the meet of the solved types of the accessed values.
+`Bottom` refuses the parameter, and the reason names both instructions.
+Two fields that overlap but differ in extent refuse. Reason:
+`fields overlap at +c`. A field whose offset is not a multiple of its width
+refuses. Reason: `field at +c is not aligned`. With every field aligned,
+plain C places each member at its offset, and the declaration is a true
+statement without `packed`. At least two distinct offsets are required. A single
 field at offset 0 is a scalar pointer, and the solve already types it.
 
 ### Owners
@@ -59,7 +69,7 @@ field at offset 0 is a scalar pointer, and the solve already types it.
 | Accesses, offsets, widths | r2ssa | `certificates().memory_accesses`, `addresses().parameter_expression` (exist) |
 | Every access P reaches is a certified constant-offset one | r2ssa | a per-slot fact over def-use, beside `parameter_expression` (new) |
 | Layout: fields, their types, padding, the tag | r2types | `FunctionTypeFacts::inferred_aggregates`, keyed by slot, as `AggregateDefinition` (new field, existing type) |
-| The parameter's type | r2types | the merged signature's `Pointer(Struct(tag))`, under the certificate source `AccessLayout` (new) |
+| The parameter's type | r2types | `certified_parameter_pointers`, which already decides each accessed parameter's pointee for signature inference and the exact source signature, returns `Pointer(Struct(tag))` where the layout holds (extended) |
 | Definition and spelling | r2dec | `render::tags` defines a tag the type graph states or r2types infers (extended) |
 
 A field's type is the solve's type for the accessed value
@@ -70,8 +80,11 @@ hash. Field names are `f_<offset in hex>`. Padding between fields is
 Accesses reach the object only through the pointer, so no `sizeof` and no
 by-value copy reads its extent.
 
-A declared type outranks an inferred one. A parameter the interface types,
-including one with a `SourceTypeGraph` aggregate, is never re-laid out.
+A declared type outranks an inferred one. `apply_exact_source_signature`
+upgrades a parameter to a certified pointer only when the interface's graph
+holds carrier widths alone (`Basis::CarrierWidth`). A declared graph,
+including one with an aggregate, is never re-laid out. P's type therefore
+has one last writer, and the layout runs inside it.
 
 ### Rendering
 
