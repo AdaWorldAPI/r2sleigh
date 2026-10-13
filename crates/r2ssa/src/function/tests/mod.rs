@@ -2495,13 +2495,7 @@ fn a_call_keeps_the_merged_half_of_a_register_it_writes_part_of() {
 
 /// The lifted (block, index) of each memory operation promotion rewrote.
 fn promoted_sites(func: &SSAFunction) -> BTreeSet<(u64, usize)> {
-    func.promoted_slots()
-        .iter()
-        .filter_map(|op| match func.arena().origin(op)? {
-            crate::arena::OpOrigin::Lifted { block, index, .. } => Some((*block, *index)),
-            _ => None,
-        })
-        .collect()
+    func.promoted_slots().clone()
 }
 
 fn promotion_fixture(ops: Vec<R2ILOp>) -> BTreeSet<(u64, usize)> {
@@ -2631,15 +2625,14 @@ fn building_a_function_twice_mints_the_same_ids() {
             })
             .collect::<Vec<_>>()
     };
-    assert_eq!(first.function().arena(), second.function().arena());
     assert_eq!(sited(&first), sited(&second));
-    let derived = first
-        .function()
-        .arena()
-        .slots()
-        .filter(|(_, slot)| matches!(slot.origin(), crate::OpOrigin::Derived { .. }))
-        .count();
-    assert!(derived > 0, "the fixture exercises minting past the lift");
+    let phis = (first.named_blocks().iter())
+        .map(|block| block.phis().len())
+        .sum::<usize>();
+    assert!(
+        phis > 0,
+        "the fixture exercises minting past the lift: its loop's phis"
+    );
 }
 
 /// An operation's id is its identity for the function's life

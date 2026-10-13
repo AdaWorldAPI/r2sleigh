@@ -48,11 +48,16 @@ impl<V> Blocks<V> {
         }
     }
 
-    /// Give the operations up once the graph is built and the function validated: after the seal
-    /// the graph owns each operation, and reading them here is a defect.
+    /// Give the operations and their origins up once the graph is built and the function
+    /// validated: after the seal the graph owns both, and reading them here is a defect.
     pub(crate) fn drop_operations(&mut self) {
         self.items = Vec::new();
+        self.arena = OpArena::default();
         self.sealed = true;
+    }
+
+    pub(crate) const fn is_sealed(&self) -> bool {
+        self.sealed
     }
 
     /// Blocks no function has numbered yet: each is adopted into a fresh

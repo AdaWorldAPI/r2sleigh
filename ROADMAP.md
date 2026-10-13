@@ -127,7 +127,7 @@ The program
 | **P7** Call contracts | Darwin arm64 variadic tail (M1c); declared `double` arguments reach their calls (B3) | no dropped or invented argument; printf's stack tail on x86-64; a recovered interface's float parameters and float result (a body's float work feeds only the float result, so recovery never observes it; the variadic save area's spills read as parameters in both classes, and the convention's `al` read at entry states the tail) |
 | **P8** Data objects and strings | — | `iz` lists proven strings |
 | **P9** Types over the graph | — | a struct pointer is not `uint32_t*` (its first exit is T's; recursive and polymorphic types after T) |
-| **P11** Names and commands | — | every differential disagreement judged |
+| **P11** Names and commands | The ELF sweep, 2026-10-12 (`diff_r2.py`, 235 radare2 test bins, #184's r2s): 98 binary and command pairs disagree; 55 bins do not open (architectures outside the graded set). Judged radare2's defects, each an upstream candidate: BE8 code read big-endian (`armeb_hello_static`, `e_flags` 0x5800202); the Thumb bit cleared on an `STT_OBJECT` (`arm1.bin` `zeroes` at 0x677d7); an `SHN_ABS` symbol rebased to 0x8000; `.plt.got` stubs not named (0pack 0x455078 reads `reloc._ZNSt13runtime_errorD1Ev`); unmapped bytes past the last `PT_LOAD` listed as `ff` and `invalid`; a debuginfo file's stated entry dropped (`libc-2.21-debug.so` `e_entry` 0x20be0). Judged r2s's choices: a pool load spelled as encoded with its word's name in a note; a number named only where the engine claims it as an address (`push 0x8049c30`, radare2 `push sym.__libc_csu_fini`) | Name `SHT_LOPROC` section types per machine (`ARM_EXIDX`, `ARM_ATTRIBUTES`; r2s prints the number, radare2 `----`); two tools naming one stub differently (`libarm.so` 0x18768, `__cxa_finalize` against `__cxa_atexit`), an unnamed stub (`libarm64.so` 0x738), alias choice (`_Exit` against `_exit`); calls in relocatable objects unresolved (`test.ko`, `pngrutil_o`); Sleigh's spellings (`stmdb sp!`, `ldmia`, `lea r8, 0x11e0`, `adr`, `udf`); the large `is` sets (`libflutter.so` 417 values, `ls-toybox` 214, `libarm.so` 120); a judgment table the harness reads, so it fails only on an unjudged disagreement; the upstream pull requests, each one idea |
 | **SD** Structuring quality ([structure-dominator-tree](doc/adr-structure-dominator-tree.md)) | dominator-tree structurer | no more labels than the old structurer; condition chains and irreducible-entry splitting behind a BDD identity check; lexical ancestry as dominance retires `region_does_not_dominate_occurrence` |
 
 ### Surface
@@ -403,9 +403,19 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             tests read the graph (`SsaArtifact::named_block(s)`). Heap peak
             0pack `0x58e3d0` 167.3 to 162.4 MiB, pumasim 147.6 to 143.8,
             the session 191.4 to 187.5; time 2 to 4% lower; census
-            byte-identical. Left: the value table once no `VarId` outlives
-            the seal (the `formal_*` maps have graph twins), a compile-time
-            type for the sealed function in place of the debug assertion.
+            byte-identical. Step 3 done (#186): the seal drops the value
+            table and the operation origins too. Their one post-seal reader,
+            the reaching scan's instruction grouping, asks the graph's
+            instruction column (`instruction_for_inst`), and slot promotion
+            records its lifted sites while the origins exist. A read of
+            either is a debug assertion: the suite's six test readers now
+            read the graph. Heap peak 0pack 159.1 to 158.3 MiB, pumasim
+            141.1 to 139.9, the 50-function session 187.5 to 179.6 (each
+            held function keeps neither); census byte-identical. 0pack's
+            peak moved to interface recovery's preparation. Left: a
+            compile-time type for the sealed function in place of the debug
+            assertions, and the `formal_*` maps keyed by `VarId`, which no
+            post-seal reader can reach.
          2. **MM.4** the fixed cost `F` (29.8 MB: the file's bytes 9.5,
             symbols 7.6, names 4.2), PF's.
          3. **MM.7** compact identities: a disposition (48 B per
@@ -413,9 +423,34 @@ maintainer accepts broken renderings on `rebuild` until it merges.
             instruction id the graph already implies; an obligation copies
             its instruction's graph inputs where it states none of its own.
          4. **MM.8** the machine projection (13.6 MB, a 72-byte node, 32
-            of it the type) and render's own structures (7.6 MB).
+            of it the type) and render's own structures (7.6 MB). Step 1
+            done (#185): an entity stated its output and producer beside
+            its root (48 bytes, and an index by output), both the graph's
+            and the obligations'; the projection now holds one root per
+            instruction and builds the entity on read, and validation of
+            the copies against their owners is gone with them. 0pack heap
+            peak 162.4 to 159.2 MiB, pumasim 143.8 to 141.1, session
+            unchanged (its peak is elsewhere); time unchanged; census
+            byte-identical. Left: the type interned (0pack: 99,033 nodes,
+            28 distinct types; 72 to 48 bytes a node, about 2.3 MiB, 115
+            reads to move), the value geometries (40 bytes a value, 3.3
+            MiB), and `discharges` returning instruction ids, which r2dec
+            maps back from canonical ids (MM.7).
          5. **MM.9** D26: one forced collect at each phase boundary,
             measured.
+         5a. Done (#187): the written-lane record held 24 bytes a byte,
+            twice (by variable and by operation), through interface
+            recovery's preparation, where 0pack peaked after #186; 73,988 of
+            the largest function's 74,097 outputs are data throughout. A
+            record is now its size where every byte is data, and the pass
+            keeps each variable's definition in place of a second copy.
+            Heap peak 0pack 158.3 to 148.2 MiB, pumasim 139.9 to 133.1,
+            session 179.6 to 168.5; peak RSS 4 to 7% lower; time 1 to 2%
+            lower; census byte-identical. 0pack's peak is render's again:
+            the graph 17.8, the image 8.0, the projection's nodes 7.1,
+            obligation dispositions 10.0, term leaves 5.4. Left: the
+            capture's `while` over every block until nothing moves is a
+            round-robin fixpoint, owed to `r2ssa::fixpoint` (D11).
          6. **MM.3** (conditional) facts only sealing reads, measured
             2026-10-12 at the render peak: the fact pass holds 28.7 MB (the
             35.7 estimate counted r2types'), of which memory SSA 5.3 MB

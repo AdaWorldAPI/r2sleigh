@@ -14,8 +14,7 @@ fn floating_arithmetic_lowers_in_the_operands_own_format() {
     }]);
     let machine = MachineFunction::from_artifact(&artifact).expect("float multiply");
     let root = machine
-        .entities()
-        .iter()
+        .entities(artifact.graph())
         .find_map(|entity| {
             matches!(
                 machine.expr(entity.root()).map(MachineExpr::kind),
@@ -59,8 +58,7 @@ fn trunc_is_the_floating_to_integer_conversion() {
     }]);
     let machine = MachineFunction::from_artifact(&artifact).expect("trunc");
     let root = machine
-        .entities()
-        .iter()
+        .entities(artifact.graph())
         .find_map(|entity| {
             matches!(
                 machine.expr(entity.root()).map(MachineExpr::kind),
@@ -107,7 +105,7 @@ fn a_floating_comparison_is_a_boolean_producer() {
         },
     ]);
     let machine = MachineFunction::from_artifact(&artifact).expect("float compare");
-    assert!(machine.entities().iter().any(|entity| {
+    assert!(machine.entities(artifact.graph()).any(|entity| {
         matches!(
             machine.expr(entity.root()).map(MachineExpr::kind),
             Some(MachineExprKind::BooleanNot { .. })
@@ -295,7 +293,9 @@ fn unsigned_64_bit_multiply_retains_wrapping_arithmetic() {
         .inst(mult_inst)
         .and_then(|inst| inst.output)
         .expect("multiply output");
-    let entity = machine.entity_for_output(output).expect("multiply entity");
+    let entity = machine
+        .entity_for_output(artifact.graph(), output)
+        .expect("multiply entity");
     let root = machine.expr(entity.root()).expect("multiply expression");
     assert_eq!(
         root.ty(),
@@ -320,11 +320,14 @@ fn unsigned_64_bit_multiply_retains_wrapping_arithmetic() {
     };
     assert_eq!(value.width_bits(), 64);
     assert_eq!(value.bits(), FNV_PRIME);
-    let disposition = artifact
-        .obligations()
-        .instruction_for_inst(mult_inst)
-        .expect("multiply disposition");
-    assert_eq!(entity.producer(), disposition.id);
+    assert_eq!(entity.inst(), mult_inst);
+    assert!(
+        artifact
+            .obligations()
+            .instruction_for_inst(mult_inst)
+            .is_some(),
+        "the multiply's obligations state its producer"
+    );
 }
 
 #[test]
@@ -337,7 +340,10 @@ fn narrow_bitwise_result_explicitly_extracts_low_operand_bits() {
 
     let machine =
         MachineFunction::from_artifact(&artifact).expect("typed narrow bitwise expression");
-    let entity = machine.entities().first().expect("bitwise entity");
+    let entity = machine
+        .entities(artifact.graph())
+        .next()
+        .expect("bitwise entity");
     let root = machine.expr(entity.root()).expect("bitwise root");
     let MachineExprKind::Bitwise { left, right, .. } = root.kind() else {
         panic!("expected bitwise root, got {:?}", root.kind());
@@ -415,7 +421,7 @@ fn shifts_require_exact_value_width_and_keep_the_count_width() {
             .and_then(|inst| inst.output)
             .expect("shift output");
         let root = projection
-            .entity_for_output(output)
+            .entity_for_output(artifact.graph(), output)
             .and_then(|entity| projection.expr(entity.root()))
             .expect("shift expression");
         let MachineExprKind::Shift {
@@ -613,8 +619,7 @@ fn zero_and_sign_extension_remain_distinct() {
     ]);
     let machine = MachineFunction::from_artifact(&artifact).expect("machine function");
     let roots = machine
-        .entities()
-        .iter()
+        .entities(artifact.graph())
         .map(|entity| machine.expr(entity.root()).expect("entity root"))
         .collect::<Vec<_>>();
     assert!(matches!(
@@ -662,8 +667,7 @@ fn arithmetic_flags_remain_distinct_typed_boolean_operations() {
 
     let machine = MachineFunction::from_artifact(&artifact).expect("typed arithmetic flags");
     let flags = machine
-        .entities()
-        .iter()
+        .entities(artifact.graph())
         .map(|entity| machine.expr(entity.root()).expect("flag expression"))
         .collect::<Vec<_>>();
     assert_eq!(flags.len(), 3);
@@ -708,8 +712,8 @@ fn population_count_is_an_exact_typed_machine_operation() {
         .expect("population-count projection validation");
     assert!(projection.failures().is_empty());
     let entity = projection
-        .entities()
-        .first()
+        .entities(artifact.graph())
+        .next()
         .expect("population-count entity");
     let root = projection
         .expr(entity.root())
@@ -766,8 +770,7 @@ fn boolean_not_and_select_require_a_proven_boolean_condition() {
 
     let machine = MachineFunction::from_artifact(&artifact).expect("typed select machine");
     let boolean = machine
-        .entities()
-        .iter()
+        .entities(artifact.graph())
         .find_map(|entity| {
             let expression = machine.expr(entity.root())?;
             matches!(expression.kind(), MachineExprKind::BooleanNot { .. }).then_some(expression)
@@ -776,8 +779,7 @@ fn boolean_not_and_select_require_a_proven_boolean_condition() {
     assert_eq!(boolean.ty(), &MachineType::Bool { storage_bits: 8 });
 
     let selected = machine
-        .entities()
-        .iter()
+        .entities(artifact.graph())
         .find_map(|entity| {
             let expression = machine.expr(entity.root())?;
             matches!(expression.kind(), MachineExprKind::Select { .. }).then_some(expression)
@@ -858,7 +860,7 @@ fn boolean_not_accepts_a_select_with_two_boolean_arms() {
 
     let machine = MachineFunction::from_artifact(&artifact)
         .expect("a select of proven boolean arms remains boolean");
-    assert!(machine.entities().iter().any(|entity| {
+    assert!(machine.entities(artifact.graph()).any(|entity| {
         matches!(
             machine.expr(entity.root()).map(MachineExpr::kind),
             Some(MachineExprKind::BooleanNot { .. })
@@ -890,8 +892,7 @@ fn corrupted_select_condition_type_is_rejected() {
     let artifact = SsaArtifact::raw(&[block], None).expect("select artifact");
     let mut machine = MachineFunction::from_artifact(&artifact).expect("typed select machine");
     let root = machine
-        .entities()
-        .iter()
+        .entities(artifact.graph())
         .find_map(|entity| {
             matches!(
                 &machine.arena.nodes[entity.root().index()].kind,
@@ -941,7 +942,7 @@ fn divide_negate_and_piece_have_exact_machine_vocabulary() {
             .and_then(|inst| inst.output)
             .expect("projected output");
         let root = projection
-            .entity_for_output(output)
+            .entity_for_output(artifact.graph(), output)
             .and_then(|entity| projection.expr(entity.root()))
             .expect("projected root");
         assert_eq!(
@@ -972,7 +973,10 @@ fn divide_negate_and_piece_have_exact_machine_vocabulary() {
     }
 
     let divide = projection
-        .entity_for_output(artifact.graph().inst(InstId(0)).unwrap().output.unwrap())
+        .entity_for_output(
+            artifact.graph(),
+            artifact.graph().inst(InstId(0)).unwrap().output.unwrap(),
+        )
         .and_then(|entity| projection.expr(entity.root()))
         .expect("divide root");
     assert!(matches!(
@@ -984,7 +988,10 @@ fn divide_negate_and_piece_have_exact_machine_vocabulary() {
         }
     ));
     let negate = projection
-        .entity_for_output(artifact.graph().inst(InstId(1)).unwrap().output.unwrap())
+        .entity_for_output(
+            artifact.graph(),
+            artifact.graph().inst(InstId(1)).unwrap().output.unwrap(),
+        )
         .and_then(|entity| projection.expr(entity.root()))
         .expect("negate root");
     assert!(matches!(
@@ -995,7 +1002,10 @@ fn divide_negate_and_piece_have_exact_machine_vocabulary() {
         }
     ));
     let piece = projection
-        .entity_for_output(artifact.graph().inst(InstId(2)).unwrap().output.unwrap())
+        .entity_for_output(
+            artifact.graph(),
+            artifact.graph().inst(InstId(2)).unwrap().output.unwrap(),
+        )
         .and_then(|entity| projection.expr(entity.root()))
         .expect("piece root");
     assert!(matches!(piece.kind(), MachineExprKind::Concat { .. }));
@@ -1095,7 +1105,10 @@ fn unsigned_remainder_has_exact_machine_vocabulary() {
         .expect("remainder instruction");
     let graph_inst = artifact.graph().inst(inst).expect("remainder graph node");
     let entity = projection
-        .entity_for_output(graph_inst.output.expect("remainder output"))
+        .entity_for_output(
+            artifact.graph(),
+            graph_inst.output.expect("remainder output"),
+        )
         .expect("remainder entity");
     let root = projection.expr(entity.root()).expect("remainder root");
     assert_eq!(root.ty(), &integer_type(64, MachineSignedness::Unsigned));
@@ -1176,7 +1189,7 @@ fn signed_division_and_remainder_read_their_operands_signed() {
             .expect("signed instruction");
         let graph_inst = artifact.graph().inst(inst).expect("signed graph node");
         let entity = projection
-            .entity_for_output(graph_inst.output.expect("signed output"))
+            .entity_for_output(artifact.graph(), graph_inst.output.expect("signed output"))
             .expect("signed entity");
         let root = projection.expr(entity.root()).expect("signed root");
         assert_eq!(root.ty(), &integer_type(64, MachineSignedness::Signed));
@@ -1311,7 +1324,10 @@ fn plain_load_requires_and_retains_an_explicit_memory_model() {
     let artifact = SsaArtifact::raw(&[block], Some(&crate::Arch::from(arch.clone())))
         .expect("typed load artifact");
     let machine = MachineFunction::from_artifact(&artifact).expect("machine load");
-    let entity = machine.entities().first().expect("load entity");
+    let entity = machine
+        .entities(artifact.graph())
+        .next()
+        .expect("load entity");
     let root = machine.expr(entity.root()).expect("load root");
     let MachineExprKind::MemoryRead {
         access,
@@ -1387,7 +1403,11 @@ fn corrupted_plain_load_memory_policy_is_rejected() {
     let artifact =
         SsaArtifact::raw(&[block], Some(&crate::Arch::from(arch))).expect("typed load artifact");
     let mut machine = MachineFunction::from_artifact(&artifact).expect("machine load");
-    let root = machine.entities()[0].root();
+    let root = machine
+        .entities(artifact.graph())
+        .next()
+        .expect("an entity")
+        .root();
     let MachineExprKind::MemoryRead { endianness, .. } =
         &mut machine.arena.nodes[root.index()].kind
     else {
@@ -1509,7 +1529,7 @@ fn partial_projection_retains_unsupported_producer_and_supported_dependent() {
         MachineBuildError::UnsupportedOperation { op, .. }
             if matches!(op.as_ref(), SSAOp::Load { .. })
     ));
-    assert!(projection.entities().iter().any(|entity| {
+    assert!(projection.entities(artifact.graph()).any(|entity| {
         artifact
             .graph()
             .def_inst(entity.output().value())
@@ -1612,7 +1632,11 @@ fn malformed_arena_backedge_is_rejected() {
         src: Varnode::register(0, 8),
     }]);
     let mut machine = MachineFunction::from_artifact(&artifact).expect("machine function");
-    let root = machine.entities()[0].root();
+    let root = machine
+        .entities(artifact.graph())
+        .next()
+        .expect("an entity")
+        .root();
     machine.arena.nodes[root.index()].kind = MachineExprKind::Copy { input: root };
 
     assert_eq!(
@@ -1631,7 +1655,11 @@ fn corrupted_source_leaf_type_is_rejected() {
         src: Varnode::register(0, 8),
     }]);
     let mut machine = MachineFunction::from_artifact(&artifact).expect("machine function");
-    let root = machine.entities()[0].root();
+    let root = machine
+        .entities(artifact.graph())
+        .next()
+        .expect("an entity")
+        .root();
     let input = match &machine.arena.nodes[root.index()].kind {
         MachineExprKind::Copy { input } => *input,
         _ => panic!("expected copy root"),
@@ -1655,7 +1683,10 @@ fn corrupted_sign_extension_result_type_is_rejected() {
         src: Varnode::register(0, 1),
     }]);
     let mut machine = MachineFunction::from_artifact(&artifact).expect("machine function");
-    let entity = machine.entities()[0].clone();
+    let entity = machine
+        .entities(artifact.graph())
+        .next()
+        .expect("an entity");
     machine.arena.nodes[entity.root().index()].ty =
         integer_type(entity.output().width_bits(), MachineSignedness::Unsigned);
 
@@ -1673,7 +1704,11 @@ fn corrupted_subpiece_offset_is_rejected() {
         offset: 4,
     }]);
     let mut machine = MachineFunction::from_artifact(&artifact).expect("machine function");
-    let root = machine.entities()[0].root();
+    let root = machine
+        .entities(artifact.graph())
+        .next()
+        .expect("an entity")
+        .root();
     let MachineExprKind::Extract { lsb_bits, .. } = &mut machine.arena.nodes[root.index()].kind
     else {
         panic!("expected extract root");
@@ -2401,7 +2436,7 @@ fn dense_write_projections_cover_full_and_zero_extension() {
         .and_then(|inst| inst.output)
         .expect("inserted root");
     let entity = high_projection
-        .entity_for_output(root)
+        .entity_for_output(high.graph(), root)
         .expect("the root's machine entity");
     let Some(MachineExpr {
         kind:

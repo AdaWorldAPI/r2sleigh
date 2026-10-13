@@ -645,11 +645,9 @@ pub fn import_with(
     };
     let mut values: Vec<Option<ImportedValue>> = vec![None; graph.values.len()];
     let mut accesses = BTreeMap::new();
-    for entity in projection.entities() {
+    for entity in projection.entities(graph) {
         let value = entity.output().value();
-        let Some(inst) = graph.def_inst(value) else {
-            continue;
-        };
+        let inst = entity.inst();
         let root = importer.import_root(entity.root(), inst);
         if let Some(MachineExprKind::MemoryRead { access, .. }) =
             projection.expr(entity.root()).map(|expr| expr.kind())
@@ -1632,10 +1630,8 @@ impl Importer<'_> {
     /// The producer's term, when it is modelled, for a leaf that keeps
     /// reading the value by name.
     fn definition_of(&mut self, value: ValueId) -> Option<TermId> {
-        let graph = self.artifact.graph();
-        let entity = self.projection.entity_for_output(value)?;
-        let root = entity.root();
-        let inst = graph.def_inst(value)?;
+        let inst = self.artifact.graph().def_inst(value)?;
+        let root = self.projection.root_of(inst)?;
         if self.in_progress.contains(&root) {
             return None;
         }
@@ -1670,11 +1666,9 @@ impl Importer<'_> {
 
     #[allow(clippy::type_complexity)]
     fn try_substitute(&mut self, value: ValueId) -> Option<(TermId, Vec<Substitution>)> {
-        let graph = self.artifact.graph();
-        let entity = self.projection.entity_for_output(value)?;
-        let root = entity.root();
-        let producer = entity.producer();
-        let inst = graph.def_inst(value)?;
+        let inst = self.artifact.graph().def_inst(value)?;
+        let root = self.projection.root_of(inst)?;
+        let producer = self.artifact.obligations().instruction_for_inst(inst)?.id;
         if self.in_progress.contains(&root) {
             return None;
         }

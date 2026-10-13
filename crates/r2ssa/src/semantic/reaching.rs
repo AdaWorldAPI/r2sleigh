@@ -70,12 +70,7 @@ impl<'a> ReachingStorage<'a> {
         let mut pending: (Option<u64>, ReachingStorageState, Vec<InstId>) =
             (None, state, Vec::new());
         for &inst in self.graph.op_insts(block) {
-            let origin =
-                (self.graph.op_for_inst(inst)).and_then(|op| self.function.arena().origin(op));
-            let instruction = match origin {
-                Some(crate::arena::OpOrigin::Lifted { instruction, .. }) => *instruction,
-                _ => None,
-            };
+            let instruction = self.graph.instruction_for_inst(inst);
             if instruction.is_none() || instruction != pending.0 {
                 self.close(pending.2.drain(..), state);
                 pending.0 = instruction;
@@ -442,5 +437,42 @@ mod tests {
         assert_eq!(write.instruction_start, first.before);
         assert_eq!(write.instruction_end, ReachingStorageState::Value(five));
         assert_eq!(third.instruction_start, third.before);
+    }
+    #[test]
+    fn an_operation_derived_for_an_instruction_is_read_as_part_of_it() {
+        let mut lifted = block(
+            0x1000,
+            vec![
+                copy(reg(8, 8), Varnode::constant(1, 8)),
+                copy(reg(0, 8), Varnode::constant(5, 8)),
+            ],
+        );
+        lifted.stamp_instruction(0, 0x1000);
+        lifted.stamp_instruction(1, 0x1004);
+        let mut function = ssa(&[lifted]);
+        let write = (function.blocks()[0].sited().nth(1))
+            .map(|(id, _)| id)
+            .expect("write");
+        // A pass adds an operation on behalf of the write: the graph says it executes for 0x1004.
+        let scratch = crate::SSAVar::new("tmp:9000", 1, 8);
+        (function.edit_block(0x1000).expect("block")).push_op(
+            SSAOp::Copy {
+                dst: scratch,
+                src: crate::SSAVar::constant(7, 8),
+            },
+            Some(write),
+            crate::Pass::Fixture,
+        );
+        let graph = SsaGraph::from_function_with_storage(&function);
+        let insts = insts(&graph, 0x1000);
+        assert_eq!(graph.instruction_for_inst(insts[2]), Some(0x1004));
+        let (x, five) = written_storage(&graph, insts[1]);
+        let mut reaching = ReachingStorage::new(&function, &graph, x);
+        let written = reaching.at(insts[1]).expect("write");
+        let derived = reaching.at(insts[2]).expect("derived");
+        // It starts where its instruction starts, before the write, and ends where it ends.
+        assert_eq!(derived.instruction_start, written.instruction_start);
+        assert_ne!(derived.instruction_start, ReachingStorageState::Value(five));
+        assert_eq!(written.instruction_end, ReachingStorageState::Value(five));
     }
 }
