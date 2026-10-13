@@ -1617,9 +1617,7 @@
    "status": "equal"
   },
   "tests/corpus/values.c::aarch64-clang-O0::value_count_bits": {
-   "cause": "[#122] The bit counts are terms staged does not spell yet: x86 `bsr`/`tzcnt` (leading and trailing zero counts) and AArch64's `cnt` reduced by the NEON_uaddlv user operation, which the lift leaves unmodelled. They are residuals where legacy refused the function. Owner: staged spelling of the zero counts, and a uaddlv expansion in the lifter.",
-   "reason": "r2sleigh_residual_void",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/values.c::aarch64-clang-O0::value_div_pow2": {
    "status": "equal"
@@ -1661,9 +1659,7 @@
    "status": "equal"
   },
   "tests/corpus/values.c::aarch64-clang-O1::value_count_bits": {
-   "cause": "[#122] The bit counts are terms staged does not spell yet: x86 `bsr`/`tzcnt` (leading and trailing zero counts) and AArch64's `cnt` reduced by the NEON_uaddlv user operation, which the lift leaves unmodelled. They are residuals where legacy refused the function. Owner: staged spelling of the zero counts, and a uaddlv expansion in the lifter.",
-   "reason": "r2sleigh_residual_void",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/values.c::aarch64-clang-O1::value_div_pow2": {
    "status": "equal"
@@ -1705,9 +1701,7 @@
    "status": "equal"
   },
   "tests/corpus/values.c::aarch64-clang-O2::value_count_bits": {
-   "cause": "[#122] The bit counts are terms staged does not spell yet: x86 `bsr`/`tzcnt` (leading and trailing zero counts) and AArch64's `cnt` reduced by the NEON_uaddlv user operation, which the lift leaves unmodelled. They are residuals where legacy refused the function. Owner: staged spelling of the zero counts, and a uaddlv expansion in the lifter.",
-   "reason": "r2sleigh_residual_void",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/values.c::aarch64-clang-O2::value_div_pow2": {
    "status": "equal"
@@ -2247,9 +2241,7 @@
    "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O1::bit_count": {
-   "cause": "[#122] The bit counts are terms staged does not spell yet: x86 `bsr`/`tzcnt` (leading and trailing zero counts) and AArch64's `cnt` reduced by the NEON_uaddlv user operation, which the lift leaves unmodelled. They are residuals where legacy refused the function. Owner: staged spelling of the zero counts, and a uaddlv expansion in the lifter.",
-   "reason": "r2sleigh_residual_void",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O1::classify": {
    "status": "equal"
@@ -2302,9 +2294,7 @@
    "status": "residual-trap"
   },
   "tests/gold/review.c::aarch64-clang-O2::bit_count": {
-   "cause": "[#122] The bit counts are terms staged does not spell yet: x86 `bsr`/`tzcnt` (leading and trailing zero counts) and AArch64's `cnt` reduced by the NEON_uaddlv user operation, which the lift leaves unmodelled. They are residuals where legacy refused the function. Owner: staged spelling of the zero counts, and a uaddlv expansion in the lifter.",
-   "reason": "r2sleigh_residual_void",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/gold/review.c::aarch64-clang-O2::classify": {
    "status": "equal"
