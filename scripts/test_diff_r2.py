@@ -73,8 +73,20 @@ class Judged(unittest.TestCase):
 
     def test_a_value_takes_the_column_its_header_names(self):
         lines = ["paddr      vaddr      phaddr     vhaddr     type", "0x10 0x1000 0x18 0x100018 program"]
-        self.assertEqual(diff_r2.columns(lines)[0x100018][0], "vhaddr")
-        self.assertEqual(diff_r2.columns(lines)[0x10][0], "paddr")
+        self.assertEqual(diff_r2.columns(lines)[0x100018][0][0], "vhaddr")
+        self.assertEqual(diff_r2.columns(lines)[0x10][0][0], "paddr")
+
+    def test_each_occurrence_of_a_value_is_its_own_disagreement(self):
+        ours = "paddr vaddr phaddr vhaddr type\n0x10 0x1000 0x18 0x10 program\n"
+        found = diff_r2.differences("ie", "values", ours, "0x1000 0x18\n")
+        self.assertEqual([item[1][1] for item in found], ["paddr", "vhaddr"])
+
+    def test_two_different_invalid_bytes_stay_different(self):
+        def out(byte):
+            script = "import sys; sys.stdout.buffer.write(bytes([{}]))".format(byte)
+            return diff_r2.run([sys.executable, "-c", script], 10)[0]
+
+        self.assertNotEqual(out(0xFF), out(0xFE))
 
     def test_a_judgment_nothing_matched_is_left_unmatched(self):
         table = judgments()

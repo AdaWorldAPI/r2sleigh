@@ -87,7 +87,7 @@ def values(lines):
 
 
 def columns(lines):
-    """Each value with the column its header names, where the listing has a header, and its row."""
+    """Each value with every (column, row) it appears at; the column is the header's name for it."""
     header = next((line.split() for line in lines if "vaddr" in line.split()), None)
     found = {}
     for line in lines:
@@ -95,7 +95,7 @@ def columns(lines):
             if not HEX.fullmatch(token):
                 continue
             column = header[index] if header and index < len(header) else None
-            found.setdefault(int(token, 16), (column, line))
+            found.setdefault(int(token, 16), []).append((column, line))
     return found
 
 
@@ -127,9 +127,15 @@ def canonical_numbers(line):
 def run(argv, timeout):
     """Return (stdout, stderr, code); code is None when the tool never ran."""
     try:
-        # A listing of a non-text byte is not UTF-8; it is shown, not fatal.
+        # A listing of a non-text byte is not UTF-8: each invalid byte keeps its value, so two
+        # different ones still compare different.
         done = subprocess.run(
-            argv, capture_output=True, text=True, errors="replace", timeout=timeout, check=False
+            argv,
+            capture_output=True,
+            text=True,
+            errors="surrogateescape",
+            timeout=timeout,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return "", "timeout", None
@@ -151,9 +157,11 @@ def differences(command, mode, left, right):
     left_lines, right_lines = normalise(left, strip), normalise(right, strip)
     if mode == "values":
         theirs, ours = values(right_lines), columns(left_lines)
+        # One disagreement per occurrence: a judgment of one column must not hide another.
         return [
-            ("value", (value, *ours.get(value, (None, ""))))
+            ("value", (value, column, row))
             for value in sorted(values(left_lines) - theirs)
+            for column, row in ours.get(value, [(None, "")])
         ]
     found = []
     for index in range(max(len(left_lines), len(right_lines))):
@@ -224,6 +232,8 @@ def spelled(difference):
 
 
 def main():
+    # A line holding an invalid byte prints as its escape.
+    sys.stdout.reconfigure(errors="backslashreplace")
     here = pathlib.Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser()
     parser.add_argument("--r2", default=str(here.parent / "radare2/binr/radare2/radare2"))
