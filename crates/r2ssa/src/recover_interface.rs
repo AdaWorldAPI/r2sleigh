@@ -1327,6 +1327,7 @@ fn recover_interface_inner(
         // and that writes the float one hands back the float one where every reading call reads it
         // there; unasked, it asks them.
         let integer_unheld = handed_back || result == RecoveredFunctionResult::Void;
+        let mut float_returned = false;
         if integer_unheld
             && let Some((float, float_live_out)) = float_result_written(func, graph, slots)
         {
@@ -1340,11 +1341,16 @@ fn recover_interface_inner(
                     });
                     result_carriers = None;
                     candidate_live_out = float_live_out;
+                    float_returned = true;
                 }
                 Some(CarrierRead::Integer) => {}
                 None => result_ambiguous = result_reads.is_none(),
             }
-        } else if handed_back
+        }
+        // Where callers read the integer register beside a written float, the argument it hands back
+        // is still their result.
+        if !float_returned
+            && handed_back
             && slots
                 .argument_slots()
                 .iter()

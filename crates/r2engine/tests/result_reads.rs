@@ -294,13 +294,13 @@ fn callers_declare_a_two_carrier_body_as_its_header_does() {
 }
 
 /// clang's `double avg(...)` shape: `cvtsi2sd xmm0, edi; ret` writes only XMM0 and leaves RAX as
-/// the caller left it, and the caller stores XMM0 with `movsd [rsi], xmm0`.
+/// the caller left it, and the caller stores XMM0 with `movsd [rdi], xmm0`.
 const ONLY_XMM0_WRITTEN: &[u8] = &[
     0xf2, 0x0f, 0x2a, 0xc7, // 1000 cvtsi2sd xmm0, edi
     0xc3, // 1004 ret
     0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1005 padding
     0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
-    0xf2, 0x0f, 0x11, 0x06, // 1015 movsd [rsi], xmm0
+    0xf2, 0x0f, 0x11, 0x07, // 1015 movsd [rdi], xmm0
     0xc3, // 1019 ret
     0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
     0xcc, // 101a padding
@@ -343,4 +343,47 @@ fn an_argument_register_handed_back_untouched_is_the_result_callers_read() {
     assert!(!text.contains("r2sleigh_residual"), "{text}");
     let unread = rendered(program(&[("f", BASE, 4)]));
     assert!(unread.contains("r2sleigh_residual_"), "{unread}");
+}
+
+/// Prepared as a callee, `f` of `ONLY_XMM0_WRITTEN` offers both registers, so `caller` takes the
+/// float one it reads and passes the argument `f` reads. (`caller`'s own result is RAX unproven.)
+#[test]
+fn a_caller_takes_the_float_result_beside_an_untouched_integer_register() {
+    let program = Literal::of_code(
+        ONLY_XMM0_WRITTEN,
+        &[("f", BASE, 5), ("caller", BASE + 0x10, 0x0a)],
+    );
+    let text = OpenProgram::of(program)
+        .rendered(BASE + 0x10)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(text.contains("double f(uint32_t);"), "{text}");
+    assert!(text.contains("r2sleigh_float_to_bits_64(f("), "{text}");
+}
+
+/// AArch64 `fmov d0, #1.0; ret` hands x0 back untouched beside the float it writes, and a caller
+/// `bl f; str w0, [x1]` reads x0: the handed-back argument is the result.
+const A64_FLOAT_BESIDE_ITS_ARGUMENT: &[u8] = &[
+    0x00, 0x10, 0x6e, 0x1e, // 1000 fmov d0, #1.0
+    0xc0, 0x03, 0x5f, 0xd6, // 1004 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, // 1008 padding
+    0xfc, 0xff, 0xff, 0x97, // 1010 bl 0x1000
+    0x20, 0x00, 0x00, 0xb9, // 1014 str w0, [x1]
+    0xc0, 0x03, 0x5f, 0xd6, // 1018 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03,
+    0xd5, // 101c padding
+];
+
+#[test]
+fn an_argument_handed_back_beside_a_written_float_is_the_result_callers_read() {
+    let program = Literal::of_code(
+        A64_FLOAT_BESIDE_ITS_ARGUMENT,
+        &[("f", BASE, 8), ("caller", BASE + 0x10, 0x0c)],
+    )
+    .in_aarch64();
+    let text = rendered(program);
+    assert!(text.contains("return (uint64_t)arg0;"), "{text}");
+    assert!(!text.contains("r2sleigh_residual"), "{text}");
 }

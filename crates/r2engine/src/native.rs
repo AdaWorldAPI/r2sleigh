@@ -863,7 +863,8 @@ fn resolved_alone(
             imports.record(*owner, facts);
         }
     }
-    let resolved = native.resolve(address, walked, &imports, false);
+    // As a root is: a body writing both result registers is read with what the program's calls read.
+    let resolved = native.resolve(address, walked, &imports, true);
     resolved.map_err(|refusal| match refusal.stopped() {
         true => Unreadable::Stopped,
         false => Unreadable::NotPrepared,
