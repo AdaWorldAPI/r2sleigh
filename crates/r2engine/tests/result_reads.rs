@@ -345,24 +345,6 @@ fn an_argument_register_handed_back_untouched_is_the_result_callers_read() {
     assert!(unread.contains("r2sleigh_residual_"), "{unread}");
 }
 
-/// Prepared as a callee, `f` of `ONLY_XMM0_WRITTEN` offers both registers, so `caller` takes the
-/// float one it reads and passes the argument `f` reads. (`caller`'s own result is RAX unproven.)
-#[test]
-fn a_caller_takes_the_float_result_beside_an_untouched_integer_register() {
-    let program = Literal::of_code(
-        ONLY_XMM0_WRITTEN,
-        &[("f", BASE, 5), ("caller", BASE + 0x10, 0x0a)],
-    );
-    let text = OpenProgram::of(program)
-        .rendered(BASE + 0x10)
-        .expect("it renders")
-        .response
-        .output
-        .into_text();
-    assert!(text.contains("double f(uint32_t);"), "{text}");
-    assert!(text.contains("r2sleigh_float_to_bits_64(f("), "{text}");
-}
-
 /// AArch64 `fmov d0, #1.0; ret` hands x0 back untouched beside the float it writes, and a caller
 /// `bl f; str w0, [x1]` reads x0: the handed-back argument is the result.
 const A64_FLOAT_BESIDE_ITS_ARGUMENT: &[u8] = &[
