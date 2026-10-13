@@ -902,7 +902,15 @@ fn float_result_written(
     graph: &SsaGraph,
     slots: &SourceConventionSlots,
 ) -> Option<(CanonicalStorageId, crate::liveout::FunctionLiveOut)> {
-    let float = slots.float_result_slot()?;
+    result_register_written(func, graph, slots.float_result_slot()?)
+}
+
+/// `slot` and its live-out, where an operation of the body reaches a return there through any merge.
+fn result_register_written(
+    func: &SSAFunction,
+    graph: &SsaGraph,
+    float: CanonicalStorageId,
+) -> Option<(CanonicalStorageId, crate::liveout::FunctionLiveOut)> {
     let live_out = crate::liveout::FunctionLiveOut::compute(func, graph, &[float]);
     let mut seen = crate::dense::IdSet::default();
     let mut pending = live_out.iter().collect::<Vec<_>>();
@@ -977,7 +985,7 @@ fn read_of(
     float: Option<CanonicalStorageId>,
 ) -> Option<ResultRead> {
     match (reads.integer, reads.float, float) {
-        (0, 0, _) if reads.all_overwrite(float.is_some()) => Some(ResultRead::None),
+        (0, 0, _) if reads.all_overwrite(float.is_some(), false) => Some(ResultRead::None),
         // A read past the call's block (the next call's argument, under IPA-RA) is still the
         // integer register the call leaves.
         (_, 0, None) => Some(ResultRead::Carrier(CarrierRead::Integer)),
@@ -1499,8 +1507,10 @@ fn recover_interface_inner(
     let closed_world = result == RecoveredFunctionResult::Unproven
         && machine_context.is_some_and(|context| context.accepts(r2source::Premise::ClosedWorld))
         && result_reads.is_some_and(|reads| {
-            // The float register is a result only where the body writes it.
-            reads.none_read(float_result_written(func, graph, slots).is_some())
+            // The float and second registers are results only where the body writes them.
+            let second = (slots.second_result_slot())
+                .is_some_and(|slot| result_register_written(func, graph, slot).is_some());
+            reads.none_read(float_result_written(func, graph, slots).is_some(), second)
         });
     if closed_world {
         result = RecoveredFunctionResult::Void;

@@ -680,3 +680,34 @@ fn a_result_another_way_in_may_read_stays_a_residual() {
         assert!(text.contains("return r2sleigh_residual_"), "{way}: {text}");
     }
 }
+
+/// `f` writes EAX, XMM0 and EDX; `caller` overwrites the first two after `call f` and, on one path
+/// past the call's block, stores RDX: a read of the second register no in-block scan sees.
+const SECOND_READ_LATER: &[u8] = &[
+    0x66, 0x0f, 0xef, 0xc0, // 1000 pxor xmm0, xmm0
+    0xb8, 0x07, 0x00, 0x00, 0x00, // 1004 mov eax, 7
+    0xba, 0x03, 0x00, 0x00, 0x00, // 1009 mov edx, 3
+    0xc3, // 100e ret
+    0x90, // 100f padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0x31, 0xc0, // 1015 xor eax, eax
+    0x66, 0x0f, 0xef, 0xc0, // 1017 pxor xmm0, xmm0
+    0x85, 0xc9, // 101b test ecx, ecx
+    0x74, 0x03, // 101d jz 0x1022
+    0x48, 0x89, 0x16, // 101f mov [rsi], rdx
+    0xc3, // 1022 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0x90, // 1023 padding
+];
+
+/// A second result register a later block reads keeps the result: the closed world needs every
+/// register the body writes overwritten before any read.
+#[test]
+fn a_second_register_read_past_the_call_s_block_keeps_the_result() {
+    let program = Literal::of_code(
+        SECOND_READ_LATER,
+        &[("f", BASE, 0x0f), ("caller", BASE + 0x10, 0x13)],
+    );
+    let text = rendered(program);
+    assert!(!text.starts_with("void f("), "{text}");
+}

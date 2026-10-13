@@ -73,7 +73,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for ResultReads {
         // Only a result no call reads asks whether the calls are every way in: the reference index
         // that answers reads every body.
         reads.exhaustive =
-            !unread && reads.all_overwrite(false) && only_called(db, callee, reads.calls);
+            !unread && reads.all_overwrite(false, false) && only_called(db, callee, reads.calls);
         (reads.calls > 0).then_some(reads)
     }
 }

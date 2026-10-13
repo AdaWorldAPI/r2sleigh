@@ -64,6 +64,7 @@ pub fn reads_after_call(
                 float = None;
             }
             if second.as_mut().is_some_and(|lane| lane.write(output)) {
+                reads.second_overwritten = 1;
                 second = None;
             }
         }

@@ -104,6 +104,8 @@ pub struct SourceResultReads {
     pub float_overwritten: u32,
     /// Calls whose first touch of the second integer result register after the call is a read.
     pub second: u32,
+    /// Calls that write every byte of the second integer result register before reading any.
+    pub second_overwritten: u32,
     /// Calls read.
     pub calls: u32,
     /// Whether these calls are every way the image enters the function: each caller read, and no
@@ -125,26 +127,28 @@ impl SourceResultReads {
                 .float_overwritten
                 .saturating_add(other.float_overwritten),
             second: self.second.saturating_add(other.second),
+            second_overwritten: (self.second_overwritten).saturating_add(other.second_overwritten),
             calls: self.calls.saturating_add(other.calls),
             exhaustive: self.exhaustive && other.exhaustive,
         }
     }
 
     /// Whether no call reads a result register and every call writes the integer one before reading
-    /// it, and the float one too where `float`.
-    pub const fn all_overwrite(&self, float: bool) -> bool {
+    /// it, the float one too where `float`, and the second integer one where `second`.
+    pub const fn all_overwrite(&self, float: bool, second: bool) -> bool {
         self.calls > 0
             && self.integer == 0
             && self.float == 0
             && self.second == 0
             && self.integer_overwritten == self.calls
             && (!float || self.float_overwritten == self.calls)
+            && (!second || self.second_overwritten == self.calls)
     }
 
     /// Whether, besides, these calls are every way in: under a closed world, the program reads no
     /// result of the function.
-    pub const fn none_read(&self, float: bool) -> bool {
-        self.exhaustive && self.all_overwrite(float)
+    pub const fn none_read(&self, float: bool, second: bool) -> bool {
+        self.exhaustive && self.all_overwrite(float, second)
     }
 }
 
