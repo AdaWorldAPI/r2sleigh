@@ -2005,6 +2005,7 @@ pub(crate) fn prepared_render_facts(prepared: &r2ssa::SsaArtifact) -> FunctionRe
         .collect::<r2ssa::dense::IdSet<_>>();
     let mut observable_values = observable_roots;
     let mut pending = observable_values.iter().collect::<Vec<_>>();
+    // A value is pushed only when first inserted into `observable_values`: O(values + inputs).
     while let Some(value) = pending.pop() {
         let Some(inst) = prepared
             .graph()

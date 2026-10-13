@@ -105,7 +105,7 @@ struct EvidenceBuilder<'a> {
     solver: IncrementalSolver<EvidenceNode>,
     /// Spellings asserted on a node, kept to name the solved type.
     spellings: Vec<(EvidenceNode, TypeId, CTypeLike)>,
-    /// Bounds already asserted, so a refinement round can tell what is new.
+    /// Bounds already asserted, so the pointer-base worklist can tell what is new.
     asserted: HashSet<(EvidenceNode, TypeId)>,
 }
 

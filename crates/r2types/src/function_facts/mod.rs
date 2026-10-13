@@ -335,6 +335,7 @@ impl FunctionRenderFacts {
         let mut pending = vec![value];
         let mut visited = r2ssa::dense::IdSet::default();
         let mut slots = BTreeSet::new();
+        // Each value is expanded once (`visited`), so the walk is O(values + inputs).
         while let Some(value) = pending.pop() {
             if !visited.insert(value) {
                 continue;
