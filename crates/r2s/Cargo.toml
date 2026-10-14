@@ -20,7 +20,8 @@ mimalloc = { version = "0.1", default-features = false }
 dhat = { version = "0.3", optional = true }
 
 [dev-dependencies]
-insta.workspace = true
+libtest-mimic.workspace = true
+similar.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 
@@ -32,6 +33,13 @@ sleigh = ["r2engine/x86", "r2engine/arm", "r2engine/riscv"]
 alloc-count = []
 # Profile the heap: dhat's allocator; with R2S_HEAP_PROFILE set, a script writes dhat-heap.json (`census.py heap`).
 dhat-heap = ["dep:dhat"]
+
+# radare2's r2r format over `tests/db/`, one trial per test (tests/db/README.md).
+[[test]]
+name = "golden"
+path = "tests/golden.rs"
+harness = false
+required-features = ["sleigh"]
 
 [lints]
 workspace = true

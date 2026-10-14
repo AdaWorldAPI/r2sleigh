@@ -1,0 +1,1065 @@
+# The census of rv_O0g: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/rv_O0g
+CMDS=afl
+EXPECT=<<EOF
+0x00001000    3     27 sym._init
+0x00001070    1     10 sym.imp.__cxa_finalize
+0x00001080    1     10 sym.imp.strlen
+0x00001090    1     10 sym.imp.__stack_chk_fail
+0x000010a0    1     10 sym.imp.printf
+0x000010b0    1     10 sym.imp.memcpy
+0x000010c0    1     37 sym._start
+0x000010f0    4     34 sym.deregister_tm_clones
+0x00001120    4     51 sym.register_tm_clones
+0x00001160    5     54 sym.__do_global_dtors_aux
+0x000011a0    1      9 sym.frame_dummy
+0x000011a9    1     24 sym.add
+0x000011c1    4     73 sym.sum_array
+0x0000120a    3     60 sym.classify
+0x00001277    4     49 sym.list_len
+0x000012a8    4     71 sym.mul_div
+0x000012ef    7    115 sym.avg
+0x00001362    4     47 sym.fact
+0x00001391    4     82 sym.fill
+0x000013e3    3    105 sym.copy_name
+0x0000144c    1     33 sym.sext
+0x0000146d    1     28 sym.rotl
+0x00001489    4     44 sym.bit_count
+0x000014b5   10    108 sym.find
+0x00001521    1     40 sym.dispatch
+0x00001549    6    640 sym.main
+0x000017cc    1     13 sym._fini
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001000
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001000
+EXPECT=<<EOF
+uint64_t _init(void)
+{
+    uint64_t rax_1;
+    uint64_t rax_2;
+    uint64_t rax_3;
+
+    /* r2dec proof: no individual construct is marked; 22 source obligations: 12 rendered, 10 elided, 0 refused; 6 statements rendered */
+    {
+        rax_1 = r2sleigh_load_u64((void*)(uint64_t)0x3fe8U);
+        if ((uint8_t)((uint64_t)rax_1 == (uint64_t)0U)) {
+            rax_3 = rax_1;
+        } else {
+            rax_2 = ((uint64_t(*)(void))(uint64_t)rax_1)();
+            rax_3 = rax_2;
+        }
+        {
+            return (uint64_t)rax_3;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001070
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001070
+EXPECT=<<EOF
+/* r2dec refused __cxa_finalize: r2sleigh: import stub at 0x1070; this symbol is the import `__cxa_finalize`, whose prototype nothing states. */
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001080
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001080
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x1080; this symbol is the import `strlen` and has no body of its own. */
+extern uint64_t strlen(const char*);
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001090
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001090
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x1090; this symbol is the import `__stack_chk_fail` and has no body of its own. */
+extern void __stack_chk_fail(void);
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000010a0
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000010a0
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x10a0; this symbol is the import `printf` and has no body of its own. */
+extern int32_t printf(const char*, ...);
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000010b0
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000010b0
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x10b0; this symbol is the import `memcpy` and has no body of its own. */
+extern void* memcpy(void*, const void*, uint64_t);
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000010c0
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000010c0
+EXPECT=<<EOF
+void _start(void)
+{
+    uint64_t tmp_55400_2;
+    uint64_t tmp_3cb80_1;
+
+    /* r2dec proof: 5 constructs are marked below; 28 source obligations: 2 rendered, 4 elided, 0 refused, 22 residual; 2 statements rendered; 1 held from entry, read as residuals (stack_p0) */
+    {
+        tmp_55400_2 = r2sleigh_residual_u64(1);
+        r2sleigh_residual_void(2); /* r2dec gap: StoreNotSpelled at 0x10c0:29 covering 1 op (render::values) */
+        r2sleigh_residual_void(3); /* r2dec gap: StoreNotSpelled at 0x10c0:32 covering 1 op (render::values) */
+        tmp_3cb80_1 = r2sleigh_load_u64((void*)(uint64_t)0x3fd8U);
+        r2sleigh_residual_void(4); /* r2dec gap: CallNotRendered at 0x10c0:68 covering 1 op (render::values) */
+        r2sleigh_residual_void(5); /* r2dec gap: TailTransferNotRendered at 0x10c0 (render::control) */
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000010f0
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000010f0
+EXPECT=<<EOF
+uint64_t deregister_tm_clones(void)
+{
+    uint64_t rax_2;
+    uint64_t rax_3;
+
+    /* r2dec proof: 1 construct is marked below; 17 source obligations: 13 rendered, 3 elided, 0 refused, 1 residual; 6 statements rendered */
+    {
+        if ((uint8_t)1U) {
+            rax_3 = 0x4020;
+        } else {
+            rax_2 = r2sleigh_load_u64((void*)(uint64_t)0x3fe0U);
+            if ((uint8_t)((uint64_t)rax_2 == (uint64_t)0U)) {
+                rax_3 = rax_2;
+            } else {
+                r2sleigh_residual_void(1); /* r2dec gap: UnresolvedIndirectBranch at 0x110f (render::control) */
+            }
+        }
+        {
+            return (uint64_t)rax_3;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001120
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001120
+EXPECT=<<EOF
+uint64_t register_tm_clones(void)
+{
+    uint64_t rax_3;
+    uint64_t rax_4;
+
+    /* r2dec proof: 1 construct is marked below; 23 source obligations: 19 rendered, 3 elided, 0 refused, 1 residual; 6 statements rendered */
+    {
+        if ((uint8_t)1U) {
+            rax_4 = 0;
+        } else {
+            rax_3 = r2sleigh_load_u64((void*)(uint64_t)0x3ff0U);
+            if ((uint8_t)((uint64_t)rax_3 == (uint64_t)0U)) {
+                rax_4 = rax_3;
+            } else {
+                r2sleigh_residual_void(1); /* r2dec gap: UnresolvedIndirectBranch at 0x1150 (render::control) */
+            }
+        }
+        {
+            return (uint64_t)rax_4;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001160
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001160
+EXPECT=<<EOF
+uint64_t __do_global_dtors_aux(void)
+{
+    void __cxa_finalize(uint64_t);
+    uint64_t deregister_tm_clones(void);
+    extern char __dso_handle[];
+    extern char __TMC_END__[];
+
+    uint8_t tmp_3e180_1;
+    uint64_t tmp_3ea80_1;
+    uint64_t rdi_1;
+
+    /* r2dec proof: 2 constructs are marked below; 39 source obligations: 19 rendered, 16 elided, 0 refused, 4 residual; 10 statements rendered; 2 data object types refused */
+    {
+        tmp_3e180_1 = r2sleigh_load_u8((void*)&__TMC_END__);
+        if ((uint8_t)((uint8_t)tmp_3e180_1 != (uint8_t)0U)) {
+            return r2sleigh_residual_u64(1);
+        } else {
+            tmp_3ea80_1 = r2sleigh_load_u64((void*)(uint64_t)0x3ff8U);
+            if ((uint8_t)((uint64_t)tmp_3ea80_1 == (uint64_t)0U)) {
+            } else {
+                rdi_1 = r2sleigh_load_u64((void*)&__dso_handle);
+                __cxa_finalize(rdi_1);
+            }
+            {
+                deregister_tm_clones();
+                r2sleigh_store_u8((void*)&__TMC_END__, (uint8_t)1U);
+                return r2sleigh_residual_u64(2);
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000011a0
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000011a0
+EXPECT=<<EOF
+uint64_t frame_dummy(void)
+{
+    uint64_t register_tm_clones(void);
+
+    /* r2dec proof: no individual construct is marked; 3 source obligations: 2 rendered, 1 elided, 0 refused; 1 statements rendered */
+    {
+        return register_tm_clones();
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000011a9
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000011a9
+EXPECT=<<EOF
+int32_t add(int32_t a, int32_t b)
+{
+    /* r2dec proof: no individual construct is marked; 10 source obligations: 3 rendered, 7 elided, 0 refused; 1 statements rendered */
+    {
+        return (int32_t)((uint32_t)b + (uint32_t)a);
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000011c1
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000011c1
+EXPECT=<<EOF
+uint32_t sum_array(const uint32_t* v, int32_t n)
+{
+    uint32_t tmp_11f00_1;
+    uint32_t tmp_11f00_2;
+    uint32_t tmp_11f00_3;
+    uint32_t tmp_6a80_7;
+    uint32_t tmp_6a80_14;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: no individual construct is marked; 42 source obligations: 28 rendered, 14 elided, 0 refused; 13 statements rendered */
+    {
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 24U), (uint32_t)0U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_11f00_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            if ((uint8_t)((int32_t)tmp_11f00_1 < (int32_t)n)) {
+                tmp_11f00_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                tmp_11f00_3 = r2sleigh_load_u32((void*)((uint64_t)v + (uint64_t)(int32_t)tmp_11f00_2 * 4U));
+                tmp_6a80_7 = r2sleigh_load_u32((void*)(uint64_t)(frame + 24U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 24U), (uint32_t)((uint32_t)tmp_6a80_7 + (uint32_t)tmp_11f00_3));
+                tmp_6a80_14 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)((uint32_t)tmp_6a80_14 + (uint32_t)1U));
+            } else {
+                break;
+            }
+        }
+        {
+            return (uint32_t)r2sleigh_load_u32((void*)(uint64_t)(frame + 24U));
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x0000120a
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x0000120a
+EXPECT=<<EOF
+int32_t classify(int32_t x)
+{
+    uint64_t rax_14;
+
+    /* r2dec proof: no individual construct is marked; 38 source obligations: 22 rendered, 16 elided, 0 refused; 19 statements rendered */
+    {
+        if ((uint8_t)((uint32_t)7U < (uint32_t)x)) {
+        } else {
+            switch ((uint32_t)x) {
+            case 7:
+                {
+                    rax_14 = 87;
+                    goto L1;
+                }
+            case 5:
+                {
+                    rax_14 = 65;
+                    goto L1;
+                }
+            case 4:
+                {
+                    rax_14 = 54;
+                    goto L1;
+                }
+            case 3:
+                {
+                    rax_14 = 43;
+                    goto L1;
+                }
+            case 2:
+                {
+                    rax_14 = 32;
+                    goto L1;
+                }
+            case 1:
+                {
+                    rax_14 = 21;
+                    goto L1;
+                }
+            case 0:
+                {
+                    rax_14 = 10;
+                    goto L1;
+                }
+            case 6:
+                break;
+            }
+        }
+        {
+            rax_14 = (uint64_t)0xffffffffU;
+        }
+        {
+L1: ;
+            return (int32_t)rax_14;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001277
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001277
+EXPECT=<<EOF
+struct node {
+    int32_t key;
+    struct node* next;
+    char tag[8];
+};
+
+int32_t list_len(const struct node* n)
+{
+    uint64_t tmp_11f80_1;
+    uint32_t tmp_6a80_4;
+    uint64_t tmp_11f80_2;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: no individual construct is marked; 37 source obligations: 23 rendered, 14 elided, 0 refused; 11 statements rendered */
+    {
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)n);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_11f80_1 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+            if ((uint8_t)((uint64_t)tmp_11f80_1 != (uint64_t)0U)) {
+                tmp_6a80_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)((uint32_t)tmp_6a80_4 + (uint32_t)1U));
+                tmp_11f80_2 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)r2sleigh_load_u64((void*)(uint64_t)((uint64_t)tmp_11f80_2 + (uint64_t)8U)));
+            } else {
+                break;
+            }
+        }
+        {
+            return (int32_t)r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000012a8
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000012a8
+EXPECT=<<EOF
+int64_t mul_div(int64_t a, int64_t b)
+{
+    uint64_t rax_4;
+    __uint128_t tmp_3d800_1;
+    uint64_t rdx_2;
+    __uint128_t tmp_49d00_1;
+    __uint128_t tmp_49d80_1;
+    __uint128_t tmp_49e00_1;
+    __uint128_t tmp_49e80_1;
+    __uint128_t tmp_49f80_1;
+    __uint128_t tmp_4a080_1;
+    uint64_t rax_5;
+    __uint128_t tmp_3d800_2;
+    uint64_t rdx_4;
+    __uint128_t tmp_49d00_2;
+    __uint128_t tmp_49d80_2;
+    __uint128_t tmp_49e00_2;
+    __uint128_t tmp_49e80_2;
+    __uint128_t tmp_49f80_2;
+    __uint128_t tmp_4a200_2;
+    uint64_t rdx_5;
+    uint64_t rax_10;
+
+    /* r2dec proof: 2 constructs are marked below; 41 source obligations: 31 rendered, 7 elided, 0 refused, 3 residual; 25 statements rendered */
+    {
+        if ((uint8_t)((uint64_t)b != (uint64_t)0U)) {
+            rax_4 = (uint64_t)((uint64_t)((uint64_t)a * (uint64_t)8U) - (uint64_t)a);
+            tmp_3d800_1 = (__uint128_t)(int64_t)rax_4;
+            rdx_2 = (uint64_t)((__uint128_t)tmp_3d800_1 >> 64U);
+            tmp_49d00_1 = (__uint128_t)(int64_t)b;
+            tmp_49d80_1 = (__uint128_t)(uint64_t)rdx_2;
+            tmp_49e00_1 = (__uint128_t)(uint32_t)64U >= (__uint128_t)128U ? (__uint128_t)0U : (__uint128_t)((__uint128_t)tmp_49d80_1 << (__uint128_t)(uint32_t)64U);
+            tmp_49e80_1 = (__uint128_t)(uint64_t)rax_4;
+            tmp_49f80_1 = (__uint128_t)((__uint128_t)tmp_49e00_1 | (__uint128_t)tmp_49e80_1);
+            tmp_4a080_1 = (__uint128_t)tmp_49f80_1 == (__uint128_t)((__uint128_t)0x8000000000000000U << 64U | (__uint128_t)0U) && (__uint128_t)tmp_49d00_1 == (__uint128_t)((__uint128_t)0xffffffffffffffffULL << 64U | (__uint128_t)0xffffffffffffffffULL) ? r2sleigh_residual_u128(1) : (__uint128_t)((__int128_t)tmp_49f80_1 / (__int128_t)tmp_49d00_1);
+            rax_5 = (uint64_t)((__uint128_t)tmp_4a080_1 >> 0U);
+            (void)((__uint128_t)tmp_49d00_1 == (__uint128_t)((__uint128_t)0xffffffffffffffffULL << 64U | (__uint128_t)0xffffffffffffffffULL) ? (__uint128_t)((__uint128_t)0U << 64U | (__uint128_t)0U) : (__uint128_t)((__int128_t)tmp_49f80_1 % (__int128_t)tmp_49d00_1));
+            tmp_3d800_2 = (__uint128_t)(int64_t)a;
+            rdx_4 = (uint64_t)((__uint128_t)tmp_3d800_2 >> 64U);
+            tmp_49d00_2 = (__uint128_t)(int64_t)b;
+            tmp_49d80_2 = (__uint128_t)(uint64_t)rdx_4;
+            tmp_49e00_2 = (__uint128_t)(uint32_t)64U >= (__uint128_t)128U ? (__uint128_t)0U : (__uint128_t)((__uint128_t)tmp_49d80_2 << (__uint128_t)(uint32_t)64U);
+            tmp_49e80_2 = (__uint128_t)(uint64_t)a;
+            tmp_49f80_2 = (__uint128_t)((__uint128_t)tmp_49e00_2 | (__uint128_t)tmp_49e80_2);
+            (void)((__uint128_t)tmp_49f80_2 == (__uint128_t)((__uint128_t)0x8000000000000000U << 64U | (__uint128_t)0U) && (__uint128_t)tmp_49d00_2 == (__uint128_t)((__uint128_t)0xffffffffffffffffULL << 64U | (__uint128_t)0xffffffffffffffffULL) ? r2sleigh_residual_u128(2) : (__uint128_t)((__int128_t)tmp_49f80_2 / (__int128_t)tmp_49d00_2));
+            tmp_4a200_2 = (__uint128_t)tmp_49d00_2 == (__uint128_t)((__uint128_t)0xffffffffffffffffULL << 64U | (__uint128_t)0xffffffffffffffffULL) ? (__uint128_t)((__uint128_t)0U << 64U | (__uint128_t)0U) : (__uint128_t)((__int128_t)tmp_49f80_2 % (__int128_t)tmp_49d00_2);
+            rdx_5 = (uint64_t)((__uint128_t)tmp_4a200_2 >> 0U);
+            rax_10 = (uint64_t)((uint64_t)rdx_5 + (uint64_t)rax_5);
+        } else {
+            rax_10 = 0;
+        }
+        {
+            return (int64_t)rax_10;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000012ef
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000012ef
+EXPECT=<<EOF
+double avg(const double* v, int32_t n)
+{
+    uint32_t tmp_11f00_1;
+    uint64_t tmp_6b00_6;
+    __uint128_t xmm0_7;
+    double tmp_lane_1348_8_13_1;
+    __uint128_t xmm0_10;
+    uint32_t tmp_11f00_2;
+    uint64_t tmp_6b00_3;
+    uint64_t tmp_6b00_4;
+    uint32_t tmp_6a80_6;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: no individual construct is marked; 53 source obligations: 38 rendered, 15 elided, 0 refused; 19 statements rendered */
+    {
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)0U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_11f00_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+            if ((uint8_t)((int32_t)tmp_11f00_1 < (int32_t)n)) {
+                tmp_11f00_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                tmp_6b00_3 = r2sleigh_load_u64((void*)((uint64_t)v + (uint64_t)(int32_t)tmp_11f00_2 * 8U));
+                tmp_6b00_4 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)r2sleigh_float_to_bits_64(r2sleigh_float_from_bits_64(tmp_6b00_3) + r2sleigh_float_from_bits_64(tmp_6b00_4)));
+                tmp_6a80_6 = r2sleigh_load_u32((void*)(uint64_t)(frame + 20U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 20U), (uint32_t)((uint32_t)tmp_6a80_6 + (uint32_t)1U));
+            } else {
+                break;
+            }
+        }
+        {
+            if ((uint8_t)((uint32_t)n == (uint32_t)0U)) {
+                xmm0_10 = 0;
+            } else {
+                tmp_6b00_6 = r2sleigh_load_u64((void*)(uint64_t)(frame + 24U));
+                xmm0_7 = (__uint128_t)(((__uint128_t)0U & (__uint128_t)((__uint128_t)0U << 64U | (__uint128_t)0xffffffffffffffffULL)) | ((__uint128_t)(uint64_t)0U & (__uint128_t)((__uint128_t)0U << 64U | (__uint128_t)0xffffffffffffffffULL)) << 64U);
+                tmp_lane_1348_8_13_1 = r2sleigh_float_from_bits_64(tmp_6b00_6) / (double)(int32_t)n;
+                xmm0_10 = (__uint128_t)(((__uint128_t)xmm0_7 & (__uint128_t)((__uint128_t)0xffffffffffffffffULL << 64U | (__uint128_t)0U)) | ((__uint128_t)r2sleigh_float_to_bits_64(tmp_lane_1348_8_13_1) & (__uint128_t)((__uint128_t)0U << 64U | (__uint128_t)0xffffffffffffffffULL)) << 0U);
+            }
+            {
+                return (double)r2sleigh_float_from_bits_64((uint64_t)xmm0_10);
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001362
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001362
+EXPECT=<<EOF
+int32_t fact(int32_t n)
+{
+    uint64_t rax_3;
+    uint64_t rax_6;
+
+    /* r2dec proof: no individual construct is marked; 30 source obligations: 20 rendered, 10 elided, 0 refused; 5 statements rendered */
+    {
+        if ((uint8_t)((int32_t)n <= (int32_t)1U)) {
+            rax_6 = 1;
+        } else {
+            rax_3 = (uint64_t)(uint32_t)fact((uint32_t)((uint32_t)n - (uint32_t)1U));
+            rax_6 = (uint64_t)(uint32_t)((uint64_t)((uint64_t)(int32_t)((uint64_t)rax_3 >> 0U) * (uint64_t)(int32_t)n) >> 0U);
+        }
+        {
+            return (int32_t)rax_6;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001391
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001391
+EXPECT=<<EOF
+void fill(int32_t v)
+{
+    extern int32_t g_counter;
+    extern int32_t g_table[16];
+
+    uint32_t tmp_11f00_1;
+    uint32_t tmp_lane_13cf_0_7_1;
+    uint32_t tmp_11f00_3;
+    uint32_t tmp_11f00_4;
+    uint32_t tmp_6a80_6;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: no individual construct is marked; 41 source obligations: 28 rendered, 13 elided, 0 refused; 13 statements rendered; 2 data object types supplied by the source */
+    {
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_11f00_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            if ((uint8_t)((int32_t)tmp_11f00_1 <= (int32_t)15U)) {
+                tmp_11f00_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                tmp_11f00_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                r2sleigh_store_u32((void*)((uint64_t)((uint64_t)(int32_t)tmp_11f00_4 * (uint64_t)4U) + (uint64_t)&g_table), (uint32_t)((uint64_t)((uint64_t)(uint32_t)v + (uint64_t)(uint32_t)tmp_11f00_3) >> 0U));
+                tmp_6a80_6 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)((uint32_t)tmp_6a80_6 + (uint32_t)1U));
+            } else {
+                break;
+            }
+        }
+        {
+            tmp_lane_13cf_0_7_1 = (uint32_t)g_counter;
+            g_counter = (int32_t)((uint32_t)v + (uint32_t)tmp_lane_13cf_0_7_1);
+            return;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000013e3
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000013e3
+EXPECT=<<EOF
+uint64_t copy_name(char* dst, const char* src, uint64_t cap)
+{
+    void* memcpy(void*, const void*, uint64_t);
+    uint64_t strlen(const char*);
+
+    uint64_t rax_2;
+    uint64_t tmp_11f80_2;
+    uint64_t tmp_11f80_5;
+    uint64_t tmp_11f80_9;
+    uint64_t tmp_11f80_10;
+    _Alignas(16) uint8_t frame[72];
+
+    /* r2dec proof: no individual construct is marked; 52 source obligations: 33 rendered, 19 elided, 0 refused; 11 statements rendered; 2 callee prototypes supplied by the source */
+    {
+        rax_2 = strlen(src);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 56U), (uint64_t)rax_2);
+        tmp_11f80_2 = r2sleigh_load_u64((void*)(uint64_t)(frame + 56U));
+        if ((uint8_t)((uint64_t)tmp_11f80_2 < (uint64_t)cap)) {
+        } else {
+            r2sleigh_store_u64((void*)(uint64_t)(frame + 56U), (uint64_t)((uint64_t)cap - (uint64_t)1U));
+        }
+        {
+            tmp_11f80_5 = r2sleigh_load_u64((void*)(uint64_t)(frame + 56U));
+            memcpy((void*)(uint64_t)dst, (const void*)(uint64_t)src, tmp_11f80_5);
+            tmp_11f80_9 = r2sleigh_load_u64((void*)(uint64_t)(frame + 56U));
+            r2sleigh_store_u8((void*)((uint64_t)dst + (uint64_t)tmp_11f80_9 * 1U), (uint8_t)0U);
+            tmp_11f80_10 = r2sleigh_load_u64((void*)(uint64_t)(frame + 56U));
+            return (uint64_t)tmp_11f80_10;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x0000144c
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x0000144c
+EXPECT=<<EOF
+int16_t sext(int8_t x)
+{
+    uint64_t rdi_1;
+    uint64_t rax_1;
+    uint8_t tmp_11e00_1;
+    uint16_t tmp_lane_144c_b_3_1;
+    uint64_t rax_2;
+    _Alignas(16) uint8_t frame[24];
+
+    /* r2dec proof: 1 construct is marked below; 24 source obligations: 14 rendered, 9 elided, 0 refused, 1 residual; 7 statements rendered; 1 argument slot read with no parameter, read as residuals (RDI_0) */
+    {
+        rdi_1 = (uint64_t)(((uint64_t)r2sleigh_residual_u64(1) & (uint64_t)-0x100) | ((uint64_t)(uint8_t)x & (uint64_t)255U) << 0U);
+        rax_1 = (uint64_t)(uint32_t)((uint64_t)rdi_1 >> 0U);
+        r2sleigh_store_u8((void*)(uint64_t)(frame + 12U), (uint8_t)x);
+        tmp_11e00_1 = r2sleigh_load_u8((void*)(uint64_t)(frame + 12U));
+        tmp_lane_144c_b_3_1 = (uint16_t)(int8_t)tmp_11e00_1;
+        rax_2 = (uint64_t)(((uint64_t)rax_1 & (uint64_t)0xffffffffffff0000U) | ((uint64_t)tmp_lane_144c_b_3_1 & (uint64_t)0xffffU) << 0U);
+        return (int16_t)((uint32_t)((uint64_t)rax_2 >> 0U) - (uint32_t)((uint64_t)((uint64_t)rax_2 * (uint64_t)4U) >> 0U));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x0000146d
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x0000146d
+EXPECT=<<EOF
+uint32_t rotl(uint32_t x, int32_t r)
+{
+    uint8_t tmp_63380_1;
+
+    /* r2dec proof: no individual construct is marked; 15 source obligations: 8 rendered, 7 elided, 0 refused; 2 statements rendered */
+    {
+        tmp_63380_1 = (uint8_t)((uint32_t)(uint8_t)((uint32_t)r >> 0U) & (uint32_t)(uint8_t)31U);
+        return (uint32_t)((uint32_t)((uint32_t)tmp_63380_1 >= (uint32_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)x << (uint32_t)tmp_63380_1)) | (uint32_t)((uint32_t)(uint8_t)((uint32_t)(uint8_t)32U - (uint32_t)tmp_63380_1) >= (uint32_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)x >> (uint32_t)(uint8_t)((uint32_t)(uint8_t)32U - (uint32_t)tmp_63380_1))));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001489
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001489
+EXPECT=<<EOF
+int32_t bit_count(uint32_t x)
+{
+    uint32_t tmp_11f00_1;
+    uint32_t tmp_11f00_2;
+    uint32_t tmp_6a80_3;
+    uint32_t tmp_6a80_10;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: no individual construct is marked; 38 source obligations: 24 rendered, 14 elided, 0 refused; 12 statements rendered */
+    {
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 12U), (uint32_t)x);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_11f00_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+            if ((uint8_t)((uint32_t)tmp_11f00_1 != (uint32_t)0U)) {
+                tmp_11f00_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+                tmp_6a80_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 12U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 12U), (uint32_t)((uint32_t)((uint32_t)tmp_11f00_2 - (uint32_t)1U) & (uint32_t)tmp_6a80_3));
+                tmp_6a80_10 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)((uint32_t)tmp_6a80_10 + (uint32_t)1U));
+            } else {
+                break;
+            }
+        }
+        {
+            return (int32_t)r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000014b5
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000014b5
+EXPECT=<<EOF
+int32_t find(const int32_t* v, int32_t n, int32_t key)
+{
+    uint32_t tmp_11f00_1;
+    uint32_t tmp_11f00_2;
+    uint32_t tmp_11f00_3;
+    uint32_t tmp_11f00_5;
+    uint32_t tmp_11f00_6;
+    uint32_t tmp_11f00_7;
+    uint32_t tmp_6a80_7;
+    uint64_t rax_14;
+    _Alignas(16) uint8_t frame[40];
+
+    /* r2dec proof: no individual construct is marked; 58 source obligations: 44 rendered, 14 elided, 0 refused; 25 statements rendered */
+    {
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)0U);
+        for (; ; ) {
+            tmp_11f00_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            if ((uint8_t)((int32_t)tmp_11f00_1 < (int32_t)n)) {
+                tmp_11f00_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                tmp_11f00_3 = r2sleigh_load_u32((void*)((uint64_t)v + (uint64_t)(int32_t)tmp_11f00_2 * 4U));
+                if ((uint8_t)((uint32_t)key != (uint32_t)tmp_11f00_3)) {
+                    tmp_11f00_6 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                    tmp_11f00_7 = r2sleigh_load_u32((void*)((uint64_t)v + (uint64_t)(int32_t)tmp_11f00_6 * 4U));
+                    if ((uint8_t)((int32_t)key < (int32_t)tmp_11f00_7)) {
+                        goto L2;
+                    } else {
+                        tmp_6a80_7 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+                        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)((uint32_t)tmp_6a80_7 + (uint32_t)1U));
+                    }
+                } else {
+                    goto L0;
+                }
+            } else {
+                break;
+            }
+        }
+        {
+            goto L3;
+        }
+        {
+L0: ;
+            tmp_11f00_5 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            rax_14 = (uint64_t)(uint32_t)tmp_11f00_5;
+            goto L4;
+        }
+        {
+L2: ;
+        }
+        {
+L3: ;
+            rax_14 = (uint64_t)0xffffffffU;
+        }
+        {
+L4: ;
+            return (int32_t)rax_14;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001521
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001521
+EXPECT=<<EOF
+int32_t dispatch(int32_t (*fn)(int32_t, int32_t), int32_t a)
+{
+    uint32_t tmp_lane_1521_18_2_1;
+    uint64_t rax_3;
+
+    /* r2dec proof: no individual construct is marked; 26 source obligations: 16 rendered, 10 elided, 0 refused; 3 statements rendered */
+    {
+        tmp_lane_1521_18_2_1 = (uint32_t)((uint64_t)((uint64_t)(uint32_t)a + (uint64_t)1U) >> 0U);
+        rax_3 = ((uint64_t(*)(uint64_t, uint64_t, uint64_t, uint64_t))(uint64_t)fn)((uint64_t)(uint32_t)a, (uint64_t)(uint32_t)tmp_lane_1521_18_2_1, (uint64_t)fn, (uint64_t)(uint32_t)tmp_lane_1521_18_2_1);
+        return (int32_t)rax_3;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001549
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x00001549
+EXPECT=<<EOF
+struct node {
+    int32_t key;
+    struct node* next;
+    char tag[8];
+};
+
+int32_t main(int32_t argc, char** argv)
+{
+    int32_t add(int32_t, int32_t);
+    double avg(const double*, int32_t);
+    int32_t bit_count(uint32_t);
+    int32_t classify(int32_t);
+    uint64_t copy_name(char*, const char*, uint64_t);
+    int32_t dispatch(int32_t(*)(int32_t, int32_t), int32_t);
+    int32_t fact(int32_t);
+    void fill(int32_t);
+    int32_t find(const int32_t*, int32_t, int32_t);
+    int32_t list_len(const struct node*);
+    int64_t mul_div(int64_t, int64_t);
+    int32_t printf(const char*, ...);
+    uint32_t rotl(uint32_t, int32_t);
+    int16_t sext(int8_t);
+    uint32_t sum_array(const uint32_t*, int32_t);
+    extern const int8_t* g_msg;
+
+    uint32_t tmp_11f00_1;
+    uint64_t rax_6;
+    uint64_t rax_8;
+    uint32_t tmp_11f00_2;
+    uint32_t tmp_11f00_3;
+    uint64_t rax_11;
+    uint32_t tmp_6a80_13;
+    uint64_t rax_13;
+    uint32_t tmp_6a80_20;
+    uint32_t tmp_11f00_4;
+    uint64_t rax_16;
+    uint64_t rax_17;
+    uint32_t tmp_6a80_27;
+    __uint128_t xmm0_7;
+    uint64_t tmp_lane_1549_e1_21_1;
+    uint32_t tmp_6a80_34;
+    uint64_t rax_21;
+    uint32_t tmp_6a80_41;
+    uint32_t tmp_11f00_5;
+    uint32_t tmp_11f00_6;
+    uint64_t tmp_11f80_2;
+    uint64_t tmp_11f80_3;
+    uint64_t rax_27;
+    uint64_t rax_28;
+    uint32_t tmp_6a80_48;
+    uint32_t tmp_11f00_7;
+    uint64_t rax_31;
+    uint32_t tmp_11f00_8;
+    uint64_t rax_33;
+    uint64_t rax_34;
+    uint32_t tmp_11f00_9;
+    uint64_t rax_38;
+    uint32_t tmp_11f00_10;
+    uint64_t rax_41;
+    uint32_t tmp_6a80_56;
+    uint32_t tmp_11f00_11;
+    uint32_t tmp_11f00_12;
+    uint32_t tmp_lane_16f0_94_4d_1;
+    _Alignas(16) uint8_t frame[248];
+
+    /* r2dec proof: 1 construct is marked below; 361 source obligations: 267 rendered, 88 elided, 0 refused, 5 compiler-inserted (assuming ub-free), 1 residual; 106 statements rendered; 1 data object type supplied by the source; 15 callee prototypes supplied by the source */
+    {
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)argc);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)argv);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 48U), (uint32_t)1U);
+        r2sleigh_store_u32((void*)((uint64_t)(frame + 48U) + (uint64_t)4U), (uint32_t)2U);
+        r2sleigh_store_u32((void*)((uint64_t)(frame + 48U) + (uint64_t)8U), (uint32_t)3U);
+        r2sleigh_store_u32((void*)((uint64_t)(frame + 48U) + (uint64_t)12U), (uint32_t)4U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 64U), (uint32_t)3U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)8U), (uint64_t)0U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 64U) + (uint64_t)16U), (uint64_t)99U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 96U), (uint32_t)2U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 96U) + (uint64_t)8U), (uint64_t)(frame + 64U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 96U) + (uint64_t)16U), (uint64_t)98U);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 128U), (uint32_t)1U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 128U) + (uint64_t)8U), (uint64_t)(frame + 96U));
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 128U) + (uint64_t)16U), (uint64_t)97U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 160U), (uint64_t)0x3ff0000000000000U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 160U) + (uint64_t)8U), (uint64_t)0x4004000000000000U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 160U) + (uint64_t)16U), (uint64_t)0x400c000000000000U);
+        tmp_11f00_1 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+        rax_6 = (uint64_t)(uint32_t)add((int32_t)tmp_11f00_1, 3);
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint64_t)rax_6 >> 0U));
+        rax_8 = (uint64_t)sum_array((const uint32_t*)(uint64_t)(frame + 48U), 4);
+        tmp_11f00_2 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)((uint64_t)rax_8 >> 0U) + (uint32_t)tmp_11f00_2));
+        tmp_11f00_3 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+        rax_11 = (uint64_t)(uint32_t)classify((int32_t)tmp_11f00_3);
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        tmp_6a80_13 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)((uint64_t)rax_11 >> 0U) + (uint32_t)tmp_6a80_13));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        rax_13 = (uint64_t)(uint32_t)list_len((const struct node*)(uint64_t)(frame + 128U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        tmp_6a80_20 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)((uint64_t)rax_13 >> 0U) + (uint32_t)tmp_6a80_20));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        tmp_11f00_4 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+        rax_16 = (uint64_t)(int32_t)((uint64_t)((uint64_t)(int32_t)tmp_11f00_4 * (uint64_t)100U) >> 0U);
+        rax_17 = (uint64_t)mul_div((int64_t)rax_16, 3);
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        tmp_6a80_27 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)((uint64_t)rax_17 >> 0U) + (uint32_t)tmp_6a80_27));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        xmm0_7 = (__uint128_t)r2sleigh_float_to_bits_64(avg((const double*)(uint64_t)(frame + 160U), 3));
+        tmp_lane_1549_e1_21_1 = (uint64_t)((__uint128_t)xmm0_7 >> 0U);
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        tmp_6a80_34 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)(r2sleigh_float_from_bits_64(tmp_lane_1549_e1_21_1) > -2147483649.0 && r2sleigh_float_from_bits_64(tmp_lane_1549_e1_21_1) < 2147483648.0 ? (int32_t)r2sleigh_float_from_bits_64(tmp_lane_1549_e1_21_1) : r2sleigh_residual_i32(1)) + (uint32_t)tmp_6a80_34));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        rax_21 = (uint64_t)(uint32_t)fact(5);
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        tmp_6a80_41 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)((uint64_t)rax_21 >> 0U) + (uint32_t)tmp_6a80_41));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+        tmp_11f00_5 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+        fill((int32_t)tmp_11f00_5);
+        tmp_11f00_6 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+        if ((uint8_t)((int32_t)tmp_11f00_6 <= (int32_t)1U)) {
+            rax_27 = (uint64_t)g_msg;
+        } else {
+            tmp_11f80_2 = r2sleigh_load_u64((void*)(uint64_t)(frame + 16U));
+            tmp_11f80_3 = r2sleigh_load_u64((void*)((uint64_t)tmp_11f80_2 + (uint64_t)1U * 8U));
+            rax_27 = tmp_11f80_3;
+        }
+        {
+            rax_28 = copy_name((char*)(uint64_t)(frame + 192U), (const char*)rax_27, 16);
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            tmp_6a80_48 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)((uint64_t)rax_28 >> 0U) + (uint32_t)tmp_6a80_48));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            tmp_11f00_7 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            rax_31 = (uint64_t)(uint16_t)sext((int8_t)((uint32_t)tmp_11f00_7 >> 0U));
+            tmp_11f00_8 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            rax_33 = (uint64_t)rotl((uint32_t)tmp_11f00_8, 3);
+            rax_34 = (uint64_t)(uint32_t)bit_count(0xf0f0);
+            tmp_11f00_9 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)((uint64_t)((uint64_t)(uint32_t)((uint32_t)(int16_t)((uint64_t)rax_31 >> 0U) + (uint32_t)((uint64_t)rax_33 >> 0U)) + (uint64_t)rax_34) >> 0U) + (uint32_t)tmp_11f00_9));
+            rax_38 = (uint64_t)(uint32_t)find((const int32_t*)(uint64_t)0x4040U, 16, 7);
+            tmp_11f00_10 = r2sleigh_load_u32((void*)(uint64_t)(frame + 28U));
+            rax_41 = (uint64_t)(uint32_t)dispatch((int32_t(*)(int32_t, int32_t))(uint64_t)0x11a9U, (int32_t)tmp_11f00_10);
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            tmp_6a80_56 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            r2sleigh_store_u32((void*)(uint64_t)(frame + 44U), (uint32_t)((uint32_t)tmp_6a80_56 + (uint32_t)((uint32_t)((uint64_t)rax_38 >> 0U) + (uint32_t)((uint64_t)rax_41 >> 0U))));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            (void)r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            tmp_11f00_11 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            printf("%d %s\n", (uint64_t)(uint32_t)tmp_11f00_11, (uint64_t)(frame + 192U));
+            tmp_11f00_12 = r2sleigh_load_u32((void*)(uint64_t)(frame + 44U));
+            tmp_lane_16f0_94_4d_1 = (uint32_t)(uint8_t)((uint32_t)tmp_11f00_12 >> 0U);
+            {
+                return (int32_t)tmp_lane_16f0_94_4d_1;
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x000017cc
+FILE=tests/fixtures/rv_O0g
+CMDS=aa; pdd @ 0x000017cc
+EXPECT=<<EOF
+void _fini(void)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 1 rendered, 6 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN

@@ -927,56 +927,8 @@ fn the_image_reports_what_the_container_states() {
     assert!(run.out.contains("lang     c\n"), "{}", run.out);
 }
 
-/// The three tiers, pinned.
-///
-/// A lowering change should move exactly one of these. When one moves, read
-/// the new output and judge it before blessing it: a snapshot that differs is
-/// not a snapshot that is wrong, and a snapshot that agrees is evidence that
-/// nothing moved rather than evidence that the output is right.
-mod tiers {
-    use super::{FNV1A32, r2s};
-
-    #[test]
-    fn low_tier_is_pinned() {
-        let run = r2s(&format!("s {FNV1A32}; pdil"));
-        assert!(run.ok, "{}", run.out);
-        insta::assert_snapshot!("fnv1a32_r2il", run.out);
-    }
-
-    #[test]
-    fn rendered_c_is_pinned() {
-        let run = r2s(&format!("s {FNV1A32}; pdd"));
-        assert!(run.ok, "{}", run.out);
-        insta::assert_snapshot!("fnv1a32_c", run.out);
-    }
-}
-
-/// The listing, pinned on one binary per architecture the tree carries.
-///
-/// `pd` is the command with the least protection and the most rewriting: every
-/// line it prints is built by successive substitutions over one formatted
-/// string, and until now a change to any of them was caught only by a
-/// comparison against radare2 that lives outside this repository. These pin the
-/// spellings that rewriting is meant to preserve, so a listing that changes is
-/// a listing someone decided to change.
-///
-/// What each one covers, beyond the decode:
-///
-/// - x86-64: the `ptr` and displacement spellings, and `jz` printed as `jne`'s
-///   comparison rather than its flag.
-/// - aarch64: a Mach-O whose operands reach data through a page and an offset.
-/// - ARM 32-bit: the register roles (`fp`, `ip`, `sp`, `lr`, `pc`), the `mov`
-///   alias for the encoding Sleigh spells `cpy`, and a big-endian Thumb-2
-///   decode, which is the one place this engine reads an instruction radare2
-///   reads wrongly.
-///
-/// Two spellings in these recordings are ours and not radare2's, and they are
-/// pinned so that changing them is a decision rather than an accident. The x86
-/// snapshot writes `nop word ptr cs:[rax + rax*0x1]`, because the rule that
-/// drops `ptr` matches ` ptr [` and this operand carries a segment between the
-/// two; and it writes a sixty-four-bit immediate signed, as Sleigh does, where
-/// radare2 writes it unsigned. The listing comparison against radare2
-/// normalises integers, so neither shows up there.
+/// What the listing states beyond its text; the listings themselves are golden files in
+/// `tests/db/cmd/listing`.
 mod listing {
     use super::{FNV1A32, Run, on, r2s};
     use std::path::PathBuf;
@@ -988,23 +940,6 @@ mod listing {
                 .join(fixture),
             script,
         )
-    }
-
-    #[test]
-    fn the_x86_listing_is_pinned() {
-        let run = r2s(&format!("s {FNV1A32}; pd 24"));
-        assert!(run.ok, "{}", run.out);
-        insta::assert_snapshot!("fnv1a32_pd", run.out);
-    }
-
-    /// The annotations, on the one pinned binary that has all three shapes:
-    /// a call through a relocated slot, a jump through an unnamed one, and a
-    /// compare against a data byte.
-    #[test]
-    fn what_a_line_reads_is_pinned() {
-        let run = super::r2s("s 0x401000; pd 24");
-        assert!(run.ok, "{}", run.out);
-        insta::assert_snapshot!("reads_pd", run.out);
     }
 
     /// The listing radare2 cannot write: no range that is one value the instruction fixes or only the width it wrote, each note ending in its rung.
@@ -1032,7 +967,6 @@ mod listing {
         ] {
             assert!(header.contains(said), "{said}: {}", run.out);
         }
-        insta::assert_snapshot!("proved_pdf", run.out);
     }
 
     /// Each arm of siphash24's tail switch is labelled with the cases the dispatch sends there, as radare2 labels them.
@@ -1061,7 +995,6 @@ mod listing {
         }
         let dispatch = "; switch table (8 cases) at 0x402020 (solved)";
         assert!(listed.out.contains(dispatch), "{}", listed.out);
-        insta::assert_snapshot!("siphash_pdf", listed.out);
     }
 
     /// A line that hands a string to a call says the text beside the address, on the rung the address stands on.
@@ -1112,16 +1045,6 @@ mod listing {
         assert!(proved.out.contains(" in ["), "{}", proved.out);
     }
 
-    #[test]
-    fn the_aarch64_listing_is_pinned() {
-        let run = at(
-            "tests/fixtures/code_pointer_table_O0",
-            "s 0x100000420; pd 24",
-        );
-        assert!(run.ok, "{}", run.out);
-        insta::assert_snapshot!("table_dispatch_pd", run.out);
-    }
-
     /// `pdf` folds each block of the walked body across its lines, so the page and its offset are one address and the table load reads it; `pd` folds each line alone.
     #[test]
     fn the_aarch64_function_listing_folds_each_block() {
@@ -1149,7 +1072,6 @@ mod listing {
         assert!(read.out.starts_with(named), "{}", read.out);
         let plain = at(fixture, "s 0x100000420; pd 24");
         assert!(!plain.out.contains("0x100004010"), "{}", plain.out);
-        insta::assert_snapshot!("table_dispatch_pdf", run.out);
     }
 
     /// `bl sym.imp.memcpy` lands on a stub in `__stubs`, which the container
@@ -1219,13 +1141,6 @@ mod listing {
         let refs = at(fixture, "axt 0x100000fd8");
         let call = "sym._main 0x100000e18 [CALL:--x] bl sym.imp.memcpy\n";
         assert!(refs.out.starts_with(call), "{}", refs.out);
-    }
-
-    #[test]
-    fn the_arm_listing_is_pinned() {
-        let run = at("crates/r2image/tests/data/arm_thumb_entry.elf", "pd 12");
-        assert!(run.ok, "{}", run.out);
-        insta::assert_snapshot!("arm_thumb_pd", run.out);
     }
 }
 

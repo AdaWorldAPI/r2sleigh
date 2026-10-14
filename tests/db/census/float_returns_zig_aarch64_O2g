@@ -1,0 +1,429 @@
+# The census of float_returns_zig_aarch64_O2g: what `aa; pdd` renders for each function `afl` lists.
+# Regenerate with `scripts/census.py golden` when `afl` moves, then bless.
+
+NAME=afl
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=afl
+EXPECT=<<EOF
+0x010104e8    1     52 sym._start
+0x01010520    1     12 sym.half
+0x0101052c    1     56 sym.twice_half
+0x01010564   10    128 sym.loop_sum
+0x010105e4    1     76 sym.main
+0x01010630    4    116 sym.__libc_csu_init
+0x010106a4    1      4 sym.__libc_csu_fini
+0x010106d0    1     16 sym.imp.__libc_start_main
+0x010106e0    1     16 sym.imp.abort
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x010104e8
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010104e8
+EXPECT=<<EOF
+void _start(uint64_t arg0)
+{
+    /* r2dec proof: 2 constructs are marked below; 22 source obligations: 0 rendered, 3 elided, 0 refused, 19 residual; 0 statements rendered; 1 callee prototype supplied by the source */
+    {
+        r2sleigh_residual_void(1); /* r2dec gap: CallNotRendered at 0x10104e8:24 covering 1 op (render::values) */
+        r2sleigh_residual_void(2); /* r2dec gap: TransferNotFollowed at 0x10104e8 (render::control) */
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x01010520
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x01010520
+EXPECT=<<EOF
+double half(double x)
+{
+    /* r2dec proof: no individual construct is marked; 3 source obligations: 3 rendered, 0 elided, 0 refused; 1 statements rendered */
+    {
+        return (double)(x * r2sleigh_float_from_bits_64((uint64_t)0x3fe0000000000000U));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x0101052c
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x0101052c
+EXPECT=<<EOF
+struct r2sleigh_bits_256 {
+    uint8_t bytes[32];
+};
+
+static inline uint64_t r2sleigh_bits_extract_256_64(struct r2sleigh_bits_256 carrier, uint64_t at)
+{
+    uint64_t field = 0;
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        const uint64_t from = at + bit;
+        if (from < 256u && ((carrier.bytes[from / 8] >> (from % 8)) & 1) != 0) {
+            field = (uint64_t)(field | ((uint64_t)1 << bit));
+        }
+    }
+    return field;
+}
+
+static inline struct r2sleigh_bits_256 r2sleigh_bits_zero_extend_64_256(uint64_t field)
+{
+    struct r2sleigh_bits_256 carrier = {{0}};
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        if (((field >> bit) & 1) != 0) {
+            carrier.bytes[bit / 8] = (uint8_t)(carrier.bytes[bit / 8] | (1u << (bit % 8)));
+        }
+    }
+    return carrier;
+}
+
+double twice_half(double x)
+{
+    double half(double);
+
+    struct r2sleigh_bits_256 z0_1;
+    uint64_t tmp_lane_101052c_1d_10_1;
+    struct r2sleigh_bits_256 z0_6;
+    uint64_t tmp_lane_101052c_27_1b_1;
+
+    /* r2dec proof: no individual construct is marked; 18 source obligations: 14 rendered, 4 elided, 0 refused; 5 statements rendered; 2 callee prototypes supplied by the source */
+    {
+        z0_1 = r2sleigh_bits_zero_extend_64_256((uint64_t)r2sleigh_float_to_bits_64(half(x)));
+        tmp_lane_101052c_1d_10_1 = r2sleigh_bits_extract_256_64(z0_1, 0U);
+        z0_6 = r2sleigh_bits_zero_extend_64_256((uint64_t)r2sleigh_float_to_bits_64(half(x + r2sleigh_float_from_bits_64((uint64_t)0x3ff0000000000000U))));
+        tmp_lane_101052c_27_1b_1 = r2sleigh_bits_extract_256_64(z0_6, 0U);
+        return (double)(r2sleigh_float_from_bits_64(tmp_lane_101052c_1d_10_1) + r2sleigh_float_from_bits_64(tmp_lane_101052c_27_1b_1));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x01010564
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x01010564
+EXPECT=<<EOF
+struct r2sleigh_bits_256 {
+    uint8_t bytes[32];
+};
+
+static inline uint64_t r2sleigh_bits_extract_256_64(struct r2sleigh_bits_256 carrier, uint64_t at)
+{
+    uint64_t field = 0;
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        const uint64_t from = at + bit;
+        if (from < 256u && ((carrier.bytes[from / 8] >> (from % 8)) & 1) != 0) {
+            field = (uint64_t)(field | ((uint64_t)1 << bit));
+        }
+    }
+    return field;
+}
+
+static inline struct r2sleigh_bits_256 r2sleigh_bits_insert_256_64(struct r2sleigh_bits_256 carrier, uint64_t field, uint64_t at)
+{
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        const uint64_t to = at + bit;
+        if (to < 256u) {
+            const unsigned mask = 1u << (to % 8);
+            if (((field >> bit) & 1) != 0) {
+                carrier.bytes[to / 8] = (uint8_t)(carrier.bytes[to / 8] | mask);
+            } else {
+                carrier.bytes[to / 8] = (uint8_t)(carrier.bytes[to / 8] & ~mask);
+            }
+        }
+    }
+    return carrier;
+}
+
+static inline struct r2sleigh_bits_256 r2sleigh_bits_zero_extend_64_256(uint64_t field)
+{
+    struct r2sleigh_bits_256 carrier = {{0}};
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        if (((field >> bit) & 1) != 0) {
+            carrier.bytes[bit / 8] = (uint8_t)(carrier.bytes[bit / 8] | (1u << (bit % 8)));
+        }
+    }
+    return carrier;
+}
+
+double loop_sum(const double* v, int32_t n)
+{
+    struct r2sleigh_bits_256 z0_1;
+    struct r2sleigh_bits_256 z0_2;
+    struct r2sleigh_bits_256 z0_3;
+    struct r2sleigh_bits_256 z0_4;
+    uint64_t x8_1;
+    uint64_t x9_2;
+    uint64_t x10_2;
+    uint64_t x11_2;
+    struct r2sleigh_bits_256 z0_5;
+    uint64_t tmp_7b80_1;
+    __uint128_t tmp_lane_1010598_1_7_1;
+    uint64_t tmp_ca600_1;
+    __uint128_t tmp_lane_1010598_5_a_1;
+    uint64_t tmp_3e280_1;
+    uint64_t tmp_lane_1010598_1a_d_1;
+    uint64_t tmp_lane_1010598_1e_12_1;
+    uint64_t tmp_lane_1010598_1e_13_1;
+    uint64_t tmp_lane_1010598_22_18_1;
+    uint64_t tmp_lane_1010598_2a_24_1;
+    double tmp_lane_1010598_2e_2b_1;
+    struct r2sleigh_bits_256 z0_18;
+    struct r2sleigh_bits_256 z0_19;
+    struct r2sleigh_bits_256 z0_20;
+    struct r2sleigh_bits_256 z0_21;
+    uint64_t x9_3;
+    struct r2sleigh_bits_256 z0_22;
+    uint64_t x10_5;
+    uint64_t x8_3;
+    struct r2sleigh_bits_256 z0_23;
+    uint64_t tmp_lane_10105d0_2_2f_1;
+    uint64_t tmp_3e280_2;
+    uint64_t tmp_lane_10105d0_11_33_1;
+    double tmp_lane_10105d0_11_35_1;
+    struct r2sleigh_bits_256 z0_24;
+    struct r2sleigh_bits_256 z0_25;
+    struct r2sleigh_bits_256 z0_26;
+    struct r2sleigh_bits_256 z0_27;
+    struct r2sleigh_bits_256 z0_28;
+
+    /* r2dec proof: no individual construct is marked; 91 source obligations: 91 rendered, 0 elided, 0 refused; 60 statements rendered */
+    {
+        if ((uint8_t)((int32_t)n < (int32_t)1U)) {
+            return (double)r2sleigh_float_from_bits_64((uint64_t)0U);
+        } else {
+            z0_1 = r2sleigh_bits_insert_256_64(r2sleigh_bits_zero_extend_64_256((uint64_t)0U), (uint64_t)0U, 0U);
+            z0_2 = r2sleigh_bits_insert_256_64(z0_1, (uint64_t)0U, 64U);
+            z0_3 = r2sleigh_bits_insert_256_64(z0_2, (uint64_t)0U, 128U);
+            z0_4 = r2sleigh_bits_insert_256_64(z0_3, (uint64_t)0U, 192U);
+            x8_1 = (uint64_t)(uint32_t)n;
+            if ((uint8_t)((uint32_t)4U <= (uint32_t)n)) {
+                x9_2 = (uint64_t)((uint64_t)x8_1 & (uint64_t)0x7ffffffcU);
+                x10_2 = (uint64_t)((uint64_t)v + (uint64_t)16U);
+                x11_2 = (uint64_t)((uint64_t)x8_1 & (uint64_t)0x7ffffffcU);
+                z0_5 = z0_4;
+                for (; ; ) {
+                    tmp_7b80_1 = (uint64_t)((uint64_t)x10_2 - (uint64_t)16U);
+                    tmp_lane_1010598_1_7_1 = r2sleigh_load_u128((void*)tmp_7b80_1);
+                    tmp_ca600_1 = (uint64_t)((uint64_t)tmp_7b80_1 + (uint64_t)16U);
+                    tmp_lane_1010598_5_a_1 = r2sleigh_load_u128((void*)tmp_ca600_1);
+                    tmp_3e280_1 = (uint64_t)((uint64_t)x11_2 - (uint64_t)4U);
+                    tmp_lane_1010598_1a_d_1 = (uint64_t)((__uint128_t)tmp_lane_1010598_1_7_1 >> 64U);
+                    tmp_lane_1010598_1e_12_1 = r2sleigh_bits_extract_256_64(z0_5, 0U);
+                    tmp_lane_1010598_1e_13_1 = (uint64_t)((__uint128_t)tmp_lane_1010598_1_7_1 >> 0U);
+                    tmp_lane_1010598_22_18_1 = (uint64_t)((__uint128_t)tmp_lane_1010598_5_a_1 >> 64U);
+                    tmp_lane_1010598_2a_24_1 = (uint64_t)((__uint128_t)tmp_lane_1010598_5_a_1 >> 0U);
+                    tmp_lane_1010598_2e_2b_1 = r2sleigh_float_from_bits_64(tmp_lane_1010598_1e_12_1) + r2sleigh_float_from_bits_64(tmp_lane_1010598_1e_13_1) + r2sleigh_float_from_bits_64(tmp_lane_1010598_1a_d_1) + r2sleigh_float_from_bits_64(tmp_lane_1010598_2a_24_1) + r2sleigh_float_from_bits_64(tmp_lane_1010598_22_18_1);
+                    z0_18 = r2sleigh_bits_insert_256_64(r2sleigh_bits_zero_extend_64_256((uint64_t)0U), (uint64_t)r2sleigh_float_to_bits_64(tmp_lane_1010598_2e_2b_1), 0U);
+                    z0_19 = r2sleigh_bits_insert_256_64(z0_18, (uint64_t)0U, 64U);
+                    z0_20 = r2sleigh_bits_insert_256_64(z0_19, (uint64_t)0U, 128U);
+                    z0_21 = r2sleigh_bits_insert_256_64(z0_20, (uint64_t)0U, 192U);
+                    if ((uint8_t)((uint64_t)tmp_3e280_1 != (uint64_t)0U)) {
+                        x10_2 = (uint64_t)((uint64_t)x10_2 + (uint64_t)32U);
+                        x11_2 = tmp_3e280_1;
+                        z0_5 = z0_21;
+                    } else {
+                        break;
+                    }
+                }
+                {
+                    if ((uint8_t)((uint64_t)x9_2 == (uint64_t)x8_1)) {
+                        z0_28 = z0_21;
+                        goto L2;
+                    } else {
+                        x9_3 = x9_2;
+                        z0_22 = z0_21;
+                    }
+                }
+            } else {
+                x9_3 = 0;
+                z0_22 = z0_4;
+            }
+            {
+                x10_5 = (uint64_t)((uint64_t)v + (uint64_t)((uint64_t)x9_3 * (uint64_t)8U));
+                x8_3 = (uint64_t)((uint64_t)x8_1 - (uint64_t)x9_3);
+                z0_23 = z0_22;
+                for (; ; ) {
+                    tmp_lane_10105d0_2_2f_1 = r2sleigh_load_u64((void*)x10_5);
+                    tmp_3e280_2 = (uint64_t)((uint64_t)x8_3 - (uint64_t)1U);
+                    tmp_lane_10105d0_11_33_1 = r2sleigh_bits_extract_256_64(z0_23, 0U);
+                    tmp_lane_10105d0_11_35_1 = r2sleigh_float_from_bits_64(tmp_lane_10105d0_11_33_1) + r2sleigh_float_from_bits_64(tmp_lane_10105d0_2_2f_1);
+                    z0_24 = r2sleigh_bits_insert_256_64(r2sleigh_bits_zero_extend_64_256((uint64_t)0U), (uint64_t)r2sleigh_float_to_bits_64(tmp_lane_10105d0_11_35_1), 0U);
+                    z0_25 = r2sleigh_bits_insert_256_64(z0_24, (uint64_t)0U, 64U);
+                    z0_26 = r2sleigh_bits_insert_256_64(z0_25, (uint64_t)0U, 128U);
+                    z0_27 = r2sleigh_bits_insert_256_64(z0_26, (uint64_t)0U, 192U);
+                    if ((uint8_t)((uint64_t)tmp_3e280_2 != (uint64_t)0U)) {
+                        x10_5 = (uint64_t)((uint64_t)x10_5 + (uint64_t)8U);
+                        x8_3 = tmp_3e280_2;
+                        z0_23 = z0_27;
+                    } else {
+                        z0_28 = z0_27;
+                        break;
+                    }
+                }
+            }
+            {
+L2: ;
+                return (double)r2sleigh_float_from_bits_64(r2sleigh_bits_extract_256_64(z0_28, 0U));
+            }
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x010105e4
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010105e4
+EXPECT=<<EOF
+struct r2sleigh_bits_256 {
+    uint8_t bytes[32];
+};
+
+static inline uint64_t r2sleigh_bits_extract_256_64(struct r2sleigh_bits_256 carrier, uint64_t at)
+{
+    uint64_t field = 0;
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        const uint64_t from = at + bit;
+        if (from < 256u && ((carrier.bytes[from / 8] >> (from % 8)) & 1) != 0) {
+            field = (uint64_t)(field | ((uint64_t)1 << bit));
+        }
+    }
+    return field;
+}
+
+static inline struct r2sleigh_bits_256 r2sleigh_bits_zero_extend_64_256(uint64_t field)
+{
+    struct r2sleigh_bits_256 carrier = {{0}};
+    for (uint32_t bit = 0; bit < 64u; ++bit) {
+        if (((field >> bit) & 1) != 0) {
+            carrier.bytes[bit / 8] = (uint8_t)(carrier.bytes[bit / 8] | (1u << (bit % 8)));
+        }
+    }
+    return carrier;
+}
+
+int32_t main(int32_t argc, char** argv)
+{
+    double loop_sum(const double*, int32_t);
+    double twice_half(double);
+
+    double tmp_lane_10105e4_10_2_1;
+    struct r2sleigh_bits_256 z0_5;
+    uint64_t tmp_lane_10105e4_1d_8_1;
+    struct r2sleigh_bits_256 z0_6;
+    uint64_t tmp_lane_10105e4_23_e_1;
+    _Alignas(16) uint8_t frame[48];
+
+    /* r2dec proof: 2 constructs are marked below; 32 source obligations: 22 rendered, 6 elided, 0 refused, 4 residual; 8 statements rendered; 2 callee prototypes supplied by the source */
+    {
+        r2sleigh_residual_void(1); /* r2dec gap: StoreNotSpelled at 0x10105e4:5 covering 1 op (render::values) */
+        tmp_lane_10105e4_10_2_1 = (double)(int32_t)argc;
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 0U) + (uint64_t)8U), (uint64_t)0x4000000000000000U);
+        r2sleigh_store_u64((void*)(uint64_t)(frame + 0U), (uint64_t)r2sleigh_float_to_bits_64(tmp_lane_10105e4_10_2_1));
+        z0_5 = r2sleigh_bits_zero_extend_64_256((uint64_t)r2sleigh_float_to_bits_64(twice_half(tmp_lane_10105e4_10_2_1)));
+        tmp_lane_10105e4_1d_8_1 = r2sleigh_bits_extract_256_64(z0_5, 0U);
+        z0_6 = r2sleigh_bits_zero_extend_64_256((uint64_t)r2sleigh_float_to_bits_64(loop_sum((const double*)(uint64_t)(frame + 0U), 2)));
+        tmp_lane_10105e4_23_e_1 = r2sleigh_bits_extract_256_64(z0_6, 0U);
+        return (int32_t)(r2sleigh_float_from_bits_64(tmp_lane_10105e4_1d_8_1) + r2sleigh_float_from_bits_64(tmp_lane_10105e4_23_e_1) > -2147483649.0 && r2sleigh_float_from_bits_64(tmp_lane_10105e4_1d_8_1) + r2sleigh_float_from_bits_64(tmp_lane_10105e4_23_e_1) < 2147483648.0 ? (int32_t)(r2sleigh_float_from_bits_64(tmp_lane_10105e4_1d_8_1) + r2sleigh_float_from_bits_64(tmp_lane_10105e4_23_e_1)) : r2sleigh_residual_i32(2));
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x01010630
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x01010630
+EXPECT=<<EOF
+void __libc_csu_init(int32_t argc, char** argv, char** envp)
+{
+    uint64_t x22_2;
+    uint64_t x23_2;
+    uint64_t x8_4;
+    uint64_t tmp_3e280_1;
+
+    /* r2dec proof: no individual construct is marked; 45 source obligations: 30 rendered, 15 elided, 0 refused; 12 statements rendered */
+    {
+        if ((uint8_t)1U) {
+        } else {
+            x22_2 = 0x1000000;
+            x23_2 = 1;
+            for (; ; ) {
+                x8_4 = r2sleigh_load_u64((void*)x22_2);
+                ((uint64_t(*)(uint64_t, uint64_t, uint64_t))(uint64_t)r2sleigh_load_u64((void*)x22_2))((uint64_t)(uint32_t)argc, (uint64_t)argv, (uint64_t)envp);
+                tmp_3e280_1 = (uint64_t)((uint64_t)x23_2 - (uint64_t)1U);
+                if ((uint8_t)((uint64_t)tmp_3e280_1 != (uint64_t)0U)) {
+                    x22_2 = (uint64_t)((uint64_t)x22_2 + (uint64_t)8U);
+                    x23_2 = tmp_3e280_1;
+                } else {
+                    break;
+                }
+            }
+        }
+        {
+            return;
+        }
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x010106a4
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010106a4
+EXPECT=<<EOF
+void __libc_csu_fini(void)
+{
+    /* r2dec proof: no individual construct is marked; 1 source obligations: 1 rendered, 0 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x010106d0
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010106d0
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x10106d0; this symbol is the import `__libc_start_main` and has no body of its own. */
+extern int32_t __libc_start_main(void(*)(), int32_t, char**, void(*)(), void(*)(), void(*)(), void*);
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x010106e0
+FILE=tests/fixtures/float_returns_zig_aarch64_O2g
+CMDS=aa; pdd @ 0x010106e0
+EXPECT=<<EOF
+/* r2sleigh: import stub at 0x10106e0; this symbol is the import `abort` and has no body of its own. */
+extern void abort(void);
+
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
