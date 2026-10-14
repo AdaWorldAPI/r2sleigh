@@ -476,6 +476,59 @@ fn a_second_register_no_caller_reads_is_no_half_of_the_result() {
     assert!(!caller.contains("r2sleigh_residual"), "{caller}");
 }
 
+/// `PAIR`'s `f`, and a caller `call f; jmp 1f; 1: mov rax, rdx; ret` whose read of RDX is past the
+/// call's block.
+const SECOND_READ_PAST_A_JUMP: &[u8] = &[
+    0x48, 0x89, 0xf8, // 1000 mov rax, rdi
+    0x48, 0x89, 0xf2, // 1003 mov rdx, rsi
+    0xc3, // 1006 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1007 padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0xeb, 0x00, // 1015 jmp 0x1017
+    0x48, 0x89, 0xd0, // 1017 mov rax, rdx
+    0xc3, // 101a ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 101b padding
+];
+
+/// A call whose scan ends before it touches the second register decides nothing of it: the half
+/// stays open, as with no call read.
+#[test]
+fn a_call_scanned_to_its_block_s_end_leaves_the_second_register_open() {
+    let functions = [("f", BASE, 7), ("caller", BASE + 0x10, 0x0b)];
+    let f = rendered(Literal::of_code(SECOND_READ_PAST_A_JUMP, &functions));
+    assert!(f.starts_with("uint64_t f("), "{f}");
+    assert!(f.contains("the result's second register is open"), "{f}");
+}
+
+/// `f` sets EDX to 1 or 2 on two paths that meet before `mov rax, rdi; ret`, and `caller` is
+/// `call f; mov rax, rdx; ret`.
+const PAIR_THROUGH_A_MERGE: &[u8] = &[
+    0x48, 0x85, 0xff, // 1000 test rdi, rdi
+    0x74, 0x07, // 1003 je 0x100c
+    0xba, 0x01, 0x00, 0x00, 0x00, // 1005 mov edx, 1
+    0xeb, 0x05, // 100a jmp 0x1011
+    0xba, 0x02, 0x00, 0x00, 0x00, // 100c mov edx, 2
+    0x48, 0x89, 0xf8, // 1011 mov rax, rdi
+    0xc3, // 1014 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1015 padding
+    0xe8, 0xdb, 0xff, 0xff, 0xff, // 1020 call 0x1000
+    0x48, 0x89, 0xd0, // 1025 mov rax, rdx
+    0xc3, // 1028 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1029 padding
+];
+
+/// A high half that reaches the return through a merge of two constants is still written on every
+/// return: the merge keeps its sources, as the first register's does.
+#[test]
+fn a_high_half_merged_from_two_paths_is_half_of_the_result() {
+    let functions = [("f", BASE, 0x15), ("caller", BASE + 0x20, 9)];
+    let f = rendered(Literal::of_code(PAIR_THROUGH_A_MERGE, &functions));
+    assert!(f.starts_with("__uint128_t f("), "{f}");
+    assert!(!f.contains("r2sleigh_residual"), "{f}");
+}
+
 /// AArch64: `f` is `add x1, x0, #2; add x0, x0, #1; ret`, a value in X1:X0, and `caller` is
 /// `bl f; mov x0, x1; ret`, which returns the high half.
 const A64_PAIR: &[u8] = &[
@@ -649,6 +702,13 @@ fn a_result_another_way_in_may_read_stays_a_residual() {
         BASE + 0x28,
         &[0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, 0x90, 0x90],
     );
+    let mut filler = closed();
+    // 1028 call 0x1000; 102d jmp 0x101c: filler between bodies whose transfers reach known code,
+    // and a call from it is a way in no index holds.
+    filler.write(
+        BASE + 0x28,
+        &[0xe8, 0xd3, 0xff, 0xff, 0xff, 0xeb, 0xed, 0x90],
+    );
     let exported = closed().declaring(r2abi::statement::Symbol {
         name: "f".into(),
         vaddr: BASE,
@@ -666,9 +726,81 @@ fn a_result_another_way_in_may_read_stays_a_residual() {
         ("tail-called", tailed),
         ("stored", stored),
         ("in code no body holds", unread),
+        ("called from filler", filler),
         ("exported", exported),
     ] {
         let text = rendered(program);
         assert!(text.contains("return r2sleigh_residual_"), "{way}: {text}");
     }
+}
+
+/// `f` writes EAX, XMM0 and EDX; `caller` overwrites the first two after `call f` and, on one path
+/// past the call's block, stores RDX: a read of the second register no in-block scan sees.
+const SECOND_READ_LATER: &[u8] = &[
+    0x66, 0x0f, 0xef, 0xc0, // 1000 pxor xmm0, xmm0
+    0xb8, 0x07, 0x00, 0x00, 0x00, // 1004 mov eax, 7
+    0xba, 0x03, 0x00, 0x00, 0x00, // 1009 mov edx, 3
+    0xc3, // 100e ret
+    0x90, // 100f padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0x31, 0xc0, // 1015 xor eax, eax
+    0x66, 0x0f, 0xef, 0xc0, // 1017 pxor xmm0, xmm0
+    0x85, 0xc9, // 101b test ecx, ecx
+    0x74, 0x03, // 101d jz 0x1022
+    0x48, 0x89, 0x16, // 101f mov [rsi], rdx
+    0xc3, // 1022 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0x90, // 1023 padding
+];
+
+/// A second result register a later block reads keeps the result: the closed world needs every
+/// register the body writes overwritten before any read.
+#[test]
+fn a_second_register_read_past_the_call_s_block_keeps_the_result() {
+    let program = Literal::of_code(
+        SECOND_READ_LATER,
+        &[("f", BASE, 0x0f), ("caller", BASE + 0x10, 0x13)],
+    );
+    let text = rendered(program);
+    assert!(!text.starts_with("void f("), "{text}");
+}
+
+/// `f` is `test edi, edi; jne g; mov eax, 1; ret`, and `g` is `mov eax, 2; ret`.
+const CONDITIONAL_TAIL: &[u8] = &[
+    0x85, 0xff, // 1000 test edi, edi
+    0x0f, 0x85, 0x08, 0x00, 0x00, 0x00, // 1002 jne 0x1010
+    0xb8, 0x01, 0x00, 0x00, 0x00, // 1008 mov eax, 1
+    0xc3, // 100d ret
+    0x90, 0x90, // 100e padding
+    0xb8, 0x02, 0x00, 0x00, 0x00, // 1010 mov eax, 2
+    0xc3, // 1015 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1016 padding
+];
+
+/// No call-site contract names a conditional tail jump, so its arm has no result: the function
+/// refuses rather than return what EAX held before the branch.
+#[test]
+fn a_conditional_tail_jump_returns_nothing_from_before_the_branch() {
+    let functions = [("f", BASE, 0x0e), ("g", BASE + 0x10, 6)];
+    let f = rendered(Literal::of_code(CONDITIONAL_TAIL, &functions));
+    assert!(f.contains("r2sleigh refused f"), "{f}");
+}
+
+/// Prepared as a callee, `f` of `ONLY_XMM0_WRITTEN` proves its one written register XMM0, and the
+/// convention's float register at a double's width is a double: `caller` declares and stores it so.
+#[test]
+fn a_caller_takes_the_float_result_beside_an_untouched_integer_register() {
+    let program = Literal::of_code(
+        ONLY_XMM0_WRITTEN,
+        &[("f", BASE, 5), ("caller", BASE + 0x10, 0x0a)],
+    );
+    let text = OpenProgram::of(program)
+        .rendered(BASE + 0x10)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(text.contains("double f(uint32_t);"), "{text}");
+    assert!(!text.contains("(double)f("), "{text}");
 }

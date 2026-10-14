@@ -322,37 +322,6 @@ impl FunctionRenderFacts {
         slots.next().is_none().then_some(slot)
     }
 
-    /// Resolve an expression to one unambiguous ABI parameter dependency.
-    ///
-    /// The walk follows only the certified expression graph and its stable
-    /// `SemanticId::Parameter` bindings. Rendered names and register spellings
-    /// are deliberately excluded.
-    pub fn unique_parameter_dependency_slot_for_value(
-        &self,
-        graph: &r2ssa::SsaGraph,
-        value: r2ssa::ValueId,
-    ) -> Option<usize> {
-        let mut pending = vec![value];
-        let mut visited = r2ssa::dense::IdSet::default();
-        let mut slots = BTreeSet::new();
-        // Each value is expanded once (`visited`), so the walk is O(values + inputs).
-        while let Some(value) = pending.pop() {
-            if !visited.insert(value) {
-                continue;
-            }
-            for binding in self.bindings_of(value) {
-                if let r2ssa::SemanticId::Parameter(slot) = binding {
-                    slots.insert(usize::try_from(*slot).ok()?);
-                }
-            }
-            if let Some(inst) = graph.def_inst(value).and_then(|inst| graph.inst(inst)) {
-                pending.extend(graph.inputs(inst.id).iter().copied());
-            }
-        }
-        let slot = slots.pop_first()?;
-        slots.is_empty().then_some(slot)
-    }
-
     pub fn return_effect_id_for_inst(&self, inst: r2ssa::InstId) -> Option<r2ssa::SemanticId> {
         self.return_effects_by_inst.get(inst).copied()
     }
@@ -804,6 +773,19 @@ pub struct SourceOwnedCalleeSignature {
     signature: crate::FunctionType,
 }
 
+/// Whether `storage` is a float's width at the low end of the float result register `slot`, the
+/// lane `SourceResultCarriers::holds` names.
+pub(super) fn float_lane(
+    slot: Option<r2ssa::CanonicalStorageId>,
+    storage: r2ssa::CanonicalStorageId,
+) -> bool {
+    slot.is_some_and(|slot| {
+        matches!(storage.size, 4 | 8)
+            && storage.size <= slot.size
+            && (storage.space, storage.offset) == (slot.space, slot.offset)
+    })
+}
+
 /// The type a call returns where its callee's result is one of two carriers: the float register's
 /// lane is a float of its width, the integer register a word (doc/adr-resolved-bodies.md).
 fn call_result_type(
@@ -818,6 +800,16 @@ fn call_result_type(
                 .is_some_and(|carriers| carriers.integer == low && carriers.second == Some(high));
         return named.then_some(CTypeLike::Int {
             bits: (low.size + high.size).checked_mul(8)?,
+            signedness: crate::Signedness::Unsigned,
+        });
+    }
+    if let (
+        r2ssa::SourceFunctionReturn::Pair { low, .. },
+        r2ssa::SourceCallResult::Register { storage },
+    ) = (callee.return_kind(), result)
+    {
+        return (low == storage).then_some(CTypeLike::Int {
+            bits: storage.size.checked_mul(8)?,
             signedness: crate::Signedness::Unsigned,
         });
     }
@@ -1212,12 +1204,14 @@ impl SourceOwnedFunctionFacts {
             .machine_context()
             .memory_model()
             .default_address_bits();
-        enriched.apply_certified_call_argument_type_constraints(source.graph(), ptr_bits);
         enriched.apply_recovered_evidence_types(source, &solved.evidence, ptr_bits);
         // Exact immutable interface evidence outranks advisory propagation.
         // Apply it after recovered call evidence so the latter cannot rewrite
         // a declared signedness or logical projection through a weak scalar.
-        enriched.apply_exact_source_signature(source);
+        enriched.apply_exact_source_signature(source, &solved.aggregates);
+        enriched.types.inferred_aggregates = (solved.aggregates.values())
+            .map(|aggregate| (aggregate.tag.clone(), aggregate.definition.clone()))
+            .collect();
         enriched.apply_return_type_fact(solved.returns.clone());
         // The types are final here; the projection the seal holds is built from them once.
         enriched.normalize_field_certificates_from_external_layout();
@@ -1353,6 +1347,8 @@ pub(crate) struct SolvedFunction {
         IdMap<r2ssa::ValueId, BTreeSet<crate::signedness::ScalarSignednessEvidence>>,
     pub(crate) evidence: crate::EvidenceTypes,
     pub(crate) returns: ReturnTypeFact,
+    /// Each parameter whose accesses lay out a structure (doc/adr-aggregates.md).
+    pub(crate) aggregates: BTreeMap<usize, crate::aggregates::InferredAggregate>,
 }
 
 impl SolvedFunction {
@@ -1361,14 +1357,23 @@ impl SolvedFunction {
         signatures: &BTreeMap<r2ssa::CallSiteId, crate::FunctionType>,
         ptr_bits: u32,
     ) -> Self {
-        let signedness = crate::signedness::scalar_signedness_of(source, false, std::iter::empty());
+        // One signedness pass: merges and the parameters' home aliases, for the solve, the stack
+        // slots and parameter signedness alike.
+        let params = crate::prepare::recover_signature_params_from_prepared_ssa(source, ptr_bits);
+        let signedness = crate::signedness::scalar_signedness_of(
+            source,
+            true,
+            crate::signature_infer::signedness_aliases(source, &params),
+        );
         let evidence =
             crate::evidence::solve_evidence_types(source, signatures, &signedness, ptr_bits);
         let returns = ReturnTypeFact::decide(source, signatures, &evidence);
+        let aggregates = crate::aggregates::parameter_aggregates(source, &evidence);
         Self {
             signedness,
             evidence,
             returns,
+            aggregates,
         }
     }
 }
@@ -1518,12 +1523,33 @@ impl FunctionFacts {
                 .map(r2ssa::SourceCallSiteInterface::result);
             // A call that takes a pair takes the type of both halves, whatever the callee's own
             // signature says of its first register.
+            let float_slot = (source.machine_context().convention_slots())
+                .and_then(r2ssa::SourceConventionSlots::float_result_slot);
+            let pair_callee = matches!(
+                signature.interface.return_kind(),
+                r2ssa::SourceFunctionReturn::Pair { .. }
+            );
             let return_type = match (site_result, &signature.signature.return_type) {
+                // A declaration's own type for the value wins (doc/adr-language-profile.md).
+                (
+                    Some(r2ssa::SourceCallResult::Pair { .. }),
+                    declared @ (CTypeLike::Struct(_) | CTypeLike::Union(_)),
+                ) => Some(declared.clone()),
                 (Some(result @ r2ssa::SourceCallResult::Pair { .. }), _) => {
                     call_result_type(&signature.interface, result)
                 }
+                // A call that reads only a pair's first register takes that half alone.
+                (Some(result), _) if pair_callee => call_result_type(&signature.interface, result),
                 (_, CTypeLike::Unknown) => {
                     site_result.and_then(|result| call_result_type(&signature.interface, result))
+                }
+                // The convention's float register read at a float's width is that float, whatever
+                // carrier-width integer the callee's body spells (doc/adr-resolved-bodies.md).
+                (
+                    Some(r2ssa::SourceCallResult::Register { storage }),
+                    CTypeLike::Int { bits, .. },
+                ) if float_lane(float_slot, storage) && *bits == storage.size * 8 => {
+                    Some(CTypeLike::Float(*bits))
                 }
                 (_, declared) => Some(declared.clone()),
             };
@@ -2528,123 +2554,6 @@ impl FunctionFacts {
         }
     }
 
-    /// Project exact callee parameter types back onto caller parameters.
-    ///
-    /// A constraint is accepted only when the callsite argument has a unique
-    /// certified path to one ABI parameter and the callee identity carries a
-    /// typed signature. Conflicting callees leave the caller type unchanged.
-    pub fn apply_certified_call_argument_type_constraints(
-        &mut self,
-        graph: &r2ssa::SsaGraph,
-        ptr_bits: u32,
-    ) -> usize {
-        let type_db = &self.types.external_type_db;
-        let mut constraints = BTreeMap::<usize, CTypeLike>::new();
-        let mut conflicted = BTreeSet::new();
-        for (callsite, arguments) in &self.callsites.by_callsite {
-            let identity = self.callee_resolution.identity_for_callsite(callsite);
-            let signature = arguments
-                .callee_signature
-                .as_ref()
-                .or_else(|| identity.and_then(crate::CalleeIdentity::known_signature));
-            let Some(signature) = signature else {
-                continue;
-            };
-            for argument in &arguments.argument_values {
-                let Some(hint) = signature.params.get(argument.index) else {
-                    continue;
-                };
-                let Some(slot) = self
-                    .render
-                    .unique_parameter_dependency_slot_for_value(graph, argument.value)
-                else {
-                    continue;
-                };
-                if conflicted.contains(&slot) {
-                    continue;
-                }
-                match constraints.get(&slot) {
-                    None => {
-                        constraints.insert(slot, hint.clone());
-                    }
-                    Some(existing) if existing == hint => {}
-                    Some(existing)
-                        if crate::signature_hint_can_replace_existing(
-                            existing,
-                            Some(hint),
-                            ptr_bits,
-                            type_db,
-                        ) =>
-                    {
-                        constraints.insert(slot, hint.clone());
-                    }
-                    Some(existing)
-                        if crate::signature_hint_can_replace_existing(
-                            hint,
-                            Some(existing),
-                            ptr_bits,
-                            type_db,
-                        ) => {}
-                    Some(_) => {
-                        constraints.remove(&slot);
-                        conflicted.insert(slot);
-                    }
-                }
-            }
-        }
-
-        let protects_existing = self.types.certified_signature().is_some();
-        let Some(signature) = self.types.merged_signature.as_mut() else {
-            return 0;
-        };
-        let mut applied = BTreeMap::new();
-        for (slot, hint) in constraints {
-            let Some(param) = signature.params.get_mut(slot) else {
-                continue;
-            };
-            let replace = match param.ty.as_ref() {
-                None => true,
-                Some(existing) if existing == &hint => false,
-                Some(existing) => {
-                    !protects_existing
-                        && crate::signature_hint_can_replace_existing(
-                            existing,
-                            Some(&hint),
-                            ptr_bits,
-                            type_db,
-                        )
-                }
-            };
-            if replace {
-                param.ty = Some(hint.clone());
-                applied.insert(slot, hint);
-                // A callee's prototype through the call that hands it the parameter.
-                self.types
-                    .parameter_bases
-                    .insert(slot, r2source::Basis::Solved);
-            }
-        }
-        if applied.is_empty() {
-            return 0;
-        }
-        for (slot, hint) in &applied {
-            if let Some(param) = self.types.register_params.get_mut(*slot) {
-                param.ty = Some(hint.clone());
-            }
-            for binding in self
-                .types
-                .visible_bindings
-                .iter_mut()
-                .filter(|binding| binding.param_index == Some(*slot))
-            {
-                binding.ty = Some(hint.clone());
-            }
-        }
-        self.types
-            .certify_current_signature_with_source(SignatureCertificateSource::CalleeSignature);
-        applied.len()
-    }
-
     /// Take the whole signature from the immutable source interface where it
     /// carries a type graph: each parameter's and the return's declared type,
     /// resolved through the graph, which is the same source the binding layer
@@ -2655,7 +2564,11 @@ impl FunctionFacts {
     /// rendered as a machine word and a header parameter disagreed with the
     /// typed local it was stored into. Parameter names are kept from the
     /// spelled signature when it has the same arity.
-    fn apply_exact_source_signature(&mut self, source: &r2ssa::SsaArtifact) -> bool {
+    fn apply_exact_source_signature(
+        &mut self,
+        source: &r2ssa::SsaArtifact,
+        aggregates: &BTreeMap<usize, crate::aggregates::InferredAggregate>,
+    ) -> bool {
         let context = source.machine_context();
         let Some(interface) = context.function_interface() else {
             return false;
@@ -2670,7 +2583,7 @@ impl FunctionFacts {
         // Nothing weaker than that certificate upgrades a width: the evidence
         // solver's own guesses at pointers and signedness are not proof.
         let certified_pointers = (interface.types().basis == r2source::Basis::CarrierWidth)
-            .then(|| crate::signature_infer::certified_parameter_pointers(source));
+            .then(|| crate::signature_infer::certified_parameter_pointers(source, aggregates));
         let logical = interface.parameter_logical_values();
         if logical.len() != interface.parameters().len() {
             return false;

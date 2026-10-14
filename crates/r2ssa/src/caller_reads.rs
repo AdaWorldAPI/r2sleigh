@@ -64,6 +64,7 @@ pub fn reads_after_call(
                 float = None;
             }
             if second.as_mut().is_some_and(|lane| lane.write(output)) {
+                reads.second_overwritten = 1;
                 second = None;
             }
         }
@@ -186,6 +187,7 @@ mod tests {
                 float: 0,
                 float_width: SourceFloatReadWidth::Unstated,
                 second: 0,
+                second_overwritten: 0,
                 integer_overwritten: 0,
                 float_overwritten: 0,
                 calls: 1,
@@ -294,6 +296,7 @@ mod tests {
                 float: 1,
                 float_width: SourceFloatReadWidth::Bytes(8),
                 second: 0,
+                second_overwritten: 0,
                 integer_overwritten: 0,
                 float_overwritten: 0,
                 calls: 1,

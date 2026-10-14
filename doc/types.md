@@ -61,10 +61,12 @@ index is a field of one object and says nothing of an element type.
 
 A bound types a whole class, and this phase adds bounds, never unions, so
 classes are fixed while it runs. Each access is indexed by its two operands'
-classes; a worklist reads every access once, and again only when a bound
-reaches one of its classes. A bound is a new (node, pointee) pair, at most
-two per access, so the phase is `O(A + E)` for A accesses and E
-(class, access) incidences. It replaced rounds that rescanned every access
+classes; a worklist reads every access once. A bound lands only on a base
+already solved a pointer, and readers ask only whether a class is one, so a
+bound wakes a class's readers only when it turns the class to `Bottom`, at
+most once per class: the phase is `O(A + E)` for A accesses and E
+(class, access) incidences. Waking them on every new bound was `O(A²)` where
+-O0 code reloads one base for each access (review of #220). It replaced rounds that rescanned every access
 until one added nothing, `O(A²)` (2026-10-13).
 
 Projections

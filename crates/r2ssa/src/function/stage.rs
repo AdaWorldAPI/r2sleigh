@@ -149,6 +149,12 @@ impl Prepared {
         self
     }
 
+    /// A pass over this function's provisional or recovery facts moved past its height: the seal
+    /// refuses it.
+    pub(crate) fn note_exhausted(&mut self, exhausted: crate::fixpoint::Exhausted) {
+        self.ir.note_exhausted(exhausted);
+    }
+
     /// The same function, one of its facts resting on `premise`.
     pub(crate) fn assuming(mut self, premise: r2source::Premise) -> Self {
         self.ir.record_premise(premise);

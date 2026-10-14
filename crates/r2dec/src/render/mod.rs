@@ -135,6 +135,7 @@ pub fn render(
         (
             unassigned.as_deref().unwrap_or_default(),
             input.open_second_result(),
+            input.inferred_aggregates().len(),
         ),
     );
     let mut ready = ready_with_carriers(c, &tags);

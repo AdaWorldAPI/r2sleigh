@@ -19,7 +19,6 @@ pub(crate) struct SignatureContextMaps {
 pub(crate) struct VarTypeCandidateContext<'a> {
     pub(crate) current_context_maps: &'a SignatureContextMaps,
     pub(crate) merged_signature: Option<&'a FunctionSignatureSpec>,
-    pub(crate) slot_type_overrides: &'a HashMap<usize, String>,
     pub(crate) stack_access_widths: &'a BTreeMap<StackSlotKey, BTreeSet<u32>>,
     pub(crate) stack_access_signedness:
         &'a BTreeMap<StackSlotKey, BTreeSet<ScalarSignednessEvidence>>,
@@ -308,13 +307,6 @@ pub(crate) fn build_var_type_candidates(
             } else {
                 evidence.push(TypeEvidence::ExternalSignatureCurrent);
             }
-        } else if let Some(slot) = arg_slot
-            && let Some(struct_ty) = ctx.slot_type_overrides.get(&slot)
-            && type_name_is_generic(&chosen_type)
-        {
-            chosen_type = struct_ty.clone();
-            source = TypeFactSource::LocalInferred;
-            evidence.push(TypeEvidence::SsaFieldOffsetPattern);
         }
 
         let exact_access_bits = exact_stack_access_bits(var, ctx.stack_access_widths);

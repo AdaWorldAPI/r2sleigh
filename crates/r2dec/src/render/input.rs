@@ -76,6 +76,13 @@ impl<'a> RenderInput<'a> {
             .or_else(|| report.display_names().parameter(slot))
     }
 
+    /// The structures the function's parameter accesses lay out, by tag (doc/adr-aggregates.md).
+    pub fn inferred_aggregates(
+        &self,
+    ) -> &'a std::collections::BTreeMap<String, r2types::AggregateDefinition> {
+        &self.facts.report().type_facts().inferred_aggregates
+    }
+
     /// The types the function's declaration states, as one graph: its aggregates' layouts.
     pub fn type_graph(&self) -> Option<&'a r2ssa::SourceTypeGraph> {
         (self.facts.source().machine_context().function_interface())

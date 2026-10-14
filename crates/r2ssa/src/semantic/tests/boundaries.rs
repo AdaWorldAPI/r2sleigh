@@ -70,6 +70,7 @@ fn stack_helpers_require_exact_ram_source_fact_object_and_memory_location() {
         &BTreeSet::new(),
         &super::super::DeclaredStackSlots::default(),
         BTreeMap::new(),
+        &Default::default(),
     );
     assert_eq!(
         certificates
@@ -123,6 +124,7 @@ fn stack_helpers_require_exact_ram_source_fact_object_and_memory_location() {
         &BTreeSet::new(),
         &super::super::DeclaredStackSlots::default(),
         BTreeMap::new(),
+        &Default::default(),
     );
     assert!(!certificates.stack_slots.contains_key(&access.object));
 

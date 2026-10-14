@@ -73,7 +73,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for ResultReads {
         // Only a result no call reads asks whether the calls are every way in: the reference index
         // that answers reads every body.
         reads.exhaustive =
-            !unread && reads.all_overwrite(false) && only_called(db, callee, reads.calls);
+            !unread && reads.all_overwrite(false, false) && only_called(db, callee, reads.calls);
         (reads.calls > 0).then_some(reads)
     }
 }
@@ -155,11 +155,12 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Escapes {
         }
         // Code no walk decoded (past an unresolved transfer, or never reached) may call or name
         // anything; a code byte no body, stub section or padding accounts for refuses.
-        if let Some(at) = unaccounted_code(db, &survey) {
+        // A direct transfer in filler is a way in the index does not see: its target escapes.
+        let mut escaped = Vec::new();
+        if let Some(at) = unaccounted_code(db, &survey, &mut escaped) {
             r2il::refusal_evidence!("closed-world", "{at:#x}: code no body holds");
             return None;
         }
-        let mut escaped = Vec::new();
         for (fact, claimant) in index.claimed() {
             // A jump inside a function to its own entry is a loop, no way in.
             let looping = fact.role == Role::Jump && claimant.owners.contains(&fact.to);
@@ -189,6 +190,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Escapes {
 fn unaccounted_code<S: Source + 'static>(
     db: &Db<ProgramInputs<S>>,
     survey: &super::requests::Survey,
+    targets: &mut Vec<u64>,
 ) -> Option<u64> {
     let view = View::new(db, true);
     let container = view.source().container();
@@ -219,12 +221,12 @@ fn unaccounted_code<S: Source + 'static>(
             .iter()
             .filter(|held| held.end > range.start && held.start < range.end)
         {
-            if held.start > at && !padding(&view, disasm, &known, at..held.start) {
+            if held.start > at && !padding(&view, disasm, &known, at..held.start, targets) {
                 return Some(at);
             }
             at = at.max(held.end);
         }
-        if at < range.end && !padding(&view, disasm, &known, at..range.end) {
+        if at < range.end && !padding(&view, disasm, &known, at..range.end, targets) {
             return Some(at);
         }
     }
@@ -233,12 +235,14 @@ fn unaccounted_code<S: Source + 'static>(
 
 /// Whether these bytes hold no code that could reach or name a function discovery does not know:
 /// zeros, instructions that lift to no operation, traps, or direct transfers to known code (a call
-/// to `abort` after one that never returns). An indirect transfer is unknown code.
+/// to `abort` after one that never returns), whose targets join `targets`. An indirect transfer is
+/// unknown code. Each instruction decodes from one window: `O(bytes)`.
 fn padding<S: Source + 'static>(
     view: &View<'_, S>,
     disasm: &r2sleigh_lift::Disassembler,
     known: &dyn Fn(u64) -> bool,
     bytes: std::ops::Range<u64>,
+    targets: &mut Vec<u64>,
 ) -> bool {
     let Some(held) = usize::try_from(bytes.end - bytes.start)
         .ok()
@@ -252,8 +256,9 @@ fn padding<S: Source + 'static>(
             at += 1;
             continue;
         }
-        let mut window = held[at..].to_vec();
-        window.resize(crate::body::WINDOW.max(window.len()), 0);
+        let mut window = [0u8; crate::body::WINDOW];
+        let end = (at + crate::body::WINDOW).min(held.len());
+        window[..end - at].copy_from_slice(&held[at..end]);
         let address = bytes.start + at as u64;
         let inert = |lifted: &r2il::R2ILBlock| {
             let mut transfers = lifted
@@ -272,6 +277,12 @@ fn padding<S: Source + 'static>(
         };
         match disasm.lift_after(&window, address, None) {
             Ok((lifted, _)) if lifted.size > 0 && inert(&lifted) => {
+                targets.extend(
+                    (lifted.ops.iter())
+                        .filter_map(r2il::R2ILOp::transfer)
+                        .filter(|transfer| transfer.direct)
+                        .map(|transfer| transfer.target.offset),
+                );
                 at += lifted.size as usize;
             }
             _ => return false,

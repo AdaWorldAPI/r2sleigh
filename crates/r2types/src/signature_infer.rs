@@ -7,7 +7,8 @@ use crate::convert::CTypeLike;
 use crate::analysis::{InferredSignature, InferredSignatureParam};
 use crate::model::Signedness;
 use crate::prepare::{prepared_arch_display_name, recover_signature_params_from_prepared_ssa};
-use crate::signedness::{ScalarSignednessEvidence, scalar_signedness_of};
+use crate::signedness::ScalarSignednessEvidence;
+use r2ssa::dense::IdMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SignatureTypeEvidence {
@@ -86,12 +87,17 @@ pub(crate) fn infer_signature_from_prepared_ssa(
                 param.initial_ty.clone(),
                 certified_parameter_widths.get(&param.arg_index),
             );
-            let initial_ty = prepared
-                .graph()
-                .value_id_for_var(&param.ssa_var)
-                .and_then(|value| evidence_types.value_type(value))
-                .cloned()
-                .unwrap_or(certified_ty);
+            let aggregate = (solved.aggregates.get(&param.arg_index)).map(|aggregate| {
+                CTypeLike::Pointer(Box::new(CTypeLike::Struct(aggregate.tag.clone())))
+            });
+            let initial_ty = aggregate.unwrap_or_else(|| {
+                prepared
+                    .graph()
+                    .value_id_for_var(&param.ssa_var)
+                    .and_then(|value| evidence_types.value_type(value))
+                    .cloned()
+                    .unwrap_or(certified_ty)
+            });
             let mut evidence = exact_signature_type_evidence(&initial_ty);
             if certified_parameter_widths.contains_key(&param.arg_index) {
                 evidence.pointer_proven = evidence.pointer_proven.max(1);
@@ -120,7 +126,12 @@ pub(crate) fn infer_signature_from_prepared_ssa(
             &param.evidence,
         );
     }
-    refine_parameter_signedness(prepared, &recovered_params, &mut canonical_params);
+    refine_parameter_signedness(
+        prepared,
+        &recovered_params,
+        &solved.signedness,
+        &mut canonical_params,
+    );
 
     let callconv = prepared.machine_context().function_interface().map_or_else(
         || "unknown".to_string(),
@@ -172,12 +183,19 @@ fn certified_memory_parameter(
         })
 }
 
-/// Each parameter a certified memory access addresses, as a pointer to the one
-/// width every such access reads, or to `void` where they read several.
-pub(crate) fn certified_parameter_pointers(prepared: &SsaArtifact) -> BTreeMap<usize, CTypeLike> {
+/// Each parameter a certified memory access addresses, as a pointer to the structure its
+/// accesses lay out, else to the one width every such access reads, or to `void`.
+pub(crate) fn certified_parameter_pointers(
+    prepared: &SsaArtifact,
+    aggregates: &BTreeMap<usize, crate::aggregates::InferredAggregate>,
+) -> BTreeMap<usize, CTypeLike> {
     certified_parameter_memory_widths(prepared)
         .into_iter()
         .map(|(index, widths)| {
+            if let Some(aggregate) = aggregates.get(&index) {
+                let tag = CTypeLike::Struct(aggregate.tag.clone());
+                return (index, CTypeLike::Pointer(Box::new(tag)));
+            }
             let pointer = match certified_parameter_pointer_type(CTypeLike::Void, Some(&widths)) {
                 CTypeLike::Pointer(inner) => match *inner {
                     CTypeLike::Int { bits, .. } => CTypeLike::Pointer(Box::new(CTypeLike::Int {
@@ -223,14 +241,10 @@ fn certified_parameter_pointer_type(
 fn refine_parameter_signedness(
     prepared: &SsaArtifact,
     recovered_params: &[RecoveredSignatureParam],
+    inferred: &IdMap<r2ssa::ValueId, BTreeSet<ScalarSignednessEvidence>>,
     params: &mut [SignatureParamCandidate],
 ) {
     let graph = prepared.graph();
-    let inferred = scalar_signedness_of(
-        prepared,
-        true,
-        signedness_aliases(prepared, recovered_params),
-    );
     let mut pointee_evidence = HashMap::<(usize, u32), BTreeSet<ScalarSignednessEvidence>>::new();
     for access in prepared.certificates().memory_accesses.values() {
         let Some(index) = certified_memory_parameter(prepared, access) else {
@@ -295,7 +309,7 @@ fn refine_parameter_signedness(
 /// The same-width aliases parameter signedness flows through beside the
 /// merges: a certified reload and the value it reloads, and a parameter's
 /// home and its reload.
-fn signedness_aliases(
+pub(crate) fn signedness_aliases(
     prepared: &SsaArtifact,
     recovered_params: &[RecoveredSignatureParam],
 ) -> Vec<(r2ssa::ValueId, r2ssa::ValueId)> {

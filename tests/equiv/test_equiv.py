@@ -122,6 +122,15 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(len({a.cause for a in report.answers}), 1)
         self.assertEqual(report.processes, 1)
 
+    def test_a_failed_survey_declines_every_function_once(self):
+        # Without `aa` no rendering reads its callers, so none is graded.
+        report = self.ask(STUB_R2S_MODE="aa-fails", STUB_R2S_FAULTS="")
+        self.assertEqual(len(report.answers), len(self.ADDRESSES))
+        self.assertTrue(all(a.kind == "decline" for a in report.answers))
+        self.assertEqual({a.cause for a in report.answers},
+                         {"r2s: the program could not be surveyed"})
+        self.assertEqual(report.processes, 1)
+
     def test_a_batch_of_any_size_is_one_process(self):
         # 3,000 addresses: as one -c script this was about 200 KiB of argv, past
         # Linux's 128 KiB cap on one argument, and Popen raised before r2s ran.

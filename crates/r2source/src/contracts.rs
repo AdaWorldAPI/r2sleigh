@@ -2264,6 +2264,12 @@ impl SourceCallSiteInterface {
             (SourceFunctionReturn::Register { storage }, ..) => {
                 SourceCallResult::Register { storage }
             }
+            // A call that reads only the pair's first register takes that register.
+            (SourceFunctionReturn::Pair { low, .. }, _, SourceCallResult::Register { storage })
+                if storage == low =>
+            {
+                SourceCallResult::Register { storage }
+            }
             (SourceFunctionReturn::Pair { low, high }, ..) => SourceCallResult::Pair { low, high },
             // A carrier the unproven result may be in: its parameters are still the call's.
             (

@@ -15,18 +15,31 @@ pub(super) struct Tags {
 
 impl Tags {
     pub(super) fn of(input: &RenderInput<'_>) -> Self {
-        Self::of_graph(input.type_graph())
+        Self::of_parts(input.type_graph(), input.inferred_aggregates())
     }
 
-    /// The greatest set of laid-out aggregates whose members C spells naming only tags in the set;
-    /// each round drops a tag or ends, so at most one round per aggregate.
+    #[cfg(test)]
     fn of_graph(graph: Option<&r2ssa::SourceTypeGraph>) -> Self {
-        let stated = (graph.iter())
+        Self::of_parts(graph, &BTreeMap::new())
+    }
+
+    /// The greatest set of laid-out aggregates whose members C spells naming only tags in the set,
+    /// the declared graph's beside those the accesses lay out (doc/adr-aggregates.md); each round
+    /// drops a tag or ends, so at most one round per aggregate.
+    fn of_parts(
+        graph: Option<&r2ssa::SourceTypeGraph>,
+        inferred: &BTreeMap<String, r2types::AggregateDefinition>,
+    ) -> Self {
+        let declared = (graph.iter())
             .flat_map(|graph| graph.aggregates().iter().map(move |layout| (graph, layout)))
             .filter_map(|(graph, layout)| {
                 let definition = r2types::aggregate_members(graph, layout.name())?;
                 Some((layout.name().to_owned(), definition))
-            })
+            });
+        // A declared tag of the same name wins: it comes last.
+        let stated = (inferred.iter())
+            .map(|(name, definition)| (name.clone(), definition.clone()))
+            .chain(declared)
             .collect::<BTreeMap<_, _>>();
         let mut candidates = (stated.iter())
             .map(|(name, definition)| (name.clone(), definition.is_union))

@@ -6120,3 +6120,80 @@ fn a_stack_compare_without_a_bound_or_a_model_stays_a_branch() {
         effectful.output
     );
 }
+
+/// `mixed_touch` of `tests/corpus/shapes.c`, stripped: a byte at `rdi`, a word at `rdi + 2`, a
+/// dword at `rdi + 4` and a qword at `rdi + 8`.
+const FIELDS_THROUGH_RDI: &[u8] = &[
+    0x0f, 0xb6, 0x07, // movzx eax, byte [rdi]
+    0x04, 0x03, // add al, 3
+    0x88, 0x07, // mov [rdi], al
+    0x66, 0x81, 0x77, 0x02, 0xef, 0xbe, // xor word [rdi + 2], 0xbeef
+    0xc7, 0x47, 0x04, 0x07, 0x00, 0x00, 0x00, // mov dword [rdi + 4], 7
+    0x48, 0xc7, 0x47, 0x08, 0x09, 0x00, 0x00, 0x00, // mov qword [rdi + 8], 9
+    0xc3, // ret
+];
+
+/// A parameter read only through constant offsets is a pointer to the structure they lay out
+/// (doc/adr-aggregates.md).
+#[test]
+fn a_parameter_read_at_constant_offsets_points_to_the_structure_they_lay_out() {
+    let machine = Machine::new("x86-64", "x86-64", 64);
+    let target = machine.target();
+    let program = Fixture {
+        bytes: FIELDS_THROUGH_RDI.to_vec(),
+        name: "fields",
+    };
+    let text = decompile(&target, &program, BASE)
+        .expect("decompile")
+        .output;
+    let text = text.text();
+    let tag = format!("fcn_{BASE:x}_arg0");
+    for line in [
+        format!("struct {tag} {{"),
+        "    uint8_t f_0;".into(),
+        "    uint8_t _pad_1[1];".into(),
+        "    uint16_t f_2;".into(),
+        "    uint64_t f_8;".into(),
+    ] {
+        assert!(text.contains(&line), "no `{line}`:\n{text}");
+    }
+    assert!(text.contains(&format!("(struct {tag}* arg0)")), "{text}");
+    assert!(
+        text.contains("1 structure laid out from a parameter's accesses"),
+        "{text}"
+    );
+}
+
+/// One access at the parameter itself is a scalar pointer, fields of one width are an array's as
+/// much as a structure's, and an indexed access is an element: none lays out a structure.
+#[test]
+fn a_parameter_read_once_or_by_index_lays_out_no_structure() {
+    let machine = Machine::new("x86-64", "x86-64", 64);
+    let target = machine.target();
+    for (name, bytes) in [
+        // mov dword [rdi], 7; ret
+        ("once", vec![0xc7, 0x07, 0x07, 0x00, 0x00, 0x00, 0xc3]),
+        // mov qword [rdi], 1; mov qword [rdi + 8], 2; ret: one width is an array's as much
+        (
+            "uniform",
+            vec![
+                0x48, 0xc7, 0x07, 0x01, 0x00, 0x00, 0x00, 0x48, 0xc7, 0x47, 0x08, 0x02, 0x00, 0x00,
+                0x00, 0xc3,
+            ],
+        ),
+        // mov dword [rdi + rsi*4], 7; mov dword [rdi + 4], 1; ret
+        (
+            "indexed",
+            vec![
+                0xc7, 0x04, 0xb7, 0x07, 0x00, 0x00, 0x00, 0xc7, 0x47, 0x04, 0x01, 0x00, 0x00, 0x00,
+                0xc3,
+            ],
+        ),
+    ] {
+        let program = Fixture { bytes, name };
+        let output = decompile(&target, &program, BASE)
+            .expect("decompile")
+            .output;
+        assert!(!output.text().contains("struct fcn_"), "{name}:\n{output}");
+    }
+}

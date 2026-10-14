@@ -3,6 +3,7 @@
 // at the item that keeps one.
 #![cfg_attr(dylint_lib = "r2sleigh_lints", deny(entity_keyed_map))]
 
+pub(crate) mod aggregates;
 pub(crate) mod analysis;
 pub(crate) mod callee;
 pub(crate) mod constraint;
@@ -27,7 +28,7 @@ pub fn parse_external_type_like_spec(spec: &str, ptr_bits: u32) -> Option<CTypeL
 pub(crate) use external::ExternalAggregateKind;
 pub(crate) use facts::{
     SignatureCertificate, is_generic_signature_type, signature_hint_can_replace_existing,
-    signature_is_specific, signature_param_count_is_authoritative, signature_param_name_is_weak,
+    signature_param_count_is_authoritative, signature_param_name_is_weak,
     signature_projection_is_exact, signature_return_hint_can_replace_existing,
     summary_hint_can_replace_weak_existing,
 };

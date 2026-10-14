@@ -172,9 +172,17 @@ pub struct RecoveredInterface {
     reads_past_parameters: bool,
     /// Whether the result is void because no call reads it, which holds under a closed world only.
     closed_world: bool,
+    /// The first pass over recovery's own facts that moved a state past its height.
+    exhausted: Option<crate::fixpoint::Exhausted>,
 }
 
 impl RecoveredInterface {
+    /// The first pass over recovery's facts that moved a state past its stated height: the function
+    /// recovered from refuses, as a sealed one does (`Prepared::seal`).
+    pub(crate) const fn exhausted(&self) -> Option<crate::fixpoint::Exhausted> {
+        self.exhausted
+    }
+
     /// Whether the result rests on `Premise::ClosedWorld`: void because no call the image shows reads it.
     pub const fn assumes_closed_world(&self) -> bool {
         self.closed_world
@@ -902,7 +910,15 @@ fn float_result_written(
     graph: &SsaGraph,
     slots: &SourceConventionSlots,
 ) -> Option<(CanonicalStorageId, crate::liveout::FunctionLiveOut)> {
-    let float = slots.float_result_slot()?;
+    result_register_written(func, graph, slots.float_result_slot()?)
+}
+
+/// `slot` and its live-out, where an operation of the body reaches a return there through any merge.
+fn result_register_written(
+    func: &SSAFunction,
+    graph: &SsaGraph,
+    float: CanonicalStorageId,
+) -> Option<(CanonicalStorageId, crate::liveout::FunctionLiveOut)> {
     let live_out = crate::liveout::FunctionLiveOut::compute(func, graph, &[float]);
     let mut seen = crate::dense::IdSet::default();
     let mut pending = live_out.iter().collect::<Vec<_>>();
@@ -977,7 +993,7 @@ fn read_of(
     float: Option<CanonicalStorageId>,
 ) -> Option<ResultRead> {
     match (reads.integer, reads.float, float) {
-        (0, 0, _) if reads.all_overwrite(float.is_some()) => Some(ResultRead::None),
+        (0, 0, _) if reads.all_overwrite(float.is_some(), false) => Some(ResultRead::None),
         // A read past the call's block (the next call's argument, under IPA-RA) is still the
         // integer register the call leaves.
         (_, 0, None) => Some(ResultRead::Carrier(CarrierRead::Integer)),
@@ -1449,21 +1465,23 @@ fn recover_interface_inner(
         {
             let both =
                 || crate::liveout::FunctionLiveOut::compute(func, graph, &[low.slot(), high]);
-            match result_reads.map(|reads| reads.second) {
+            // A call whose scan ended before it touched the second register is no evidence either way.
+            match result_reads.map(|reads| (reads.second, reads.second_overwritten == reads.calls))
+            {
                 // One call reading the second register is evidence the value spans both: a call
                 // that reads only the first discards the high half.
-                Some(1..) => {
+                Some((1.., _)) => {
                     result = RecoveredFunctionResult::Pair {
                         low: low.slot(),
                         high,
                     };
                     candidate_live_out = both();
                 }
-                Some(0) => {}
+                Some((0, true)) => {}
                 // Read for a caller: the result stays the first register, the second is a carrier
                 // a reading call takes, and what feeds it is observed (its parameters are the
                 // call's).
-                None => {
+                Some((0, false)) | None => {
                     result_ambiguous = true;
                     result_carriers = Some(r2source::SourceResultCarriers {
                         integer: low.slot(),
@@ -1499,8 +1517,10 @@ fn recover_interface_inner(
     let closed_world = result == RecoveredFunctionResult::Unproven
         && machine_context.is_some_and(|context| context.accepts(r2source::Premise::ClosedWorld))
         && result_reads.is_some_and(|reads| {
-            // The float register is a result only where the body writes it.
-            reads.none_read(float_result_written(func, graph, slots).is_some())
+            // The float and second registers are results only where the body writes them.
+            let second = (slots.second_result_slot())
+                .is_some_and(|slot| result_register_written(func, graph, slot).is_some());
+            reads.none_read(float_result_written(func, graph, slots).is_some(), second)
         });
     if closed_world {
         result = RecoveredFunctionResult::Void;
@@ -1643,6 +1663,7 @@ fn recover_interface_inner(
         result_carriers,
         reads_past_parameters,
         closed_world,
+        exhausted: facts.exhausted(),
     })
 }
 
@@ -2267,6 +2288,12 @@ pub fn mint_recovered_call_site_interface(
             }
             _ => SourceCallResult::Register { storage },
         },
+        // A call that reads only the first register keeps it (doc/adr-language-profile.md).
+        SourceFunctionReturn::Pair { low, .. }
+            if caller_reads.is_some_and(|reads| reads.second == 0) =>
+        {
+            SourceCallResult::Register { storage: low }
+        }
         SourceFunctionReturn::Pair { low, high } => SourceCallResult::Pair { low, high },
         // A body nobody read owns the arguments beside the result: an import
         // thunk forwards every one and reads none, so what its own body proves
@@ -2381,6 +2408,72 @@ mod tests {
         let arch = arch();
         let func = SSAFunction::from_blocks_with_arch(&[block], Some(&arch)).expect("ssa");
         recover_interface(&func, &candidates(), None).expect("recovery")
+    }
+
+    /// A body writing x0 and x1 on every return, proven a pair by a call reading x1, is one register
+    /// at a call reading only x0 (doc/adr-language-profile.md).
+    #[test]
+    fn a_call_reading_only_the_first_register_of_a_pair_takes_that_register() {
+        let mut block = R2ILBlock::new(0x1000, 8);
+        block.push(R2ILOp::IntAdd {
+            dst: Varnode::register(8, 8),
+            a: Varnode::register(0, 8),
+            b: Varnode::constant(2, 8),
+        });
+        block.push(R2ILOp::IntAdd {
+            dst: Varnode::register(0, 8),
+            a: Varnode::register(0, 8),
+            b: Varnode::constant(1, 8),
+        });
+        block.push(R2ILOp::Return {
+            target: Varnode::constant(0, 8),
+        });
+        let func = SSAFunction::from_blocks_with_arch(&[block], Some(&arch())).expect("ssa");
+        let slots = candidates()
+            .with_second_result_slot(Some(register(8, 8)))
+            .expect("x1 beside x0");
+        let reads = |second| r2source::SourceResultReads {
+            integer: 1,
+            second,
+            calls: 1,
+            ..Default::default()
+        };
+        let stated = Stated {
+            loader_role: None,
+            result_reads: Some(reads(1)),
+        };
+        let recovered =
+            recover_interface_inner(&func, None, &slots, None, stated).expect("recovery");
+        let (low, high) = (register(0, 8), register(8, 8));
+        assert_eq!(
+            recovered.result(),
+            RecoveredFunctionResult::Pair { low, high }
+        );
+        let names = r2source::SourceRoleRegisterNames::new(Some("x30"), Some("sp"), None);
+        let roles = SourceMachineRoles::new(Some(register(0x80, 8)), Some(register(0x88, 8)))
+            .expect("machine roles")
+            .with_role_register_names(names);
+        let interface =
+            mint_recovered_interface(&recovered, &roles, b"pair", "aapcs64").expect("a pair");
+        let identity = SourceCallSiteIdentity::new(
+            0x2003,
+            CanonicalStorageId {
+                space: CanonicalStorageSpace::Constant,
+                offset: 0x1000,
+                size: 8,
+            },
+        );
+        let site = |second| {
+            mint_recovered_call_site_interface(&interface, identity, b"pair", Some(reads(second)))
+                .expect("a call site")
+        };
+        assert_eq!(
+            site(0).result(),
+            SourceCallResult::Register { storage: low }
+        );
+        assert_eq!(site(0).exact_callee_interface(), Some(&interface));
+        assert_eq!(site(1).result(), SourceCallResult::Pair { low, high });
+        assert_eq!(site(1).exact_callee_interface(), Some(&interface));
     }
 
     fn call_boundary_with(

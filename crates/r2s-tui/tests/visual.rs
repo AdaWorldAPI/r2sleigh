@@ -612,6 +612,22 @@ fn a_rendering_under_way_blocks_neither_the_frame_nor_the_keys() {
 
 /// A rendering asked for at a seek the user has left is not shown: the
 /// pane asks again for where the user is.
+/// The visual mode holds no rendering of its own: coming back to a function asks the engine again,
+/// whose query database answers it.
+#[test]
+fn coming_back_to_a_function_asks_the_engine_again() {
+    run(|ui| {
+        ui.press("\\");
+        assert_eq!(ui.view(), View::Split);
+        ui.press("\n");
+        assert_eq!(ui.seek(), 0x2000);
+        ui.press("u");
+        assert_eq!(ui.seek(), 0x1000);
+        ui.settle();
+        assert_eq!(ui.seen.lock().unwrap().decompiled, [0x1000, 0x2000, 0x1000]);
+    });
+}
+
 #[test]
 fn an_answer_for_a_seek_the_user_left_is_dropped() {
     let (host, seen, started, release) = gated();

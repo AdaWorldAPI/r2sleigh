@@ -16,7 +16,6 @@ pub(crate) enum TypeEvidence {
     CanonicalStackSignedness,
     ExternalSignatureCurrent,
     CanonicalMainSignature,
-    SsaFieldOffsetPattern,
     ExternalParamName,
 }
 
@@ -100,9 +99,6 @@ pub(crate) struct TypeAnalysisDiagnostics {
 /// This detached projection is not certificate authority. Authoritative
 /// the analysis derives it internally from a retained [`SsaArtifact`] owner.
 pub(crate) struct LocalStructArtifacts {
-    pub struct_decls: Vec<StructDeclCandidate>,
-    pub slot_type_overrides: HashMap<usize, String>,
-    pub slot_field_profiles: HashMap<usize, BTreeMap<u64, String>>,
     pub slot_element_strides: HashMap<usize, u64>,
     pub indexed_accesses: Vec<ScalarArrayRenderCandidate>,
 }
@@ -442,57 +438,6 @@ pub(crate) fn is_generic_signature_type(ty: Option<&CTypeLike>) -> bool {
     crate::is_generic_signature_type(ty)
 }
 
-pub(crate) fn indexed_local_struct_refinement_slots(
-    local_structs: &LocalStructArtifacts,
-    signature_sources: &[SignatureCertificateSource],
-    type_assumption_parameter_slots: &HashSet<usize>,
-) -> HashSet<usize> {
-    if signature_sources.is_empty()
-        || signature_sources.iter().any(|source| {
-            !matches!(
-                source,
-                SignatureCertificateSource::LocalInference
-                    | SignatureCertificateSource::TypeAssumption
-                    | SignatureCertificateSource::SlotTypeOverride
-            )
-        })
-    {
-        return HashSet::new();
-    }
-    local_structs
-        .slot_element_strides
-        .keys()
-        .filter(|slot| !type_assumption_parameter_slots.contains(slot))
-        .copied()
-        .collect()
-}
-
-pub(crate) fn override_type_is_generated_local_struct(raw_ty: &str, ptr_bits: u32) -> bool {
-    generated_local_struct_name_from_override(raw_ty, ptr_bits).is_some()
-}
-
-pub(crate) fn generated_local_struct_name_from_override(
-    raw_ty: &str,
-    ptr_bits: u32,
-) -> Option<String> {
-    if let Some(name) = parse_struct_ptr_type_name(raw_ty)
-        && is_generated_local_struct_name(&name)
-    {
-        return Some(name);
-    }
-    let Some(CTypeLike::Pointer(inner)) = parse_c_type_like(raw_ty, ptr_bits) else {
-        return None;
-    };
-    match inner.as_ref() {
-        CTypeLike::Struct(name) | CTypeLike::Typedef { name, .. }
-            if is_generated_local_struct_name(name) =>
-        {
-            Some(name.clone())
-        }
-        _ => None,
-    }
-}
-
 /// Whether a type name denotes something we can actually resolve.
 ///
 /// This replaces `role_registry::semantic_typedef_is_authoritative`, a
@@ -550,49 +495,6 @@ pub(crate) fn external_named_aggregate_has_real_layout(
                     .is_some_and(|en| !en.variants.is_empty())
         })
     })
-}
-
-pub(crate) fn signature_param_blocks_generated_local_struct_override(
-    param: Option<&FunctionParamSpec>,
-    raw_ty: &str,
-    type_db: &ExternalTypeDb,
-    ptr_bits: u32,
-) -> bool {
-    if !override_type_is_generated_local_struct(raw_ty, ptr_bits) {
-        return false;
-    }
-    let Some(param) = param else {
-        return false;
-    };
-    if is_generic_signature_type(param.ty.as_ref()) {
-        return false;
-    }
-    let Some(ty) = param.ty.as_ref() else {
-        return false;
-    };
-    match ty {
-        CTypeLike::Pointer(inner) => match inner.as_ref() {
-            CTypeLike::Unknown | CTypeLike::Void => false,
-            CTypeLike::Struct(name) => external_named_aggregate_has_real_layout(type_db, name),
-            CTypeLike::Typedef { name, .. } => {
-                type_db_resolves_type_name(type_db, name, ptr_bits)
-                    || external_named_aggregate_has_real_layout(type_db, name)
-            }
-            CTypeLike::Union(_) | CTypeLike::Enum(_) => true,
-            _ => true,
-        },
-        CTypeLike::Int { bits, .. } if *bits == ptr_bits && is_generic_arg_name(&param.name) => {
-            false
-        }
-        _ => true,
-    }
-}
-
-pub(crate) fn parse_struct_ptr_type_name(ty: &str) -> Option<String> {
-    ty.trim()
-        .strip_prefix("struct ")
-        .and_then(|rest| rest.strip_suffix(" *"))
-        .map(str::to_string)
 }
 
 pub(crate) fn estimate_c_type_size_bytes(ty: &str, ptr_bits: u32) -> u64 {

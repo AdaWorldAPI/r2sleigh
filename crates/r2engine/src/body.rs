@@ -898,13 +898,34 @@ fn transfer_of(
         BlockTerminator::Branch { target } if tail_calls.contains(&target) => {
             (target, r2source::AdvisoryCallTransfer::TailJump)
         }
+        // A conditional branch whose arm is another function's entry: a predicated tail call.
+        BlockTerminator::ConditionalBranch {
+            true_target,
+            false_target,
+        } => match (
+            tail_calls.contains(&true_target),
+            tail_calls.contains(&false_target),
+        ) {
+            (true, false) => (true_target, r2source::AdvisoryCallTransfer::TailJump),
+            (false, true) => (false_target, r2source::AdvisoryCallTransfer::TailJump),
+            _ => return None,
+        },
         _ => return None,
     };
-    let at = instruction
-        .lifted
-        .ops
-        .iter()
-        .position(r2il::R2ILOp::is_control_flow)?;
+    // The operation that transfers there: a guarded branch is the one naming the arm, not the guard.
+    let at = match kind {
+        r2source::AdvisoryCallTransfer::TailJump => {
+            instruction.lifted.ops.iter().position(|op| {
+                op.transfer()
+                    .is_some_and(|transfer| transfer.direct && transfer.target.offset == target)
+            })?
+        }
+        _ => instruction
+            .lifted
+            .ops
+            .iter()
+            .position(r2il::R2ILOp::is_control_flow)?,
+    };
     Some(Transfer {
         op: base + at,
         target,
@@ -1007,5 +1028,43 @@ fn successors_of(
             .map(|target| (AdvisorySuccessorKind::Direct, target))
             .collect(),
         BlockTerminator::Return | BlockTerminator::None => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod transfer_tests {
+    use super::*;
+
+    /// A conditional branch whose arm is another function's entry (`jne g`, ARM's `bne g`) is a
+    /// tail jump at the operation naming that arm.
+    #[test]
+    fn a_conditional_branch_to_an_entry_is_a_tail_jump() {
+        let cond = r2il::Varnode::unique(0x10, 1);
+        let mut lifted = R2ILBlock::new(0x1000, 6);
+        lifted.push(r2il::R2ILOp::IntEqual {
+            dst: cond.clone(),
+            a: r2il::Varnode::register(0, 4),
+            b: r2il::Varnode::constant(0, 4),
+        });
+        lifted.push(r2il::R2ILOp::CBranch {
+            target: r2il::Varnode::constant(0x2000, 8),
+            cond,
+        });
+        let instruction = Instruction {
+            lifted,
+            bytes: Vec::new(),
+            terminator: BlockTerminator::ConditionalBranch {
+                true_target: 0x2000,
+                false_target: 0x1006,
+            },
+        };
+        let tail_calls = BTreeSet::from([0x2000]);
+        let transfer = transfer_of(&instruction, 7, &tail_calls).expect("a transfer");
+        assert_eq!((transfer.op, transfer.target), (8, 0x2000));
+        assert!(matches!(
+            transfer.kind,
+            r2source::AdvisoryCallTransfer::TailJump
+        ));
+        assert!(transfer_of(&instruction, 7, &BTreeSet::new()).is_none());
     }
 }
