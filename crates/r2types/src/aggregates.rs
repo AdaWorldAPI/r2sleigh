@@ -11,6 +11,8 @@ use crate::{AggregateDefinition, CTypeLike, EvidenceTypes, Signedness};
 pub struct InferredAggregate {
     pub tag: String,
     pub definition: AggregateDefinition,
+    /// The member each accessed offset is, by its index in `definition.members`.
+    pub fields: BTreeMap<i64, usize>,
 }
 
 /// Why a parameter's accesses lay out no structure.
@@ -51,9 +53,16 @@ pub(crate) fn parameter_aggregates(
             continue;
         };
         match layout(accesses, evidence, ptr_bits) {
-            Ok(definition) => {
+            Ok((definition, fields)) => {
                 let tag = format!("fcn_{entry:x}_arg{slot}");
-                out.insert(slot, InferredAggregate { tag, definition });
+                out.insert(
+                    slot,
+                    InferredAggregate {
+                        tag,
+                        definition,
+                        fields,
+                    },
+                );
             }
             Err(reason) => {
                 r2il::refusal_evidence!("aggregate", "{entry:#x} arg{slot}: {reason:?}");
@@ -69,7 +78,7 @@ fn layout(
     accesses: &[ParameterFieldAccess],
     evidence: &EvidenceTypes,
     ptr_bits: u32,
-) -> Result<AggregateDefinition, LayoutRefusal> {
+) -> Result<(AggregateDefinition, BTreeMap<i64, usize>), LayoutRefusal> {
     let mut fields = Vec::<(u64, u64, Option<CTypeLike>)>::new();
     for access in accesses {
         let offset =
@@ -109,6 +118,7 @@ fn layout(
         return Err(LayoutRefusal::OneWidth);
     }
     let mut members = Vec::new();
+    let mut at = BTreeMap::new();
     let mut end = 0;
     for (offset, width, ty) in fields {
         // C aligns a scalar to its width, so an aligned field sits where the access says.
@@ -123,13 +133,15 @@ fn layout(
             bits: (width * 8) as u32,
             signedness: Signedness::Unsigned,
         });
+        at.insert(offset as i64, members.len());
         members.push((ty, format!("f_{offset:x}")));
         end = offset + width;
     }
-    Ok(AggregateDefinition {
+    let definition = AggregateDefinition {
         is_union: false,
         members,
-    })
+    };
+    Ok((definition, at))
 }
 
 /// A scalar a field can be spelled at: C aligns it to its own width.

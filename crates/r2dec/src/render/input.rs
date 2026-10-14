@@ -83,6 +83,13 @@ impl<'a> RenderInput<'a> {
         &self.facts.report().type_facts().inferred_aggregates
     }
 
+    /// Each parameter that points to an inferred structure, with the member at each offset.
+    pub fn parameter_structures(
+        &self,
+    ) -> &'a std::collections::BTreeMap<usize, r2types::ParameterStructure> {
+        &self.facts.report().type_facts().parameter_structures
+    }
+
     /// The types the function's declaration states, as one graph: its aggregates' layouts.
     pub fn type_graph(&self) -> Option<&'a r2ssa::SourceTypeGraph> {
         (self.facts.source().machine_context().function_interface())

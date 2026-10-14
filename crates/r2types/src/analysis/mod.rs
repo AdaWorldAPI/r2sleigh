@@ -782,6 +782,7 @@ fn build_type_analysis_inner(
         parameter_bases: BTreeMap::new(),
         // Enrichment states these from the solve, beside the exact signature.
         inferred_aggregates: BTreeMap::new(),
+        parameter_structures: BTreeMap::new(),
         callconv: input.parsed_context.callconv.clone(),
         noreturn: input.parsed_context.noreturn,
         known_function_signatures: input.parsed_context.known_function_signatures.clone(),

@@ -6162,6 +6162,9 @@ fn a_parameter_read_at_constant_offsets_points_to_the_structure_they_lay_out() {
         text.contains("1 structure laid out from a parameter's accesses"),
         "{text}"
     );
+    // Each access through the parameter is the member at its offset (P9b).
+    assert!(text.contains("arg0->f_2"), "{text}");
+    assert!(!text.contains("r2sleigh_load_u16((void*)"), "{text}");
 }
 
 /// One access at the parameter itself is a scalar pointer, fields of one width are an array's as
