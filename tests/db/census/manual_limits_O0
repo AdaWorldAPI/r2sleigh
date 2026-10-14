@@ -137,10 +137,10 @@ uint32_t _out_param_parse(uint8_t* arg0, struct fcn_1000005d8_arg1* arg1)
                 }
             }
             {
-                r2sleigh_store_u32((void*)(uint64_t)arg1, (uint32_t)((uint64_t)((uint64_t)(int32_t)stack_m20_1 * (uint64_t)stack_m32_1) >> 0U));
-                r2sleigh_store_u64((void*)((uint64_t)arg1 + (uint64_t)1U * 8U), (uint64_t)stack_m48_1);
-                r2sleigh_store_u64((void*)((uint64_t)arg1 + (uint64_t)3U * 8U), (uint64_t)stack_m40_2);
-                r2sleigh_store_u64((void*)((uint64_t)arg1 + (uint64_t)2U * 8U), (uint64_t)0U);
+                r2sleigh_store_u32((void*)&arg1->f_0, (uint32_t)((uint64_t)((uint64_t)(int32_t)stack_m20_1 * (uint64_t)stack_m32_1) >> 0U));
+                r2sleigh_store_u64((void*)&arg1->f_8, (uint64_t)stack_m48_1);
+                r2sleigh_store_u64((void*)&arg1->f_18, (uint64_t)stack_m40_2);
+                r2sleigh_store_u64((void*)&arg1->f_10, (uint64_t)0U);
                 if ((uint8_t)((uint64_t)stack_m40_2 <= (uint64_t)0U)) {
                     stack_m56_1 = 0;
                 } else {
