@@ -88,8 +88,8 @@ fn reached_memory_operations(
     graph: &SsaGraph,
     reloads_of: &crate::dense::IdMap<ValueId, Vec<ValueId>>,
     parameter: ValueId,
-) -> BTreeSet<(InstId, Reached)> {
-    let mut operations = BTreeSet::new();
+) -> Vec<(InstId, Reached)> {
+    let mut operations = Vec::new();
     let mut reached = crate::dense::IdSet::default();
     let mut pending = vec![parameter];
     while let Some(value) = pending.pop() {
@@ -107,14 +107,14 @@ fn reached_memory_operations(
                     addr,
                     ..
                 }) if *addr == value => {
-                    operations.insert((inst.id, Reached::Read));
+                    operations.push((inst.id, Reached::Read));
                 }
                 InstPayload::Op(SSAOp::Store {
                     space: SpaceId::Ram,
                     addr,
                     ..
                 }) if *addr == value => {
-                    operations.insert((inst.id, Reached::Write));
+                    operations.push((inst.id, Reached::Write));
                 }
                 // A spilled value comes back through its home's reloads; anything else a load,
                 // store or call does with it leaves the pointee alone.
@@ -127,18 +127,21 @@ fn reached_memory_operations(
                 ) => {}
                 // What a linked, guarded or atomic load returns is memory's, never the parameter.
                 InstPayload::Op(op) if op.is_memory_read() || op.is_memory_write() => {
-                    operations.insert((inst.id, Reached::Unmodelled));
+                    operations.push((inst.id, Reached::Unmodelled));
                 }
                 _ => pending.extend(inst.output),
             }
         }
     }
+    // In instruction order, each once: the first refusal is the earliest instruction's.
+    operations.sort_unstable();
+    operations.dedup();
     operations
 }
 
 fn fields_of(
     slot: u32,
-    operations: &BTreeSet<(InstId, Reached)>,
+    operations: &[(InstId, Reached)],
     addresses: &crate::AddressProvenanceFacts,
     memory_accesses: &BTreeMap<StructuredAccessId, MemoryAccessCertificate>,
     memory_accesses_by_inst: &crate::dense::IdMap<InstId, ByDirection<Vec<StructuredAccessId>>>,
