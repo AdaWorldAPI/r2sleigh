@@ -764,3 +764,25 @@ fn a_second_register_read_past_the_call_s_block_keeps_the_result() {
     let text = rendered(program);
     assert!(!text.starts_with("void f("), "{text}");
 }
+
+/// `f` is `test edi, edi; jne g; mov eax, 1; ret`, and `g` is `mov eax, 2; ret`.
+const CONDITIONAL_TAIL: &[u8] = &[
+    0x85, 0xff, // 1000 test edi, edi
+    0x0f, 0x85, 0x08, 0x00, 0x00, 0x00, // 1002 jne 0x1010
+    0xb8, 0x01, 0x00, 0x00, 0x00, // 1008 mov eax, 1
+    0xc3, // 100d ret
+    0x90, 0x90, // 100e padding
+    0xb8, 0x02, 0x00, 0x00, 0x00, // 1010 mov eax, 2
+    0xc3, // 1015 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1016 padding
+];
+
+/// No call-site contract names a conditional tail jump, so its arm has no result: the function
+/// refuses rather than return what EAX held before the branch.
+#[test]
+fn a_conditional_tail_jump_returns_nothing_from_before_the_branch() {
+    let functions = [("f", BASE, 0x0e), ("g", BASE + 0x10, 6)];
+    let f = rendered(Literal::of_code(CONDITIONAL_TAIL, &functions));
+    assert!(f.contains("r2sleigh refused f"), "{f}");
+}
