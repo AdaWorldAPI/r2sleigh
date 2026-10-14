@@ -114,43 +114,6 @@ fn imported_size_t_type_hint_matches_preserved_source_typedef() {
     );
 }
 
-#[test]
-fn external_stack_identity_refuses_without_a_structural_root() {
-    let vars = [RecoveredVariable {
-        name: "var_10h".to_string(),
-        kind: "b".to_string(),
-        delta: -0x10,
-        var_type: "int32_t".to_string(),
-        isarg: false,
-        reg: None,
-    }];
-    let analysis = build_type_analysis(TypeAnalysisInput {
-        function_name: "sym.f",
-        ptr_bits: 64,
-        inferred_signature: InferredSignature {
-            function_name: "sym.f".to_string(),
-            signature: "void sym.f ()".to_string(),
-            ret_type: "void".to_string(),
-            params: Vec::new(),
-            callconv: "amd64".to_string(),
-            arch: "x86-64".to_string(),
-        },
-        recovered_vars: &vars,
-        parsed_context: ParsedExternalContext::default(),
-        local_structs: LocalStructArtifacts::default(),
-        interproc_summary_set: None,
-        diagnostics: TypeAnalysisDiagnostics::default(),
-    });
-
-    // No external stack identity applies: `var_10h` keeps radare2's name and its own type.
-    let binding = &analysis.type_facts.visible_bindings[0];
-    let int32 = parse_test_type("int32_t", 64);
-    assert_eq!(
-        (binding.name.as_str(), binding.ty.as_ref()),
-        ("var_10h", Some(&int32))
-    );
-}
-
 /// Parameter 0 points at a declared `Buffer { data, len }`; parameter 1 is a
 /// `void *`, which says it is a pointer and nothing about what it points at.
 fn buffer_then_undeclared_pointer() -> (r2il::ArchSpec, r2ssa::SourceFunctionInterface) {

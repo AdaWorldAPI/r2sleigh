@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::context::{ExternalRegisterParamSpec, StackSlotKey};
+use crate::context::ExternalRegisterParamSpec;
 use crate::convert::CTypeLike;
 use crate::external::ExternalTypeDb;
 use crate::model::Signedness;
@@ -248,26 +248,6 @@ pub struct FunctionSignatureSpec {
     pub params: Vec<FunctionParamSpec>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VisibleBindingKind {
-    Param,
-    Local,
-    StackObject,
-    HiddenHome,
-    HiddenSaved,
-    Unknown,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VisibleBinding {
-    pub name: String,
-    pub ty: Option<CTypeLike>,
-    pub kind: VisibleBindingKind,
-    pub stack_slot: Option<StackSlotKey>,
-    pub param_index: Option<usize>,
-    pub source_reg: Option<String>,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CalleeArgEffect {
     pub read: bool,
@@ -498,7 +478,6 @@ pub struct FunctionTypeFacts {
     pub noreturn: bool,
     pub known_function_signatures: HashMap<String, FunctionType>,
     pub register_params: Vec<ExternalRegisterParamSpec>,
-    pub visible_bindings: Vec<VisibleBinding>,
     pub callee_facts: BTreeMap<u64, CalleeFact>,
     pub external_type_db: ExternalTypeDb,
     pub program_data_objects: crate::ProgramDataObjectTypeFacts,
@@ -520,7 +499,6 @@ pub struct FunctionTypeFactInputs {
     pub noreturn: bool,
     pub known_function_signatures: HashMap<String, FunctionType>,
     pub register_params: Vec<ExternalRegisterParamSpec>,
-    pub visible_bindings: Vec<VisibleBinding>,
     pub callee_facts: BTreeMap<u64, CalleeFact>,
     pub external_type_db: ExternalTypeDb,
     pub program_data_objects: crate::ProgramDataObjectTypeFacts,
@@ -545,7 +523,6 @@ impl FunctionTypeFacts {
             && !self.noreturn
             && self.known_function_signatures.is_empty()
             && self.register_params.is_empty()
-            && self.visible_bindings.is_empty()
             && self.callee_facts.is_empty()
             && self.external_type_db.structs.is_empty()
             && self.external_type_db.unions.is_empty()
@@ -571,7 +548,6 @@ impl FunctionTypeFacts {
             noreturn: self.noreturn,
             known_function_signatures: self.known_function_signatures,
             register_params: self.register_params,
-            visible_bindings: self.visible_bindings,
             callee_facts: self.callee_facts,
             external_type_db: self.external_type_db,
             program_data_objects: self.program_data_objects,
@@ -986,7 +962,6 @@ impl FunctionTypeFactsBuilder {
             noreturn,
             known_function_signatures,
             mut register_params,
-            mut visible_bindings,
             callee_facts,
             external_type_db,
             program_data_objects,
@@ -1000,7 +975,6 @@ impl FunctionTypeFactsBuilder {
             &mut merged_signature,
             &mut signature_certificate,
             &mut register_params,
-            &mut visible_bindings,
         );
 
         let mut diagnostics = diagnostics;
@@ -1015,7 +989,6 @@ impl FunctionTypeFactsBuilder {
             noreturn,
             known_function_signatures,
             register_params,
-            visible_bindings,
             callee_facts,
             external_type_db,
             program_data_objects,
@@ -1048,7 +1021,6 @@ fn canonicalize_generic_param_names(
     merged_signature: &mut Option<FunctionSignatureSpec>,
     signature_certificate: &mut Option<SignatureCertificate>,
     register_params: &mut [ExternalRegisterParamSpec],
-    visible_bindings: &mut [VisibleBinding],
 ) {
     if let Some(signature) = merged_signature.as_mut() {
         canonicalize_signature_generic_param_names(signature);
@@ -1058,14 +1030,6 @@ fn canonicalize_generic_param_names(
     }
     for (index, param) in register_params.iter_mut().enumerate() {
         param.name = canonical_generic_param_name(index, &param.name);
-    }
-    for binding in visible_bindings {
-        let Some(index) = binding.param_index else {
-            continue;
-        };
-        if matches!(binding.kind, VisibleBindingKind::Param) {
-            binding.name = canonical_generic_param_name(index, &binding.name);
-        }
     }
 }
 
@@ -1365,14 +1329,6 @@ mod tests {
                     reg: "rsi".to_string(),
                 },
             ],
-            visible_bindings: vec![VisibleBinding {
-                name: "arg1".to_string(),
-                ty: Some(test_int(64)),
-                kind: VisibleBindingKind::Param,
-                stack_slot: None,
-                param_index: Some(0),
-                source_reg: Some("rdi".to_string()),
-            }],
             ..FunctionTypeFactInputs::default()
         })
         .build();
@@ -1382,7 +1338,6 @@ mod tests {
         assert_eq!(signature.params[1].name, "arg1");
         assert_eq!(facts.register_params[0].name, "arg0");
         assert_eq!(facts.register_params[1].name, "arg1");
-        assert_eq!(facts.visible_bindings[0].name, "arg0");
     }
 
     #[test]

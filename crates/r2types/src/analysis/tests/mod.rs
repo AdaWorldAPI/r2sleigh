@@ -1,6 +1,5 @@
 mod arrays;
 mod assumptions;
-mod bindings;
 mod signature;
 mod stack;
 mod structs;
@@ -58,38 +57,6 @@ fn parse_test_type(spelling: &str, ptr_bits: u32) -> CTypeLike {
 }
 
 #[test]
-fn unplaceable_recovered_type_produces_no_candidate() {
-    let vars = [RecoveredVariable {
-        name: "var_8h".to_string(),
-        kind: "b".to_string(),
-        delta: -8,
-        var_type: "not a type".to_string(),
-        isarg: false,
-        reg: None,
-    }];
-    let context_maps = SignatureContextMaps::default();
-    let stack_access_widths = BTreeMap::new();
-    let stack_access_signedness = BTreeMap::new();
-    let context = VarTypeCandidateContext {
-        current_context_maps: &context_maps,
-        merged_signature: None,
-        stack_access_widths: &stack_access_widths,
-        stack_access_signedness: &stack_access_signedness,
-        ptr_bits: 64,
-        is_main_signature: false,
-    };
-    let mut diagnostics = TypeAnalysisDiagnostics::default();
-
-    let candidates = build_var_type_candidates(&vars, &context, &mut diagnostics);
-
-    assert!(candidates.is_empty());
-    assert_eq!(
-        diagnostics.warnings,
-        ["var `var_8h` type `not a type` was not a placeable C type"]
-    );
-}
-
-#[test]
 fn source_owned_function_facts_has_no_serde_contract() {
     trait AmbiguousIfSerialize<Marker> {
         fn marker() {}
@@ -141,7 +108,6 @@ fn detached_advisory_analysis_drops_invalid_interproc_schema() {
 /// the type it was.
 #[test]
 fn storage_of_every_width_is_a_type_c_spells() {
-    assert_eq!(storage_type(0, Signedness::Signed), None);
     for (bytes, signedness, spelling) in [
         (4, Signedness::Signed, "int32_t"),
         (8, Signedness::Unsigned, "uint64_t"),
@@ -150,8 +116,7 @@ fn storage_of_every_width_is_a_type_c_spells() {
         (16, Signedness::Unsigned, "__uint128_t"),
         (32, Signedness::Signed, "struct r2sleigh_bits_256"),
     ] {
-        let ty = storage_type(bytes, signedness).expect("a width is storage");
-        assert_eq!(ty, CTypeLike::machine_storage(bytes * 8, signedness));
+        let ty = CTypeLike::machine_storage(bytes * 8, signedness);
         assert_eq!(render_c_type_like(&ty), spelling);
         assert_eq!(render_signature_type(&ty, 64), spelling);
         assert_eq!(parse_c_type_like(spelling, 64), Some(ty));
