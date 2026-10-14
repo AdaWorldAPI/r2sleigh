@@ -61,7 +61,7 @@ impl Lifted {
     pub(crate) fn prepare<C: SsaWorkControl + ?Sized>(
         mut self,
         config: &crate::optimize::DecompilePrepConfig,
-        return_carrier: Option<r2source::CanonicalStorageId>,
+        return_carriers: &[r2source::CanonicalStorageId],
         control: &C,
     ) -> Result<Prepared, SsaPrepareError> {
         control.poll()?;
@@ -71,7 +71,7 @@ impl Lifted {
         crate::optimize::optimize_function_with_return_and_control(
             &mut self.ir,
             &config,
-            return_carrier,
+            return_carriers,
             control,
         )?;
         self.validate().map_err(super::integrity_refusal)
@@ -146,6 +146,12 @@ impl Prepared {
     /// name is presentation, and no fact reads it.
     pub(crate) fn named(mut self, name: String) -> Self {
         self.ir.name = Some(name);
+        self
+    }
+
+    /// The same function, one of its facts resting on `premise`.
+    pub(crate) fn assuming(mut self, premise: r2source::Premise) -> Self {
+        self.ir.record_premise(premise);
         self
     }
 
@@ -337,6 +343,13 @@ impl Sealed {
                 },
                 control,
             )?;
+        // A pass that moved a state past its stated height is a defect in it: the function refuses.
+        let exhausted = (self.ir.exhausted())
+            .or(self.prep.exhausted)
+            .or(facts.exhausted());
+        if let Some(exhausted) = exhausted {
+            return Err(SsaPrepareError::Exhausted(exhausted));
+        }
         // What one prepared function holds is the space every later stage has
         // to work above, so it is reported beside the phases that built it.
         r2il::refusal_evidence!(

@@ -5,7 +5,6 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TypeFactSource {
     LocalInferred,
-    CalleeSignature,
     SignatureRegistry,
     DataflowRanked,
 }
@@ -13,7 +12,6 @@ pub(crate) enum TypeFactSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TypeEvidence {
     SsaVarRecovery,
-    CertifiedCallArgument,
     CanonicalStackAccessWidth,
     CanonicalStackSignedness,
     ExternalSignatureCurrent,
@@ -56,25 +54,12 @@ pub(crate) struct RecoveredVariable {
     pub reg: Option<String>,
 }
 
-impl RecoveredVariable {
-    /// The recovered type, parsed once with the canonical parser.
-    ///
-    /// The spelling is radare2's, so it stays a `String` on the wire -- this is
-    /// what radare2 told us, not something we decided. What should not happen
-    /// is each consumer taking the spelling apart its own way, which is how one
-    /// of them came to test for a pointer with `contains('*')`.
-    pub fn recovered_type(&self, ptr_bits: u32) -> Option<CTypeLike> {
-        parse_c_type_like(&self.var_type, ptr_bits)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StructFieldCandidate {
     pub name: String,
     pub offset: u64,
     /// The field's type, as a type.
     pub field_type: CTypeLike,
-    pub confidence: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,7 +83,6 @@ pub(crate) struct VarTypeCandidate {
     pub isarg: bool,
     pub reg: Option<String>,
     pub size: u32,
-    pub confidence: u8,
     pub source: TypeFactSource,
     pub evidence: Vec<TypeEvidence>,
 }
@@ -364,10 +348,6 @@ pub(crate) fn summary_suggests_pointer_param(
             .iter()
             .any(|effect| effect.arg == idx)
         || summary.sync_effects.iter().any(|effect| effect.arg == idx)
-}
-
-pub(crate) fn exact_ssa_const_offset(var: &SSAVar, ptr_bits: u32) -> Option<i64> {
-    Some(signed_offset_from_const(var.constant_bits()?, ptr_bits))
 }
 
 pub(crate) fn aggregate_lookup_keys(name: &str) -> Vec<String> {
@@ -741,19 +721,4 @@ pub(crate) fn storage_type(bytes: u32, signedness: Signedness) -> Option<CTypeLi
 /// [`storage_type`] spelled, where the analysis still keeps a type as text.
 pub(crate) fn storage_type_spelling(bytes: u32, signedness: Signedness) -> Option<String> {
     storage_type(bytes, signedness).map(|ty| render_c_type_like(&ty))
-}
-
-pub(crate) fn signed_offset_from_const(raw: u64, ptr_bits: u32) -> i64 {
-    let bits = ptr_bits.clamp(8, 64);
-    if bits == 64 {
-        return raw as i64;
-    }
-    let mask = (1u64 << bits) - 1;
-    let sign = 1u64 << (bits - 1);
-    let v = raw & mask;
-    if (v & sign) != 0 {
-        (v | (!mask)) as i64
-    } else {
-        v as i64
-    }
 }

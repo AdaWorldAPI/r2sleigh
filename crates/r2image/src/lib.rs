@@ -5,6 +5,7 @@
 //! address. Everything is extracted into owned values at open time, so an
 //! `Image` borrows nothing, is `Send + Sync`, and can be shared across analysis
 //! threads behind an `Arc`.
+#![cfg_attr(dylint_lib = "r2sleigh_lints", deny(entity_keyed_map))]
 
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
 mod debug;
@@ -677,6 +678,17 @@ impl Image {
             }
         }
         entries.extend(initialisers(&sections, &loader_writes, &data[..], &arch));
+        for (kind, raw, stated) in loader::hooks(&file) {
+            let vaddr = code_address(&arch, raw);
+            if vaddr != 0 && executable(vaddr) {
+                entries.push(Entry {
+                    vaddr,
+                    kind,
+                    thumb: is_arm32(&arch) && raw & 1 == 1,
+                    stated_at: Some(stated),
+                });
+            }
+        }
         if let Some((vaddr, field)) = c_main
             && executable(vaddr)
         {
@@ -957,6 +969,11 @@ impl Image {
         self.written.iter().any(|(at, written)| {
             *at > revision && written.start < range.end && range.start < written.end
         })
+    }
+
+    /// Whether a patch now holds the byte at `vaddr`.
+    pub fn patched(&self, vaddr: u64) -> bool {
+        self.patches.contains_key(&vaddr)
     }
 
     /// Which open program this is.

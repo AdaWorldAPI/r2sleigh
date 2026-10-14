@@ -20,13 +20,17 @@ const READ_AS_INTEGER: &[u8] = &[
     0xcc, // 1018 padding
 ];
 
+/// `f` rendered after `aa`, which reads its callers.
 fn rendered(program: Literal) -> String {
-    OpenProgram::of(program)
-        .rendered(BASE)
-        .expect("it renders")
-        .response
-        .output
-        .into_text()
+    let mut open = OpenProgram::of(program);
+    open.analyse_program().expect("it surveys");
+    fresh(open)
+}
+
+/// `f` rendered from its own body and callees: a fresh open, or one before `aa`.
+fn fresh(mut open: OpenProgram<Literal>) -> String {
+    let rendering = open.rendered(BASE).expect("it renders");
+    rendering.response.output.into_text()
 }
 
 #[test]
@@ -41,6 +45,26 @@ fn a_caller_reading_the_integer_register_decides_the_result() {
     assert!(text.starts_with("uint64_t f("), "{text}");
     assert!(text.contains("7"), "{text}");
     assert!(!text.contains("r2sleigh_residual"), "{text}");
+}
+
+/// Before `aa`, the calls are not read: a fresh open renders the body alone, whose result stays
+/// open, and `aa` decides it in the same session.
+#[test]
+fn before_aa_a_function_reads_no_callers() {
+    let functions = [("f", BASE, 0x0a), ("caller", BASE + 0x10, 0x08)];
+    let mut open = OpenProgram::of(Literal::of_code(READ_AS_INTEGER, &functions));
+    let before = open
+        .rendered(BASE)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(before.contains("return r2sleigh_residual_"), "{before}");
+    open.analyse_program().expect("it surveys");
+    assert_eq!(
+        rendered(Literal::of_code(READ_AS_INTEGER, &functions)),
+        fresh(open)
+    );
 }
 
 /// The same body with no call to it: nothing says which register is its result.
@@ -368,4 +392,283 @@ fn an_argument_handed_back_beside_a_written_float_is_the_result_callers_read() {
     let text = rendered(program);
     assert!(text.contains("return (uint64_t)arg0;"), "{text}");
     assert!(!text.contains("r2sleigh_residual"), "{text}");
+}
+
+/// `mov rax, rdi; mov rdx, rsi; ret`, a 16-byte value returned in RDX:RAX, then
+/// `call f; mov rax, rdx; ret`, which reads the high half and returns it.
+const PAIR: &[u8] = &[
+    0x48, 0x89, 0xf8, // 1000 mov rax, rdi
+    0x48, 0x89, 0xf2, // 1003 mov rdx, rsi
+    0xc3, // 1006 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1007 padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0x48, 0x89, 0xd0, // 1015 mov rax, rdx
+    0xc3, // 1018 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1019 padding
+];
+
+/// A body that writes both result registers on every return, called by code that reads the second,
+/// returns one 128-bit value; the caller reads its high half. With no call, it returns RAX alone.
+#[test]
+fn a_value_in_two_registers_is_one_result_where_callers_read_the_second() {
+    let program = |functions: &[(&'static str, u64, u64)]| Literal::of_code(PAIR, functions);
+    let both = [("f", BASE, 7), ("caller", BASE + 0x10, 9)];
+    let f = rendered(program(&both));
+    let caller = OpenProgram::of(program(&both))
+        .rendered(BASE + 0x10)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(f.starts_with("__uint128_t f("), "{f}");
+    assert!(f.contains("<< 64U"), "the high half above the low: {f}");
+    assert!(!f.contains("r2sleigh_residual"), "{f}");
+    assert!(
+        caller.contains("__uint128_t f(uint64_t, uint64_t);"),
+        "{caller}"
+    );
+    assert!(
+        caller.contains(">> 64U"),
+        "the high half read from the pair: {caller}"
+    );
+    assert!(!caller.contains("r2sleigh_residual"), "{caller}");
+    let open = "the result's second register is open";
+    assert!(!f.contains(open), "{f}");
+    let alone = rendered(program(&[("f", BASE, 7)]));
+    assert!(alone.starts_with("uint64_t f("), "{alone}");
+    assert!(
+        alone.contains(open),
+        "no call read decides the high half: {alone}"
+    );
+    // Before `aa`, the calls are not read: the low half alone, and the high half is open.
+    let unread = fresh(OpenProgram::of(program(&both)));
+    assert!(unread.starts_with("uint64_t f("), "{unread}");
+    assert!(unread.contains(open), "{unread}");
+}
+
+/// `mov rax, rdi; xor edx, edx; ret` writes RDX on every return, and `call f; ret` reads only RAX:
+/// the result stays the one register, and the caller is unchanged.
+const SCRATCH_SECOND: &[u8] = &[
+    0x48, 0x89, 0xf8, // 1000 mov rax, rdi
+    0x31, 0xd2, // 1003 xor edx, edx
+    0xc3, // 1005 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1006 padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0xc3, // 1015 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1016 padding
+];
+
+#[test]
+fn a_second_register_no_caller_reads_is_no_half_of_the_result() {
+    let functions = [("f", BASE, 6), ("caller", BASE + 0x10, 6)];
+    let f = rendered(Literal::of_code(SCRATCH_SECOND, &functions));
+    assert!(f.starts_with("uint64_t f("), "{f}");
+    assert!(!f.contains("__uint128_t"), "{f}");
+    let caller = OpenProgram::of(Literal::of_code(SCRATCH_SECOND, &functions))
+        .rendered(BASE + 0x10)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(!caller.contains("__uint128_t"), "{caller}");
+    assert!(!caller.contains("r2sleigh_residual"), "{caller}");
+}
+
+/// AArch64: `f` is `add x1, x0, #2; add x0, x0, #1; ret`, a value in X1:X0, and `caller` is
+/// `bl f; mov x0, x1; ret`, which returns the high half.
+const A64_PAIR: &[u8] = &[
+    0x01, 0x08, 0x00, 0x91, // 1000 add x1, x0, #2
+    0x00, 0x04, 0x00, 0x91, // 1004 add x0, x0, #1
+    0xc0, 0x03, 0x5f, 0xd6, // 1008 ret
+    0x1f, 0x20, 0x03, 0xd5, // 100c nop
+    0xfc, 0xff, 0xff, 0x97, // 1010 bl 0x1000
+    0xe0, 0x03, 0x01, 0xaa, // 1014 mov x0, x1
+    0xc0, 0x03, 0x5f, 0xd6, // 1018 ret
+    0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03,
+    0xd5, // 101c padding
+];
+
+#[test]
+fn an_aarch64_value_in_x1_x0_is_one_result_where_callers_read_x1() {
+    let functions = [("f", BASE, 0x0c), ("caller", BASE + 0x10, 0x0c)];
+    let program = || Literal::of_code(A64_PAIR, &functions).in_aarch64();
+    let f = rendered(program());
+    assert!(f.starts_with("__uint128_t f("), "{f}");
+    assert!(!f.contains("r2sleigh_residual"), "{f}");
+    let caller = OpenProgram::of(program())
+        .rendered(BASE + 0x10)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(caller.contains(">> 64U"), "{caller}");
+    assert!(!caller.contains("r2sleigh_residual"), "{caller}");
+}
+
+/// `f` is `call g; ret`, and its call takes `g`'s EAX alone: RDX at `f`'s return is what `g` left
+/// there, no value of `f`'s, so a caller reading RDX after `f` makes no pair of it.
+const CLOBBERED_SECOND: &[u8] = &[
+    0xe8, 0x1b, 0x00, 0x00, 0x00, // 1000 call 0x1020
+    0xc3, // 1005 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1006 padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0x48, 0x89, 0xd0, // 1015 mov rax, rdx
+    0xc3, // 1018 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1019 padding
+    0x31, 0xd2, // 1020 xor edx, edx
+    0xb8, 0x01, 0x00, 0x00, 0x00, // 1022 mov eax, 1
+    0xc3, // 1027 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1028 padding
+];
+
+#[test]
+fn a_register_a_callee_left_is_no_half_of_the_result() {
+    let functions = [
+        ("f", BASE, 6),
+        ("caller", BASE + 0x10, 9),
+        ("g", BASE + 0x20, 8),
+    ];
+    let f = rendered(Literal::of_code(CLOBBERED_SECOND, &functions));
+    assert!(!f.contains("__uint128_t"), "{f}");
+    assert!(!f.contains("second register is open"), "{f}");
+}
+
+/// `test rdi, rdi; sete dl; mov rax, rdi; ret`: DL over the caller's other seven bytes of RDX, as
+/// clang -O1's `table_walk` leaves it. A caller reading RDX after `f` makes no half of it.
+const BYTE_OVER_THE_CALLERS: &[u8] = &[
+    0x48, 0x85, 0xff, // 1000 test rdi, rdi
+    0x0f, 0x94, 0xc2, // 1003 sete dl
+    0x48, 0x89, 0xf8, // 1006 mov rax, rdi
+    0xc3, // 1009 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 100a padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0x48, 0x89, 0xd0, // 1015 mov rax, rdx
+    0xc3, // 1018 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1019 padding
+];
+
+#[test]
+fn a_byte_written_over_the_callers_register_is_no_half_of_the_result() {
+    let functions = [("f", BASE, 0x0a), ("caller", BASE + 0x10, 9)];
+    let f = rendered(Literal::of_code(BYTE_OVER_THE_CALLERS, &functions));
+    assert!(f.starts_with("uint64_t f(uint64_t arg0)"), "{f}");
+    assert!(!f.contains("second register is open"), "{f}");
+}
+
+/// `f` returns in RDX:RAX, and `caller` reaches it through a register the instruction before loads:
+/// `lea rax, [rip + f]; call rax; mov rax, rdx; ret`.
+const FOLDED_PAIR: &[u8] = &[
+    0x48, 0x89, 0xf8, // 1000 mov rax, rdi
+    0x48, 0x89, 0xf2, // 1003 mov rdx, rsi
+    0xc3, // 1006 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1007 padding
+    0x48, 0x8d, 0x05, 0xe9, 0xff, 0xff, 0xff, // 1010 lea rax, [rip - 0x17]
+    0xff, 0xd0, // 1017 call rax
+    0x48, 0x89, 0xd0, // 1019 mov rax, rdx
+    0xc3, // 101c ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 101d padding
+];
+
+#[test]
+fn a_call_the_walk_folds_is_a_call_whose_reads_count() {
+    let functions = [("f", BASE, 7), ("caller", BASE + 0x10, 0x0d)];
+    let f = rendered(Literal::of_code(FOLDED_PAIR, &functions));
+    assert!(f.starts_with("__uint128_t f("), "{f}");
+    let caller = OpenProgram::of(Literal::of_code(FOLDED_PAIR, &functions))
+        .rendered(BASE + 0x10)
+        .expect("it renders")
+        .response
+        .output
+        .into_text();
+    assert!(caller.contains(">> 64U"), "{caller}");
+    assert!(!caller.contains("r2sleigh_residual"), "{caller}");
+}
+
+/// `pxor xmm0, xmm0; mov eax, 7; ret`, then its one caller `call f; xor rax, rax; pxor xmm0, xmm0;
+/// ret`, which writes both result registers before reading either. Eight bytes at 0x1020 and eight
+/// at 0x1028 are left for another way into `f`.
+const CLOSED: &[u8] = &[
+    0x66, 0x0f, 0xef, 0xc0, // 1000 pxor xmm0, xmm0
+    0xb8, 0x07, 0x00, 0x00, 0x00, // 1004 mov eax, 7
+    0xc3, // 1009 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 100a padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0x48, 0x31, 0xc0, // 1015 xor rax, rax
+    0x66, 0x0f, 0xef, 0xc0, // 1018 pxor xmm0, xmm0
+    0xc3, // 101c ret
+    0x90, 0x90, 0x90, // 101d padding, as GNU ld lays it
+    0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1020 other: ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1028 a word
+];
+
+fn closed() -> Literal {
+    Literal::of_code(
+        CLOSED,
+        &[
+            ("f", BASE, 0x0a),
+            ("caller", BASE + 0x10, 0x0d),
+            ("other", BASE + 0x20, 0x08),
+        ],
+    )
+}
+
+/// Every call writes both result registers before reading either, and the image shows no other way
+/// in: under `aa`'s closed world the result is none (doc/adr-resolved-bodies.md, "Closed world").
+#[test]
+fn a_result_no_call_reads_is_void_in_a_closed_world() {
+    let text = rendered(closed());
+    assert!(text.starts_with("void f("), "{text}");
+    assert!(!text.contains("r2sleigh_residual"), "{text}");
+    assert!(text.contains("closed-world"), "{text}");
+    let before = fresh(OpenProgram::of(closed()));
+    assert!(before.contains("return r2sleigh_residual_"), "{before}");
+}
+
+/// Another way into `f` is a reader the calls do not show: the result stays a residual.
+#[test]
+fn a_result_another_way_in_may_read_stays_a_residual() {
+    let mut handed = closed();
+    // 1020 lea rdi, [rip - 0x27] (0x1000); 1027 ret
+    handed.write(
+        BASE + 0x20,
+        &[0x48, 0x8d, 0x3d, 0xd9, 0xff, 0xff, 0xff, 0xc3],
+    );
+    let mut tailed = closed();
+    // 1020 jmp 0x1000
+    tailed.write(BASE + 0x20, &[0xe9, 0xdb, 0xff, 0xff, 0xff]);
+    let mut stored = closed();
+    stored.write(BASE + 0x28, &0x1000u64.to_le_bytes());
+    let mut unread = closed();
+    // 1028 mov eax, 1; 102d ret: code in no function, which may call or name anything.
+    unread.write(
+        BASE + 0x28,
+        &[0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, 0x90, 0x90],
+    );
+    let exported = closed().declaring(r2abi::statement::Symbol {
+        name: "f".into(),
+        vaddr: BASE,
+        size: 0x0a,
+        kind: r2abi::statement::SymbolKind::Function,
+        defined: true,
+        origin: r2abi::statement::SymbolOrigin {
+            table: None,
+            dynamic: Some(1),
+        },
+        ..r2abi::statement::Symbol::default()
+    });
+    for (way, program) in [
+        ("handed", handed),
+        ("tail-called", tailed),
+        ("stored", stored),
+        ("in code no body holds", unread),
+        ("exported", exported),
+    ] {
+        let text = rendered(program);
+        assert!(text.contains("return r2sleigh_residual_"), "{way}: {text}");
+    }
 }

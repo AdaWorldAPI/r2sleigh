@@ -1,7 +1,6 @@
 mod arrays;
 mod assumptions;
 mod bindings;
-mod globals;
 mod shared;
 mod signature;
 mod structs;
@@ -9,19 +8,17 @@ mod structs;
 pub(crate) use arrays::*;
 pub(crate) use assumptions::*;
 pub(crate) use bindings::*;
-pub(crate) use globals::*;
 pub(crate) use shared::*;
 pub(crate) use signature::*;
 pub(crate) use structs::*;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use r2ssa::{
-    FunctionSemanticSummary, InterprocSummarySet, MemoryVersion, ObjectKind, SSABlock, SSAOp,
-    SSAVar, SsaArtifact, SummaryArgEffect, SummaryMemoryEffect, SummaryMemoryEffectKind,
-    SummaryMemoryRegion, SummaryReturnRelation,
+    FunctionSemanticSummary, InterprocSummarySet, SSAOp, SsaArtifact, SummaryArgEffect,
+    SummaryMemoryEffect, SummaryMemoryEffectKind, SummaryMemoryRegion, SummaryReturnRelation,
 };
 
 use crate::context::{
@@ -47,33 +44,14 @@ use crate::facts::{
 use crate::function_facts::{
     FunctionFacts, InterprocSummaryView, ProjectedFacts, SourceOwnedFunctionFacts,
 };
-use crate::inferred_signature_from_signature_spec;
 use crate::model::Signedness;
-use crate::prepare::ssa_var_block_key;
 use crate::signedness::ScalarSignednessEvidence;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TypePlan {
-    /// The target's pointer width.
-    ///
-    /// The plan carries types now, and a type only becomes a C spelling
-    /// against a target: `long` and `size_t` are the width of a pointer, and
-    /// which width that is belongs to the function being written back, not to
-    /// whichever renderer happens to run.
-    pub ptr_bits: u32,
-    pub signature: InferredSignature,
-    pub var_type_candidates: Vec<VarTypeCandidate>,
-    pub var_rename_candidates: Vec<VarRenameCandidate>,
-    pub struct_decls: Vec<StructDeclCandidate>,
-    pub global_type_links: Vec<GlobalTypeLinkCandidate>,
-    pub diagnostics: TypeAnalysisDiagnostics,
-}
+use r2ssa::dense::IdMap;
 
 #[derive(Debug)]
 pub struct TypeAnalysis {
     source: Arc<SsaArtifact>,
     function_facts: ProjectedFacts,
-    plan: TypePlan,
     callee_signatures: BTreeMap<u64, crate::SourceOwnedCalleeSignature>,
 }
 
@@ -131,7 +109,7 @@ impl TypeAnalysis {
                     .type_facts()
                     .signature_certificate
                     .as_ref()
-                    .map(|c| c.confidence)
+                    .map(|c| &c.sources)
             );
             return None;
         };
@@ -206,26 +184,6 @@ impl TypeAnalysis {
         )
     }
 
-    /// The plan after enrichment changed the signature it was derived from.
-    fn refresh_plan_after_enrichment(
-        &mut self,
-        changed_parameters: &BTreeSet<usize>,
-        return_type_changed: bool,
-    ) {
-        let prior_plan = self.plan.clone();
-        if (!changed_parameters.is_empty() || return_type_changed)
-            && !self.refresh_plan_after_source_constraints(changed_parameters)
-        {
-            // A plan refreshed in part would write conflicting types back; the facts, which
-            // rendering reads, stand, and the plan keeps its prior signature.
-            r2il::refusal_evidence!(
-                "signature-refresh",
-                "plan not refreshed: changed slots {changed_parameters:?} return_changed={return_type_changed}; facts enriched, plan kept"
-            );
-            self.plan = prior_plan;
-        }
-    }
-
     pub fn type_facts(&self) -> &FunctionTypeFacts {
         self.function_facts.report().type_facts()
     }
@@ -254,160 +212,6 @@ impl TypeAnalysis {
             facts,
         })
     }
-
-    /// Project the enriched signature into the type plan.
-    ///
-    /// `changed_slots` is the enrichment's own account of which parameter
-    /// declarations changed; nothing is recounted here, and the return type
-    /// arrives with the signature itself. The refresh is
-    /// atomic over the plan's argument bindings: a binding with no register,
-    /// with a register that is no argument slot, or a second binding for one
-    /// slot leaves the plan untouched and returns false, because a plan half
-    /// refreshed would write conflicting types back.
-    fn refresh_plan_after_source_constraints(&mut self, changed_slots: &BTreeSet<usize>) -> bool {
-        let Some(signature) = self
-            .function_facts
-            .report()
-            .type_facts()
-            .render_authorized_signature()
-            .cloned()
-        else {
-            // Nothing is authorized for the plan to carry, so there is
-            // nothing to refresh; the facts changed all the same, and the
-            // rendering reads the facts.
-            r2il::refusal_evidence!(
-                "signature-refresh",
-                "no render-authorized signature; plan not refreshed for changed slots {changed_slots:?}"
-            );
-            return true;
-        };
-        let source = self.source.as_ref();
-        let Some(arch_name) = crate::prepare::prepared_arch_display_name(source) else {
-            return false;
-        };
-        let ptr_bits = source
-            .machine_context()
-            .memory_model()
-            .default_address_bits();
-        if ptr_bits == 0 {
-            return false;
-        }
-        let function_name = source
-            .function()
-            .name
-            .as_deref()
-            .map(str::to_string)
-            .unwrap_or_else(|| r2source::unnamed_function(source.function().entry));
-        let mut plan = self.plan.clone();
-        plan.signature = inferred_signature_from_signature_spec(
-            &function_name,
-            arch_name,
-            ptr_bits,
-            self.function_facts
-                .report()
-                .type_facts()
-                .callconv
-                .as_deref(),
-            &signature,
-        );
-        let mut refreshed_slots = BTreeSet::new();
-        for candidate in plan
-            .var_type_candidates
-            .iter_mut()
-            .filter(|candidate| candidate.isarg)
-        {
-            let Some(register) = candidate.reg.as_deref() else {
-                return false;
-            };
-            let Some(slot) =
-                exact_source_argument_slot_for_register(self.source.as_ref(), register)
-            else {
-                return false;
-            };
-            if !changed_slots.contains(&slot) {
-                continue;
-            }
-            if !refreshed_slots.insert(slot) {
-                return false;
-            }
-            let Some(ty) = signature
-                .params
-                .get(slot)
-                .and_then(|parameter| parameter.ty.as_ref())
-            else {
-                return false;
-            };
-            let size =
-                estimate_c_type_size_bytes(&render_signature_type(ty, ptr_bits), ptr_bits) as u32;
-            candidate.var_type = ty.clone();
-            candidate.size = size;
-            candidate.source = TypeFactSource::CalleeSignature;
-            if !candidate
-                .evidence
-                .contains(&TypeEvidence::CertifiedCallArgument)
-            {
-                candidate.evidence.push(TypeEvidence::CertifiedCallArgument);
-            }
-        }
-        // A changed slot with no argument candidate is not an inconsistency:
-        // the plan carries no variable for that parameter, so there is nothing
-        // to refresh for it. Demanding one made every function whose declared
-        // parameter types the source interface supplies -- but whose plan names
-        // no register variable for one of them -- fail its whole analysis, and
-        // with it the decompilation, once the interface began supplying every
-        // parameter's type rather than only the return's.
-        let unrefreshed = changed_slots
-            .difference(&refreshed_slots)
-            .copied()
-            .collect::<Vec<_>>();
-        if !unrefreshed.is_empty() {
-            r2il::refusal_evidence!(
-                "signature-refresh",
-                "slots {unrefreshed:?} changed type with no argument candidate to carry it"
-            );
-        }
-        self.plan = plan;
-        true
-    }
-}
-
-fn exact_source_argument_slot_for_register(source: &SsaArtifact, register: &str) -> Option<usize> {
-    let context = source.machine_context();
-    let register_storage = context.register_storage(register)?;
-    if register_storage.space != r2ssa::CanonicalStorageSpace::Register
-        || register_storage.size == 0
-    {
-        return None;
-    }
-    let interface = context.function_interface()?;
-    let abi = context.abi_model();
-    if !abi.is_available() || !abi.argument_placement_is_coherent() {
-        return None;
-    }
-    let mut matches = interface.parameters().iter().filter(|parameter| {
-        let Some(parameter_storage) = parameter.register_storage() else {
-            return false;
-        };
-        if parameter_storage.space != register_storage.space
-            || parameter_storage.offset != register_storage.offset
-            || register_storage.size > parameter_storage.size
-        {
-            return false;
-        }
-        let mut abi_slots = abi
-            .argument_registers()
-            .iter()
-            .filter(|slot| slot.index() == parameter.index());
-        abi_slots
-            .next()
-            .is_some_and(|slot| slot.storage() == parameter_storage)
-            && abi_slots.next().is_none()
-    });
-    let parameter = matches.next()?;
-    if matches.next().is_some() {
-        return None;
-    }
-    usize::try_from(parameter.index()).ok()
 }
 
 /// Why finalization refused, and the facts it was handed, which the refusal carries.
@@ -490,10 +294,8 @@ impl TypeAnalysisRequest {
 }
 
 struct DerivedTypeAnalysis {
-    signature: InferredSignature,
     function_facts: FunctionFacts,
     type_facts: FunctionTypeFacts,
-    plan: TypePlan,
 }
 
 struct DerivedTypeAnalysisInput<'a> {
@@ -501,10 +303,6 @@ struct DerivedTypeAnalysisInput<'a> {
     ptr_bits: u32,
     inferred_signature: InferredSignature,
     recovered_vars: &'a [RecoveredVariable],
-    ssa_blocks: &'a [SSABlock],
-    /// Which operations, by id, are zero extensions the architecture
-    /// performs (r2ssa's `Written::is_conventional_extension`).
-    conventional_extension: &'a dyn Fn(r2ssa::OpId) -> bool,
     parsed_context: ParsedExternalContext,
     local_structs: LocalStructArtifacts,
     interproc_summary_set: Option<InterprocSummarySet>,
@@ -513,10 +311,6 @@ struct DerivedTypeAnalysisInput<'a> {
 
 struct DerivedTypeAnalysisSemanticInputs<'a> {
     local_field_accesses: &'a [LocalFieldAccessFact],
-}
-
-struct PreparedMachineVarProfile {
-    pointer_arg_slots: HashMap<String, usize>,
 }
 
 #[cfg(test)]
@@ -857,18 +651,12 @@ fn merged_context_and_summary_callee_facts(
     facts
 }
 
-/// Where in the frame a variable of the analysed blocks points, as the prep
-/// facts prove it. The type analysis still reads its blocks by name; this
-/// is the one question it asks of the prep facts, which are keyed by the
-/// sealed graph's values (doc/adr-one-ir.md, F2.3 stage 5).
-pub(crate) type FrameRoots<'a> = &'a dyn Fn(&SSAVar) -> Option<r2ssa::StackAddressRoot>;
-
 fn build_type_analysis_inner(
     mut input: DerivedTypeAnalysisInput<'_>,
     semantic_inputs: Option<DerivedTypeAnalysisSemanticInputs<'_>>,
-    prep_facts: Option<FrameRoots<'_>>,
-    machine_profile: Option<&PreparedMachineVarProfile>,
+    stack: &StackAccesses,
     registers: &crate::RegisterIdentity,
+    callee_facts: BTreeMap<u64, CalleeFact>,
 ) -> DerivedTypeAnalysis {
     // This inner projection builder is also used by detached report-only
     // tests. Invalid advisory reports lose all interprocedural evidence here;
@@ -1054,36 +842,12 @@ fn build_type_analysis_inner(
             input.ptr_bits,
         );
     array_index_certificates.append(&mut exact_indexed_access_certificates.array_index);
-    let scalar_array_access_certificates = scalar_array_access_certificates_from_ssa(
-        input.ssa_blocks,
-        &input.parsed_context,
-        &type_db,
-        merged_signature.as_ref(),
-        &local_structs.slot_element_strides,
-        ScalarArrayMachineProfile {
-            stack_roots: prep_facts,
-            pointer_arg_slots: machine_profile.map(|profile| &profile.pointer_arg_slots),
-            ptr_bits: input.ptr_bits,
-        },
-    );
-    array_index_certificates.extend(scalar_array_access_certificates.array_index);
     let mut scalar_array_render_candidates = exact_indexed_access_certificates.render_candidates;
-    let local_indexed_slots = scalar_array_render_candidates
-        .iter()
-        .map(|candidate| candidate.slot)
-        .collect::<HashSet<_>>();
-    scalar_array_render_candidates.extend(
-        scalar_array_access_certificates
-            .render_candidates
-            .into_iter()
-            .filter(|candidate| !local_indexed_slots.contains(&candidate.slot)),
-    );
     scalar_array_render_candidates.sort();
     scalar_array_render_candidates.dedup();
     let mut field_access_certificates =
         field_access_certificates_from_struct_artifacts(&local_structs);
     field_access_certificates.append(&mut exact_indexed_access_certificates.field_access);
-    field_access_certificates.extend(scalar_array_access_certificates.field_access);
     field_access_certificates.sort();
     field_access_certificates.dedup();
     let signature_certificate = signature_certificate_from_merged(
@@ -1103,12 +867,6 @@ fn build_type_analysis_inner(
         input.ptr_bits,
         &type_db,
     );
-    let stack_access_widths = canonical_stack_access_widths(input.ssa_blocks, prep_facts);
-    let stack_access_signedness = canonical_stack_access_signedness(
-        input.ssa_blocks,
-        prep_facts,
-        input.conventional_extension,
-    );
     let is_main_signature = merged_signature
         .as_ref()
         .is_some_and(is_canonical_main_signature_spec);
@@ -1116,8 +874,8 @@ fn build_type_analysis_inner(
         current_context_maps: &current_context_maps,
         merged_signature: merged_signature.as_ref(),
         slot_type_overrides: &local_structs.slot_type_overrides,
-        stack_access_widths: &stack_access_widths,
-        stack_access_signedness: &stack_access_signedness,
+        stack_access_widths: &stack.widths,
+        stack_access_signedness: &stack.signedness,
         ptr_bits: input.ptr_bits,
         is_main_signature,
     };
@@ -1142,10 +900,7 @@ fn build_type_analysis_inner(
         known_function_signatures: input.parsed_context.known_function_signatures.clone(),
         register_params: input.parsed_context.register_params.clone(),
         visible_bindings,
-        callee_facts: merged_context_and_summary_callee_facts(
-            &input.parsed_context.callee_facts,
-            input.interproc_summary_set.as_ref(),
-        ),
+        callee_facts,
         external_type_db: type_db,
         program_data_objects: input.parsed_context.program_data_objects.clone(),
         slot_type_overrides: local_structs.slot_type_overrides.clone(),
@@ -1174,33 +929,13 @@ fn build_type_analysis_inner(
         diagnostics: diagnostics.solver_warnings.clone(),
     })
     .build();
-    let global_type_links = score_global_type_links(
-        input.ssa_blocks,
-        &struct_decls,
-        &var_type_candidates,
-        input.ptr_bits,
-        &input.parsed_context.program_extents,
-    );
-
-    let plan = TypePlan {
-        ptr_bits: input.ptr_bits,
-        signature: input.inferred_signature.clone(),
-        var_type_candidates,
-        var_rename_candidates,
-        struct_decls: struct_decls.clone(),
-        global_type_links,
-        diagnostics: diagnostics.clone(),
-    };
-
     DerivedTypeAnalysis {
-        signature: input.inferred_signature,
         function_facts: FunctionFacts::new(type_facts.clone())
             .with_assumptions(input.parsed_context.assumptions.clone())
             .with_summary_view(summary_view)
             .with_diagnostics(type_facts.diagnostics.clone())
             .with_assumption_usage(type_assumption_usage),
         type_facts,
-        plan,
     }
 }
 
@@ -1249,37 +984,25 @@ fn x86_64_register_identity() -> crate::RegisterIdentity {
 
 #[cfg(test)]
 fn build_type_analysis(input: DerivedTypeAnalysisInput<'_>) -> DerivedTypeAnalysis {
-    let machine = detached_x86_64_test_machine_profile();
-    build_type_analysis_inner(
-        input,
-        None,
-        None,
-        Some(&machine),
-        &x86_64_register_identity(),
-    )
+    build_type_analysis_with_stack_accesses(input, &StackAccesses::default())
 }
 
 #[cfg(test)]
-fn build_type_analysis_with_prep_facts(
+fn build_type_analysis_with_stack_accesses(
     input: DerivedTypeAnalysisInput<'_>,
-    frame_roots: &BTreeMap<SSAVar, r2ssa::StackAddressRoot>,
+    stack: &StackAccesses,
 ) -> DerivedTypeAnalysis {
-    let prep_facts = &|var: &SSAVar| frame_roots.get(var).copied();
-    let machine = detached_x86_64_test_machine_profile();
+    let callee_facts = merged_context_and_summary_callee_facts(
+        &input.parsed_context.callee_facts,
+        input.interproc_summary_set.as_ref(),
+    );
     build_type_analysis_inner(
         input,
         None,
-        Some(prep_facts),
-        Some(&machine),
+        stack,
         &x86_64_register_identity(),
+        callee_facts,
     )
-}
-
-#[cfg(test)]
-fn detached_x86_64_test_machine_profile() -> PreparedMachineVarProfile {
-    PreparedMachineVarProfile {
-        pointer_arg_slots: tests::system_v_argument_slots(),
-    }
 }
 
 #[cfg(test)]
@@ -1320,20 +1043,27 @@ pub fn build_source_owned_type_analysis(
         .name
         .clone()
         .unwrap_or_else(|| r2source::unnamed_function(source.function().entry));
-    let named_blocks = source.graph().named_blocks();
-    let ssa_blocks = named_blocks.as_slice();
-    let inferred_signature = crate::infer_signature_from_prepared_ssa(source.as_ref());
-    let recovered_vars = crate::prepare::recover_vars_from_prepared_ssa(source.as_ref(), ptr_bits);
-    let mut diagnostics = TypeAnalysisDiagnostics::default();
-    let machine_profile = PreparedMachineVarProfile {
-        pointer_arg_slots: collect_prepared_pointer_arg_slot_map(source.as_ref()),
-    };
-    let local_structs = infer_local_struct_artifacts_from_prepared_ssa(
-        source.as_ref(),
-        ssa_blocks,
-        ptr_bits,
-        &mut diagnostics,
+    let interproc_report = interproc_summary
+        .as_ref()
+        .map(|summary| summary.report().clone());
+    require_current_interproc_report_for_source_owned(interproc_report.as_ref())?;
+    let callee_facts = merged_context_and_summary_callee_facts(
+        &parsed_context.callee_facts,
+        interproc_report.as_ref(),
     );
+    // One solve per function: the calls are projected first, so it sees every callee prototype.
+    let calls = crate::function_facts::CallFacts::project(
+        source.as_ref(),
+        source.display_names(),
+        &parsed_context.known_function_signatures,
+        &callee_facts,
+        &callee_signatures,
+    );
+    let solved = calls.solve(source.as_ref());
+    let inferred_signature = crate::infer_signature_from_prepared_ssa(source.as_ref(), &solved);
+    let recovered_vars = crate::prepare::recover_vars_from_prepared_ssa(source.as_ref(), ptr_bits);
+    let diagnostics = TypeAnalysisDiagnostics::default();
+    let local_structs = infer_local_struct_artifacts_from_prepared_ssa(source.as_ref());
     // The exact certificates own member naming: one name per (parameter, offset) they certify.
     let exact_source_fields = field_access_certificates_from_source_aggregate_accesses(&source);
     let source_field_names = exact_source_fields
@@ -1344,19 +1074,11 @@ pub fn build_source_owned_type_analysis(
         })
         .collect();
     let local_field_accesses = local_field_accesses_named(&local_structs, &source_field_names);
-    let interproc_report = interproc_summary
-        .as_ref()
-        .map(|summary| summary.report().clone());
-    require_current_interproc_report_for_source_owned(interproc_report.as_ref())?;
-    let written = source.function().written();
-    let conventional_extension = |op| written.is_conventional_extension(op);
     let derived_input = DerivedTypeAnalysisInput {
         function_name: &function_name,
         ptr_bits,
         inferred_signature,
         recovered_vars: &recovered_vars,
-        ssa_blocks,
-        conventional_extension: &conventional_extension,
         parsed_context,
         local_structs,
         interproc_summary_set: interproc_report,
@@ -1365,26 +1087,17 @@ pub fn build_source_owned_type_analysis(
     let semantic_inputs = Some(DerivedTypeAnalysisSemanticInputs {
         local_field_accesses: &local_field_accesses,
     });
-    let frame_roots = |var: &SSAVar| {
-        source
-            .graph()
-            .value_id_for_var(var)
-            .and_then(|value| source.decompile_prep_facts().stack_address_root_of(value))
-            .copied()
-    };
+    let stack = StackAccesses::of(source.as_ref(), &solved.signedness);
     let derived = build_type_analysis_inner(
         derived_input,
         semantic_inputs,
-        Some(&frame_roots),
-        Some(&machine_profile),
+        &stack,
         &crate::RegisterIdentity::from_prepared(source.as_ref()),
+        callee_facts,
     );
     let mut function_facts = derived.function_facts;
     if let Some(interproc_summary) = interproc_summary {
         function_facts = function_facts.with_prepared_interproc_summary(interproc_summary);
-    }
-    if derived.signature != derived.plan.signature {
-        return Err(TypeAnalysisError::DerivedSignatureMismatch);
     }
     if derived.type_facts != *function_facts.type_facts() {
         return Err(TypeAnalysisError::DerivedTypeFactsMismatch);
@@ -1403,19 +1116,17 @@ pub fn build_source_owned_type_analysis(
     if crate::prepare::prepared_arch_display_name(source.as_ref()).is_none() {
         return Err(TypeAnalysisError::SourceEnrichmentFailed);
     }
-    let (function_facts, changed_parameters, return_type_changed) =
-        SourceOwnedFunctionFacts::enrich_report_from_source_with_callee_signatures(
-            source.as_ref(),
-            function_facts,
-            &callee_signatures,
-        );
-    let mut analysis = TypeAnalysis {
+    let function_facts = SourceOwnedFunctionFacts::enrich_report_from_source(
+        source.as_ref(),
+        function_facts,
+        calls,
+        &solved,
+    );
+    let analysis = TypeAnalysis {
         source,
         function_facts,
-        plan: derived.plan,
         callee_signatures,
     };
-    analysis.refresh_plan_after_enrichment(&changed_parameters, return_type_changed);
     Ok(analysis)
 }
 
@@ -1913,76 +1624,50 @@ fn profile_minimum_stride(fields: &BTreeMap<u64, String>, ptr_bits: u32) -> Opti
         .max()
 }
 
-fn canonical_stack_access_widths(
-    ssa_blocks: &[SSABlock],
-    prep_facts: Option<FrameRoots<'_>>,
-) -> BTreeMap<StackSlotKey, BTreeSet<u32>> {
-    let Some(prep_facts) = prep_facts else {
-        return BTreeMap::new();
-    };
-    let mut widths = BTreeMap::<StackSlotKey, BTreeSet<u32>>::new();
-    for op in ssa_blocks.iter().flat_map(|block| block.ops()) {
-        let (addr, size) = match op {
-            SSAOp::Load {
-                dst,
-                space: r2il::SpaceId::Ram,
-                addr,
-            } => (addr, dst.size),
-            SSAOp::Store {
-                space: r2il::SpaceId::Ram,
-                addr,
-                val,
-            } => (addr, val.size),
-            _ => continue,
-        };
-        if size == 0 {
-            continue;
-        }
-        let Some(root) = prep_facts(addr) else {
-            continue;
-        };
-        widths.entry(root).or_default().insert(size);
-    }
-    widths
+/// What the frame's stack slots are accessed as: every width, and the signedness each accessed
+/// value shows, over the graph's memory operations.
+#[derive(Debug, Default)]
+pub(crate) struct StackAccesses {
+    pub(crate) widths: BTreeMap<StackSlotKey, BTreeSet<u32>>,
+    pub(crate) signedness: BTreeMap<StackSlotKey, BTreeSet<ScalarSignednessEvidence>>,
 }
 
-fn canonical_stack_access_signedness(
-    ssa_blocks: &[SSABlock],
-    prep_facts: Option<FrameRoots<'_>>,
-    conventional_extension: &dyn Fn(r2ssa::OpId) -> bool,
-) -> BTreeMap<StackSlotKey, BTreeSet<ScalarSignednessEvidence>> {
-    let Some(prep_facts) = prep_facts else {
-        return BTreeMap::new();
-    };
-    let scalar_signedness =
-        crate::signedness::NamedSignedness::of(ssa_blocks, false, conventional_extension);
-    let mut signedness = BTreeMap::<StackSlotKey, BTreeSet<ScalarSignednessEvidence>>::new();
-    for op in ssa_blocks.iter().flat_map(|block| block.ops()) {
-        let (addr, value) = match op {
-            SSAOp::Load {
-                dst,
-                space: r2il::SpaceId::Ram,
-                addr,
-            } => (addr, dst),
-            SSAOp::Store {
-                space: r2il::SpaceId::Ram,
-                addr,
-                val,
-            } => (addr, val),
-            _ => continue,
-        };
-        let Some(observed) = scalar_signedness.get(value) else {
-            continue;
-        };
-        let Some(root) = prep_facts(addr) else {
-            continue;
-        };
-        signedness
-            .entry(root)
-            .or_default()
-            .extend(observed.iter().copied());
+impl StackAccesses {
+    pub(crate) fn of(
+        source: &SsaArtifact,
+        signedness: &IdMap<r2ssa::ValueId, BTreeSet<ScalarSignednessEvidence>>,
+    ) -> Self {
+        let graph = source.graph();
+        let mut out = Self::default();
+        for inst in &graph.insts {
+            let (addr, value) = match &inst.payload {
+                r2ssa::InstPayload::Op(SSAOp::Load {
+                    dst,
+                    space: r2il::SpaceId::Ram,
+                    addr,
+                }) => (*addr, *dst),
+                r2ssa::InstPayload::Op(SSAOp::Store {
+                    space: r2il::SpaceId::Ram,
+                    addr,
+                    val,
+                }) => (*addr, *val),
+                _ => continue,
+            };
+            let Some(root) = source.decompile_prep_facts().stack_address_root_of(addr) else {
+                continue;
+            };
+            if let Some(size) = graph.value(value).map(|value| value.var.size)
+                && size != 0
+            {
+                out.widths.entry(*root).or_default().insert(size);
+            }
+            if let Some(observed) = signedness.get(value) {
+                let slot = out.signedness.entry(*root).or_default();
+                slot.extend(observed.iter().copied());
+            }
+        }
+        out
     }
-    signedness
 }
 
 fn is_canonical_main_signature_spec(signature: &FunctionSignatureSpec) -> bool {

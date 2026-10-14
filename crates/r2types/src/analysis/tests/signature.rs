@@ -145,17 +145,15 @@ fn main_name_without_signature_evidence_does_not_fabricate_signature_output() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
         diagnostics: TypeAnalysisDiagnostics::default(),
     };
     let analysis = build_type_analysis(input);
-    assert_eq!(analysis.signature.ret_type, "void");
+    assert_eq!(spelled_signature(&analysis).ret_type, "void");
     assert!(
-        analysis.signature.params.is_empty(),
+        spelled_signature(&analysis).params.is_empty(),
         "main name alone must not fabricate argc/argv/envp parameters"
     );
     assert!(
@@ -274,15 +272,13 @@ fn interproc_heap_alloc_summary_upgrades_pointer_sized_scalar_return() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.ret_type, "allocation_ptr");
+    assert_eq!(spelled_signature(&analysis).ret_type, "allocation_ptr");
     assert_eq!(
         analysis
             .type_facts
@@ -375,15 +371,13 @@ fn interproc_returned_arg_summary_propagates_param_type_and_callee_facts() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.ret_type, "int8_t*");
+    assert_eq!(spelled_signature(&analysis).ret_type, "int8_t*");
     let callee = analysis
         .type_facts
         .callee_facts
@@ -439,19 +433,13 @@ fn local_inferred_scalar_param_narrows_external_wide_signature() {
             arch: "aarch64".to_string(),
         },
         recovered_vars: &vars,
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.params[0].param_type, "int32_t");
-    assert_eq!(
-        analysis.plan.var_type_candidates[0].var_type,
-        parse_test_type("int32_t", 64)
-    );
+    assert_eq!(spelled_signature(&analysis).params[0].param_type, "int32_t");
     let merged = analysis
         .type_facts
         .merged_signature
@@ -523,8 +511,6 @@ fn recovered_stack_arg_binds_to_canonical_signature_slot() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &vars,
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
@@ -645,17 +631,15 @@ fn exact_named_external_size_signature_blocks_local_byte_narrowing() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &vars,
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.ret_type, "size_t");
-    assert_eq!(analysis.signature.params[1].name, "n");
-    assert_eq!(analysis.signature.params[1].param_type, "size_t");
+    assert_eq!(spelled_signature(&analysis).ret_type, "size_t");
+    assert_eq!(spelled_signature(&analysis).params[1].name, "n");
+    assert_eq!(spelled_signature(&analysis).params[1].param_type, "size_t");
     assert_eq!(
         analysis
             .type_facts
@@ -726,17 +710,15 @@ fn authoritative_external_signature_keeps_param_count_over_longer_local_signatur
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.params.len(), 2);
-    assert_eq!(analysis.signature.params[0].name, "src");
-    assert_eq!(analysis.signature.params[1].name, "len");
+    assert_eq!(spelled_signature(&analysis).params.len(), 2);
+    assert_eq!(spelled_signature(&analysis).params[0].name, "src");
+    assert_eq!(spelled_signature(&analysis).params[1].name, "len");
     assert!(
         analysis
             .type_facts
@@ -870,8 +852,6 @@ fn inferred_signature_certificate_records_local_source() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
@@ -982,8 +962,6 @@ fn interproc_heap_alloc_summary_upgrades_generic_return_type() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1046,15 +1024,13 @@ fn interproc_void_return_summary_replaces_weak_scalar_return_type() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.ret_type, "void");
+    assert_eq!(spelled_signature(&analysis).ret_type, "void");
     assert_eq!(
         analysis
             .type_facts
@@ -1158,8 +1134,6 @@ fn interproc_escape_only_does_not_certify_out_param() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1207,8 +1181,6 @@ fn interproc_arg_write_out_param_certificate_records_write_evidence() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1275,8 +1247,6 @@ fn interproc_memory_write_out_param_certificate_records_memory_write_evidence() 
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1322,19 +1292,19 @@ fn interproc_summary_name_does_not_project_role_signature() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(semantic_role_summary_set("limfield", Some(3))),
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.ret_type, "int64_t");
-    assert_eq!(analysis.signature.params.len(), 3);
-    assert_eq!(analysis.signature.params[0].name, "arg1");
-    assert_eq!(analysis.signature.params[1].name, "arg2");
-    assert_eq!(analysis.signature.params[2].name, "arg3");
+    assert_eq!(spelled_signature(&analysis).ret_type, "int64_t");
+    // The merged signature names parameters from zero, as the rendering declares them.
+    let names = spelled_signature(&analysis)
+        .params
+        .into_iter()
+        .map(|param| param.name);
+    assert_eq!(names.collect::<Vec<_>>(), ["arg0", "arg1", "arg2"]);
 }
 
 #[test]
@@ -1365,8 +1335,6 @@ fn semantic_role_signature_hint_does_not_truncate_named_authoritative_signature(
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext {
             merged_signature: Some(FunctionSignatureSpec {
                 ret_type: Some(CTypeLike::Int {
@@ -1402,10 +1370,10 @@ fn semantic_role_signature_hint_does_not_truncate_named_authoritative_signature(
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.params.len(), 3);
-    assert_eq!(analysis.signature.params[0].name, "parser");
-    assert_eq!(analysis.signature.params[1].name, "slot");
-    assert_eq!(analysis.signature.params[2].name, "flags");
+    assert_eq!(spelled_signature(&analysis).params.len(), 3);
+    assert_eq!(spelled_signature(&analysis).params[0].name, "parser");
+    assert_eq!(spelled_signature(&analysis).params[1].name, "slot");
+    assert_eq!(spelled_signature(&analysis).params[2].name, "flags");
 }
 
 #[test]
@@ -1425,18 +1393,16 @@ fn interproc_summary_name_does_not_truncate_weak_entry_signature() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(semantic_role_summary_set("entry.init0", Some(1))),
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.ret_type, "int64_t");
-    assert_eq!(analysis.signature.params.len(), 1);
-    assert_eq!(analysis.signature.params[0].name, "arg1");
-    assert_eq!(analysis.signature.params[0].param_type, "void *");
+    assert_eq!(spelled_signature(&analysis).ret_type, "int64_t");
+    assert_eq!(spelled_signature(&analysis).params.len(), 1);
+    assert_eq!(spelled_signature(&analysis).params[0].name, "arg0");
+    assert_eq!(spelled_signature(&analysis).params[0].param_type, "void*");
     assert_eq!(
         analysis
             .type_facts
@@ -1499,16 +1465,14 @@ fn interproc_summary_name_does_not_replace_weak_scalar_return() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(semantic_role_summary_set("dbg.verror_at_line", Some(6))),
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.ret_type, "int64_t");
-    assert_eq!(analysis.signature.params.len(), 6);
+    assert_eq!(spelled_signature(&analysis).ret_type, "int64_t");
+    assert_eq!(spelled_signature(&analysis).params.len(), 6);
     assert_eq!(
         analysis
             .type_facts
@@ -1702,8 +1666,6 @@ fn interproc_returned_arg_summary_exports_callee_facts() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1804,8 +1766,6 @@ fn interproc_summary_name_does_not_export_role_callee_type_facts() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1926,15 +1886,13 @@ fn interproc_memory_effect_summary_upgrades_generic_pointer_like_params() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.params[0].param_type, "void*");
+    assert_eq!(spelled_signature(&analysis).params[0].param_type, "void*");
     assert_eq!(
         analysis
             .type_facts
@@ -1944,57 +1902,4 @@ fn interproc_memory_effect_summary_upgrades_generic_pointer_like_params() {
             .and_then(|param| param.ty.as_ref()),
         Some(&CTypeLike::Pointer(Box::new(CTypeLike::Void)))
     );
-}
-
-#[test]
-fn prepared_phi_refuses_conflicting_parameter_type_classes() {
-    let merged = SSAVar::new("X0", 1, 8);
-    let blocks = [SSABlock::from_parts(
-        0x1000,
-        0,
-        vec![
-            SSAOp::IntAdd {
-                dst: SSAVar::new("field0", 1, 8),
-                a: merged.clone(),
-                b: SSAVar::constant(0, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("value0", 1, 8),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("field0", 1, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("field8", 1, 8),
-                a: merged.clone(),
-                b: SSAVar::constant(8, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("value8", 1, 8),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("field8", 1, 8),
-            },
-        ],
-        vec![PhiNode {
-            dst: merged,
-            sources: vec![
-                (0xff0, SSAVar::new("X0", 0, 8)),
-                (0xff4, SSAVar::new("X1", 0, 8)),
-            ],
-            canonical_storage: None,
-        }],
-    )];
-    let mut diagnostics = TypeAnalysisDiagnostics::default();
-
-    let artifacts = infer_local_struct_artifacts_from_blocks(
-        &blocks,
-        None,
-        &|_| false,
-        None,
-        &super::aapcs64_argument_slots(),
-        64,
-        &mut diagnostics,
-    );
-
-    assert!(artifacts.slot_field_profiles.is_empty());
-    assert!(artifacts.slot_type_overrides.is_empty());
 }

@@ -20,7 +20,7 @@ mod view;
 use view::View;
 
 pub use requests::{
-    AnalysisRefused, EdgeKind, FunctionGraph, FunctionListing, GraphBlock, GraphEdge,
+    AnalysisRefused, Callers, EdgeKind, FunctionGraph, FunctionListing, GraphBlock, GraphEdge,
     RenderedResponse, Rendering, Syscall,
 };
 
@@ -35,7 +35,7 @@ use std::rc::Rc;
 use crate::names::NameDb;
 use crate::native::{NativeRefusal, NativeTarget, Prepared};
 use crate::query::Decoders;
-use crate::query::db::{Db, Inputs, Query};
+use crate::query::db::{Db, Inputs, Query, Retention};
 
 /// Everything a native request needs that is not the decoder itself.
 struct Assembled {
@@ -218,6 +218,8 @@ pub struct OpenProgram<S: Source + 'static> {
     /// The control a caller set for the next request, which that request
     /// consumes; without one a request runs under a fresh control.
     next: Option<crate::EngineExecutionControl>,
+    /// Whether a function's analysis reads the program's calls to it: `aa` asks once.
+    callers: Callers,
 }
 
 impl<S: Source + 'static> OpenProgram<S> {
@@ -229,6 +231,7 @@ impl<S: Source + 'static> OpenProgram<S> {
             .collect();
         Self {
             next: None,
+            callers: Callers::Unread,
             db: Db::new(ProgramInputs {
                 defined: definitions(container),
                 extents: r2types::ProgramExtents::new(
@@ -377,9 +380,15 @@ impl<S: Source + 'static> OpenProgram<S> {
     pub(super) fn comes_back(&self, callee: u64) -> bool {
         self.view().comes_back(callee)
     }
+    /// The key of one function's analysis, sealing and rendering: its entry, its mode, and
+    /// whether it reads its callers.
+    fn analysis_key(&self, entry: u64) -> analysis::Key {
+        (entry, self.view().thumb_at(entry), self.callers)
+    }
+
     /// One function's analysis, done once per state of what it read (the `Analysed` query).
     fn analysed(&self, entry: u64) -> Result<std::sync::Arc<Prepared>, NativeRefusal> {
-        let key = (entry, self.view().thumb_at(entry));
+        let key = self.analysis_key(entry);
         let analysis = self.db.get::<analysis::Analysed>(&key);
         analysis.map_or_else(
             |cycle| Err(NativeRefusal::Prepare(format!("{cycle:?}"))),
@@ -389,7 +398,7 @@ impl<S: Source + 'static> OpenProgram<S> {
 
     /// One function's sealed type analysis, by the same key as its analysis.
     fn sealing(&self, entry: u64) -> analysis::Sealing {
-        let key = (entry, self.view().thumb_at(entry));
+        let key = self.analysis_key(entry);
         let sealing = self.db.get::<analysis::Sealed>(&key);
         sealing.map_or(analysis::Sealing::Unanalysed, |sealing| (*sealing).clone())
     }
@@ -742,6 +751,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Imports {
     type Key = ();
     type Value = naming::Linkage;
     const NAME: &'static str = "imports";
+    const RETENTION: Retention = Retention::Held;
 
     fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
         // A stub is named by decoding it, so without a decoder there is none.
@@ -760,6 +770,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Names {
     type Key = ();
     type Value = NameDb;
     const NAME: &'static str = "names";
+    const RETENTION: Retention = Retention::Held;
 
     fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
         let source = Recorded { db };

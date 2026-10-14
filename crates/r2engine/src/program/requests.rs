@@ -11,7 +11,7 @@ use super::{OpenProgram, ProgramInputs, Source, SymbolKind, View};
 use crate::discovery::{Basis, Confidence, Discovered};
 use crate::isolation::isolated;
 use crate::native::{NativeRefusal, Prepared};
-use crate::query::db::{Db, Query};
+use crate::query::db::{Db, Query, Retention};
 use crate::query::references::Indexing;
 use crate::query::{
     Answer, Answered, Completion, Coverage, Decoders, Line, Listing, Memory, Proved, References,
@@ -125,6 +125,17 @@ fn edges_of(
     edges
 }
 
+/// Whether a function's own analysis reads what the program's calls to it read of its result
+/// registers (doc/adr-resolved-bodies.md, "Caller reads"). Reading them surveys the program.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Callers {
+    /// The body and its callees alone: a fresh open.
+    #[default]
+    Unread,
+    /// The program's calls too, once `aa` surveyed it.
+    Read,
+}
+
 /// Why a function's listing carries no analysis, and what the plain walk could not follow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnalysisRefused {
@@ -134,9 +145,8 @@ pub struct AnalysisRefused {
     pub unresolved: Vec<u64>,
 }
 
-/// What a held rendering keeps of the response it was drawn from: the text, the ledger and the
-/// premises its readers ask for. The facts behind them stay with the analysis, which a session
-/// drops by its own budget (doc/adr-memory-model.md).
+/// A held rendering's text, ledger and premises; the facts behind them stay with the analysis,
+/// which the session drops by its budget (doc/adr-memory-model.md).
 #[derive(Clone)]
 pub struct RenderedResponse {
     pub output: crate::EngineRendering,
@@ -195,6 +205,23 @@ impl Survey {
     /// The walked bodies that call `callee` directly, in address order.
     pub(super) fn callers_of(&self, callee: u64) -> &[u64] {
         self.callers.get(&callee).map_or(&[], Vec::as_slice)
+    }
+
+    /// Every range a walked body holds, in address order.
+    pub(super) fn held(&self) -> impl Iterator<Item = std::ops::Range<u64>> + '_ {
+        self.holders.ranges()
+    }
+
+    /// Every function discovery found, by entry, ascending.
+    pub(super) fn entries(&self) -> Vec<u64> {
+        let mut entries = self
+            .functions
+            .iter()
+            .map(|found| found.address)
+            .collect::<Vec<_>>();
+        entries.sort_unstable();
+        entries.dedup();
+        entries
     }
 
     /// Whether the body at `entry` was walked as Thumb, or why it was not walked.
@@ -306,7 +333,7 @@ impl<S: Source + 'static> OpenProgram<S> {
         self.start_request();
         self.loaded()?;
         self.assembled()?;
-        let key = (entry, self.view().thumb_at(entry));
+        let key = self.analysis_key(entry);
         let render = self.db.get::<super::analysis::Rendered>(&key);
         let render = render.map_err(|cycle| format!("{cycle:?}"))?;
         let drawn = render.0.as_ref().map_err(Clone::clone)?;
@@ -510,6 +537,15 @@ impl<S: Source + 'static> OpenProgram<S> {
         Ok((listing, shape))
     }
 
+    /// Survey the program, and from then on read each function's callers where its own body
+    /// leaves its result open (doc/adr-resolved-bodies.md, "Caller reads"): radare2's `aa`.
+    pub fn analyse_program(&mut self) -> Result<(), String> {
+        self.start_request();
+        self.surveyed()?;
+        self.callers = Callers::Read;
+        Ok(())
+    }
+
     /// Every function the program has, from what the container states and
     /// what the bodies reach.
     pub fn functions(&mut self) -> Result<Vec<Discovered>, String> {
@@ -654,6 +690,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for ReferenceIndex {
     type Key = ();
     type Value = Result<super::analysis::Shared<References>, String>;
     const NAME: &'static str = "reference-index";
+    const RETENTION: Retention = Retention::Held;
 
     fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
         indexed(&View::new(db, true)).map(|index| super::analysis::Shared(Arc::new(index)))
@@ -754,6 +791,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for SurveyQuery {
     type Key = ();
     type Value = Result<Surveyed, String>;
     const NAME: &'static str = "survey";
+    const RETENTION: Retention = Retention::Held;
 
     fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
         // Discovery decides each body's instruction set itself, so it reads no modes.
@@ -820,6 +858,7 @@ impl<S: Source + 'static> Query<ProgramInputs<S>> for Modes {
     type Key = ();
     type Value = BTreeMap<u64, bool>;
     const NAME: &'static str = "modes";
+    const RETENTION: Retention = Retention::Held;
 
     fn compute(db: &Db<ProgramInputs<S>>, (): &()) -> Self::Value {
         if db

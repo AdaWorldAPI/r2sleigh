@@ -1,5 +1,5 @@
 {
- "note": "Blessed at P0 (b1c6b637) after triage of every non-equal record; the bracket names the plan phase that owns the fix. Re-blessed after the core-lowering merge (902cd724, gated at c50fcc57 on gcc 13.3.0 / clang 18.1.3): siphash24 gcc-O1/O2 and typed_compete clang/gcc-O0 are equal. Re-blessed after the p1-identity merge (8527b472, gated at a9774f90): mul_div gcc/clang-O0, value_div_pow2 clang-O0, value_mul_high gcc-O0 and classify clang-O0 are equal; the three review.c main records change class (P4); vfold is now rendered and graded unsupported. Re-blessed after 91f14102 (callee reach without a symbol name): shape_pointer_to_pointer clang-O0 and shape_struct_pointer clang-O1/O2 are equal; manual_limits main clang-O0/O2 change class on the split items array (P4). Re-blessed after P4.1 and the variadic contract (9a45bf0e): eleven records equal (printf tails counted from their format literals; frame objects bounded by save slots); review.c main clang-O0/O1/O2 and branchy main clang-O0 now reach counted residuals instead of silent wrong output; manual_limits clang-O2 main is graded ub on its narrowed result (PE). Re-blessed after R4 (parameter homes promoted, preserved-register saves kept; the value view refreshed after entry lanes are minted; a formal's declaration accounts its entry value; recovered interfaces carry the roles' register names): gcc-O0 classify resolves its jump table through the promoted home and is equal, and clang-O2 shape_pointer_to_pointer is equal. 590 equal. Every non-equal record now also carries its reason: the machine evidence behind its status, normalised (gate.reason). The ratchet holds status and reason exactly; any change, an improvement included, is blessed with its cause. Re-blessed after the demanded-bytes release (an INSERT whose demanded bytes lie in its lane no longer reads its base) and the lone-PLT-stub start: bool_relay and sign_xor gcc-O1/O2 are equal; branchy main clang-O1/O2 now call printf by name and stop at the unplaced stack argument. 582 equal. Re-blessed after 63e6300e and fec919f7 (run at fec919f7 on contabo, 604 equal): classify clang-O1/O2 and gcc-O2 equal (a number an operation computes with is no string literal), shape_call_chain clang-O1/O2 equal (a frame base survives every call and ends at its block's rewrite); no other record moved. shape_stack_buffer gcc-O0's residual reads as r2sleigh_residual_u64 since f9111a28 (bisected: i64 at f9111a28^): a merge no storage keeps live is no longer placed, and the residual takes the canary load's unsigned type instead of the merge's; still the SSP canary trap. Re-blessed at P4's exit (9da018ab; one frame model, the canary decided under UbFreeSource, promotion as an SSA rewrite, the merged-reach extent rule): 629 equal. The canary's residual trap had hidden defects; each record that left it names its owner, and the calls whose arity the registers leave unproven refuse (decided 2026-10-07). Re-blessed at the result-carrier stack (#85 to #87, gated at 610286e8 on gcc 13.3.0 / clang 18.1.3): 638 equal. A body writing both result registers is unproven unless the program's calls read one; a parameter handed on untouched, or read only for a call of unproven arity, leaves the arity a floor its callers fill. Gained: avg at clang-O0 and gcc-O0 (it returned the loop counter from rax), hashes gcc-O2 main (it called combined() without the buffer), shapes main at clang-O1, clang-O2, gcc-O1 and gcc-O2, and five mains whose calls now take what the caller wrote. Lost to an honest residual: crc32_init twice and fill (void, unread), manual_limits gcc-O2 main (no caller in the program). Re-blessed at the D switch (#122): pdd renders through the staged decompiler, every move judged; equal rises x86-64 635 to 659 and aarch64 606 to 631, with no differs, ub, uninit or compile error on either. Re-blessed at #201 from its CI run (38331907688): value_count_bits is equal at gcc and clang -O0/-O1/-O2, LZCOUNT being spelled (r2sleigh_lzcount_<bits>).",
+ "note": "Blessed at P0 (b1c6b637) after triage of every non-equal record; the bracket names the plan phase that owns the fix. Re-blessed after the core-lowering merge (902cd724, gated at c50fcc57 on gcc 13.3.0 / clang 18.1.3): siphash24 gcc-O1/O2 and typed_compete clang/gcc-O0 are equal. Re-blessed after the p1-identity merge (8527b472, gated at a9774f90): mul_div gcc/clang-O0, value_div_pow2 clang-O0, value_mul_high gcc-O0 and classify clang-O0 are equal; the three review.c main records change class (P4); vfold is now rendered and graded unsupported. Re-blessed after 91f14102 (callee reach without a symbol name): shape_pointer_to_pointer clang-O0 and shape_struct_pointer clang-O1/O2 are equal; manual_limits main clang-O0/O2 change class on the split items array (P4). Re-blessed after P4.1 and the variadic contract (9a45bf0e): eleven records equal (printf tails counted from their format literals; frame objects bounded by save slots); review.c main clang-O0/O1/O2 and branchy main clang-O0 now reach counted residuals instead of silent wrong output; manual_limits clang-O2 main is graded ub on its narrowed result (PE). Re-blessed after R4 (parameter homes promoted, preserved-register saves kept; the value view refreshed after entry lanes are minted; a formal's declaration accounts its entry value; recovered interfaces carry the roles' register names): gcc-O0 classify resolves its jump table through the promoted home and is equal, and clang-O2 shape_pointer_to_pointer is equal. 590 equal. Every non-equal record now also carries its reason: the machine evidence behind its status, normalised (gate.reason). The ratchet holds status and reason exactly; any change, an improvement included, is blessed with its cause. Re-blessed after the demanded-bytes release (an INSERT whose demanded bytes lie in its lane no longer reads its base) and the lone-PLT-stub start: bool_relay and sign_xor gcc-O1/O2 are equal; branchy main clang-O1/O2 now call printf by name and stop at the unplaced stack argument. 582 equal. Re-blessed after 63e6300e and fec919f7 (run at fec919f7 on contabo, 604 equal): classify clang-O1/O2 and gcc-O2 equal (a number an operation computes with is no string literal), shape_call_chain clang-O1/O2 equal (a frame base survives every call and ends at its block's rewrite); no other record moved. shape_stack_buffer gcc-O0's residual reads as r2sleigh_residual_u64 since f9111a28 (bisected: i64 at f9111a28^): a merge no storage keeps live is no longer placed, and the residual takes the canary load's unsigned type instead of the merge's; still the SSP canary trap. Re-blessed at P4's exit (9da018ab; one frame model, the canary decided under UbFreeSource, promotion as an SSA rewrite, the merged-reach extent rule): 629 equal. The canary's residual trap had hidden defects; each record that left it names its owner, and the calls whose arity the registers leave unproven refuse (decided 2026-10-07). Re-blessed at the result-carrier stack (#85 to #87, gated at 610286e8 on gcc 13.3.0 / clang 18.1.3): 638 equal. A body writing both result registers is unproven unless the program's calls read one; a parameter handed on untouched, or read only for a call of unproven arity, leaves the arity a floor its callers fill. Gained: avg at clang-O0 and gcc-O0 (it returned the loop counter from rax), hashes gcc-O2 main (it called combined() without the buffer), shapes main at clang-O1, clang-O2, gcc-O1 and gcc-O2, and five mains whose calls now take what the caller wrote. Lost to an honest residual: crc32_init twice and fill (void, unread), manual_limits gcc-O2 main (no caller in the program). Re-blessed at the D switch (#122): pdd renders through the staged decompiler, every move judged; equal rises x86-64 635 to 659 and aarch64 606 to 631, with no differs, ub, uninit or compile error on either. Re-blessed at #201 from its CI run (38331907688): value_count_bits is equal at gcc and clang -O0/-O1/-O2, LZCOUNT being spelled (r2sleigh_lzcount_<bits>). Re-blessed at #228 from its CI run (38488342021): shape_multiword_return at all six cells, and shape_struct_pointer and shape_struct_value at -O0, are equal, a value returned in RDX:RAX being one result where a caller reads RDX (#206).",
  "records": {
   "tests/corpus/branchy.c::clang-O0::addr_chain": {
    "status": "equal"
@@ -978,9 +978,7 @@
    "status": "residual-trap"
   },
   "tests/corpus/shapes.c::clang-O0::shape_multiword_return": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee wide_make (`struct wide {uint64_t low, high;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`stack_m32 = r2sleigh_residual_u64(1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_interface.rs:690). The callee's RDX write on every r...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::clang-O0::shape_mutual_even": {
    "status": "equal"
@@ -1013,14 +1011,10 @@
    "status": "equal"
   },
   "tests/corpus/shapes.c::clang-O0::shape_struct_pointer": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee mixed_from (static, not inlined at O0; `struct mixed {uint8_t; uint16_t; uint32_t; uint64_t;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`stack_m32 = r2sleigh_residual_u64(1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_inte...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::clang-O0::shape_struct_value": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee mixed_from (static, not inlined at O0; `struct mixed {uint8_t; uint16_t; uint32_t; uint64_t;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`stack_m32 = r2sleigh_residual_u64(1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_inte...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::clang-O0::shape_variadic": {
    "status": "equal"
@@ -1084,9 +1078,7 @@
    "status": "residual-trap"
   },
   "tests/corpus/shapes.c::clang-O1::shape_multiword_return": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee wide_make (`struct wide {uint64_t low, high;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`uint64_t RAX_2 = fcn_401850(r2sleigh_residual_u64(1), RAX_1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_interface.rs:690). The calle...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::clang-O1::shape_mutual_even": {
    "status": "equal"
@@ -1188,9 +1180,7 @@
    "status": "residual-trap"
   },
   "tests/corpus/shapes.c::clang-O2::shape_multiword_return": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee wide_make (`struct wide {uint64_t low, high;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`uint64_t RAX_2 = fcn_4019b0(r2sleigh_residual_u64(1), RAX_1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_interface.rs:690). The calle...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::clang-O2::shape_mutual_even": {
    "status": "equal"
@@ -1293,9 +1283,7 @@
    "status": "equal"
   },
   "tests/corpus/shapes.c::gcc-O0::shape_multiword_return": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee wide_make (`struct wide {uint64_t low, high;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`uint64_t RAX_4 = fcn_401e08(r2sleigh_residual_u64(1), RAX_2);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_interface.rs:690). The calle...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::gcc-O0::shape_mutual_even": {
    "status": "equal"
@@ -1328,14 +1316,10 @@
    "status": "equal"
   },
   "tests/corpus/shapes.c::gcc-O0::shape_struct_pointer": {
-   "cause": "[P4 memory (SSP elision); prerequisite P1 reads (P1.5 SystemReserved)] [G-FS] SSP canary: prologue `mov rax, fs:0x28` renders `*(uint64_t*)(r2sleigh_residual_u64(1) + 40)`. Entry FS_OFFSET_0 (thread pointer) is in no argument slot -> Held (r2dec/src/binding_plan/name_resolution.rs:249-250) -> residual (r2dec/src/lib.rs:536); it dominates every path. Missing facts: no SystemReserved thread-pointer class (SourceCallEffect two-valued, r2source/src/contracts.rs:3843-3845, so calls also CallDefine FS_OFFSET_n) and no structural SSP elision. Also residual(2) `stack_m32 = r2sleigh_residual_u64(2)` = RDX_2 after the call to mixed_from (two-eightbyte struct return in R...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::gcc-O0::shape_struct_value": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee mixed_from (static, not inlined at O0; `struct mixed {uint8_t; uint16_t; uint32_t; uint64_t;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`stack_m32 = r2sleigh_residual_u64(1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_inte...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::gcc-O0::shape_variadic": {
    "status": "equal"
@@ -1401,9 +1385,7 @@
    "status": "residual-trap"
   },
   "tests/corpus/shapes.c::gcc-O1::shape_multiword_return": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee wide_make (`struct wide {uint64_t low, high;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`uint64_t RAX_2 = fcn_40198e(r2sleigh_residual_u64(1), RAX_1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_interface.rs:690). The calle...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::gcc-O1::shape_mutual_even": {
    "cause": "[P6 body (callee facts bottom-up over call-graph SCCs, memoised per Revision) + P7 calls (optimistic result fixpoint over the SCC; result state separate from the parameter contract so that an Unproven result keeps its proven interface, per F15)] [G-SCC] Mutual recursion through `call partner; add rsp,8; ret`. r2engine prepare_callee prepares the partner against imports only (r2engine/src/native.rs:609-657: declare_imports, then prepare_restated with an empty callee-facts list), so the partner's call back to the root gets the convention-fallback boundary with no result (boundaries.rs:1128 'interface=false ... results=0') -> Unstated (r2ssa/src/recover_interface.rs:629) -> the partner's result is Unproven (:749; evidence :620/:714). At the root, mint_recovered_call_site_interface refuses a callee whose result is Unproven (recover_int...",
@@ -1511,9 +1493,7 @@
    "status": "residual-trap"
   },
   "tests/corpus/shapes.c::gcc-O2::shape_multiword_return": {
-   "cause": "[P7 calls (ABI classifier with multi-eightbyte results)] [G-PAIR] Two-eightbyte aggregate return: callee wide_make (`struct wide {uint64_t low, high;}`) returns 16 INTEGER bytes in RAX:RDX, but the call result is RAX only, so the RDX read after the call (`uint64_t RAX_2 = fcn_401c20(r2sleigh_residual_u64(1), RAX_1);`) is an unclaimed CallDefine -> NeverAssigned residual. Root: one-register result contract -- SourceFunctionReturn::Register{storage} (r2source/src/contracts.rs:977-990), single SourceConventionSlots::result_slot (contracts.rs:3861), recover_interface returned_result reads only that slot (r2ssa/src/recover_interface.rs:690). The calle...",
-   "reason": "r2sleigh_residual_u64",
-   "status": "residual-trap"
+   "status": "equal"
   },
   "tests/corpus/shapes.c::gcc-O2::shape_mutual_even": {
    "status": "equal"

@@ -497,6 +497,7 @@ impl Literal {
         program.code = code;
         program.container.segments = vec![code_segment(BASE, code.len() as u64)];
         program.container.sections[0].vsize = code.len() as u64;
+        program.container.sections[0].file_size = code.len() as u64;
         program.container.symbols = functions
             .iter()
             .map(|(name, vaddr, size)| Symbol {
@@ -616,6 +617,18 @@ impl Literal {
             },
             import_write(PLT_SLOT, 8, import),
         ];
+        program
+    }
+
+    /// [`Self::plt`]'s import slot, and one code section holding only `jmp rax`: a tail transfer
+    /// through no word the loader writes.
+    pub fn tail_section() -> Self {
+        let mut program = Self::plt();
+        program.code = &TAIL_THROUGH_A_REGISTER;
+        program.container.segments = vec![code_segment(BASE, 2)];
+        program.container.sections.truncate(1);
+        ".text.tail".clone_into(&mut program.container.sections[0].name);
+        program.container.sections[0].vsize = 2;
         program
     }
 
@@ -904,6 +917,10 @@ impl Source for Literal {
             *at > revision && written.start < range.end && range.start < written.end
         })
     }
+
+    fn patched(&self, vaddr: u64) -> bool {
+        self.patches.contains_key(&vaddr)
+    }
 }
 
 /// The literal program, opened.
@@ -1009,3 +1026,8 @@ pub fn bare(expression: &str) -> &str {
     }
     expression
 }
+
+/// `jmp rax`, padded to the decoder's window.
+const TAIL_THROUGH_A_REGISTER: [u8; 16] = [
+    0xff, 0xe0, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+];

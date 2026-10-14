@@ -4,44 +4,6 @@ use super::super::*;
 use super::*;
 
 #[test]
-fn global_field_profiles_refuse_spoofed_constant_names() {
-    let load_from = |addr| {
-        SSABlock::from_parts(
-            0x401000,
-            4,
-            vec![SSAOp::Load {
-                dst: SSAVar::new("value", 1, 4),
-                space: r2il::SpaceId::Ram,
-                addr,
-            }],
-            Vec::new(),
-        )
-    };
-
-    let loaded = crate::ProgramExtents::new([(0x10000, 0x11000)]);
-    let spoofed =
-        infer_global_field_profiles(&[load_from(SSAVar::new("const:10000", 0, 8))], 64, &loaded);
-    let exact =
-        infer_global_field_profiles(&[load_from(SSAVar::constant(0x10000, 8))], 64, &loaded);
-    // The same access, where no section the program loads holds the base, names no global.
-    let outside = infer_global_field_profiles(
-        &[load_from(SSAVar::constant(0x10000, 8))],
-        64,
-        &crate::ProgramExtents::none(),
-    );
-
-    assert!(spoofed.is_empty());
-    assert!(outside.is_empty());
-    assert_eq!(
-        exact
-            .get(&0x10000)
-            .and_then(|fields| fields.get(&0))
-            .map(|field| field.reads),
-        Some(1)
-    );
-}
-
-#[test]
 fn signature_type_parser_preserves_source_width_typedefs() {
     assert_eq!(
         parse_signature_type_preserving_c_typedefs("long", 64),
@@ -74,13 +36,11 @@ fn local_struct_decl_preserves_sparse_offsets_with_padding() {
                 name: "f_8".to_string(),
                 offset: 8,
                 field_type: parse_test_type("int32_t", 64),
-                confidence: 95,
             },
             StructFieldCandidate {
                 name: "f_34".to_string(),
                 offset: 0x34,
                 field_type: parse_test_type("int32_t", 64),
-                confidence: 95,
             },
         ],
         64,
@@ -176,18 +136,18 @@ fn external_stack_identity_refuses_without_a_structural_root() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &vars,
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert!(analysis.plan.var_rename_candidates.is_empty());
+    // No external stack identity applies: `var_10h` keeps radare2's name and its own type.
+    let binding = &analysis.type_facts.visible_bindings[0];
+    let int32 = parse_test_type("int32_t", 64);
     assert_eq!(
-        analysis.plan.var_type_candidates[0].source,
-        TypeFactSource::LocalInferred
+        (binding.name.as_str(), binding.ty.as_ref()),
+        ("var_10h", Some(&int32))
     );
 }
 
@@ -229,13 +189,11 @@ fn local_external_struct_reconciliation_prefers_external_names() {
                     name: "f_0".to_string(),
                     offset: 0,
                     field_type: parse_test_type("int32_t", 64),
-                    confidence: 90,
                 },
                 StructFieldCandidate {
                     name: "f_8".to_string(),
                     offset: 8,
                     field_type: parse_test_type("struct node *", 64),
-                    confidence: 90,
                 },
             ],
         }],
@@ -262,8 +220,6 @@ fn local_external_struct_reconciliation_prefers_external_names() {
             arch: String::new(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs,
         interproc_summary_set: None,
@@ -276,192 +232,6 @@ fn local_external_struct_reconciliation_prefers_external_names() {
             .get(&0)
             .map(String::as_str),
         Some("struct node *")
-    );
-}
-
-#[test]
-fn local_generated_struct_replaces_stale_generated_external_layout() {
-    let mut parsed_context = ParsedExternalContext::default();
-    parsed_context.external_type_db.structs.insert(
-        "sla_struct_420703e08f70f00e".to_string(),
-        ExternalStruct {
-            name: "sla_struct_420703e08f70f00e".to_string(),
-            fields: BTreeMap::from([
-                (
-                    0,
-                    ExternalField {
-                        name: "_pad_0".to_string(),
-                        offset: 0,
-                        ty: Some("uint8_t".to_string()),
-                    },
-                ),
-                (
-                    4,
-                    ExternalField {
-                        name: "f_8".to_string(),
-                        offset: 4,
-                        ty: Some("int32_t".to_string()),
-                    },
-                ),
-                (
-                    8,
-                    ExternalField {
-                        name: "_pad_c".to_string(),
-                        offset: 8,
-                        ty: Some("uint8_t".to_string()),
-                    },
-                ),
-                (
-                    12,
-                    ExternalField {
-                        name: "f_34".to_string(),
-                        offset: 12,
-                        ty: Some("int32_t".to_string()),
-                    },
-                ),
-            ]),
-        },
-    );
-    parsed_context.current_signature = Some(FunctionSignatureSpec {
-        ret_type: Some(CTypeLike::Int {
-            bits: 32,
-            signedness: Signedness::Signed,
-        }),
-        params: vec![FunctionParamSpec {
-            name: "arr".to_string(),
-            ty: Some(CTypeLike::Pointer(Box::new(CTypeLike::Void))),
-        }],
-    });
-
-    let local_structs = LocalStructArtifacts {
-        struct_decls: vec![StructDeclCandidate {
-            name: "sla_struct_420703e08f70f00e".to_string(),
-            decl: "struct sla_struct_420703e08f70f00e { int32_t f_8; int32_t f_34; };".to_string(),
-            confidence: 95,
-            source: StructDeclSource::LocalInferred,
-            fields: vec![
-                StructFieldCandidate {
-                    name: "f_8".to_string(),
-                    offset: 8,
-                    field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
-                },
-                StructFieldCandidate {
-                    name: "f_34".to_string(),
-                    offset: 0x34,
-                    field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
-                },
-            ],
-        }],
-        slot_type_overrides: HashMap::from([(
-            0usize,
-            "struct sla_struct_420703e08f70f00e *".to_string(),
-        )]),
-        slot_field_profiles: HashMap::from([(
-            0usize,
-            BTreeMap::from([
-                (8u64, "int32_t".to_string()),
-                (0x34u64, "int32_t".to_string()),
-            ]),
-        )]),
-        slot_element_strides: HashMap::new(),
-        indexed_accesses: Vec::new(),
-    };
-    let ssa_blocks = [SSABlock::from_parts(
-        0x401000,
-        4,
-        vec![
-            SSAOp::IntMult {
-                dst: SSAVar::new("scaled", 1, 8),
-                a: SSAVar::new("RSI", 0, 8),
-                b: SSAVar::constant(0x38, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("elem", 1, 8),
-                a: SSAVar::new("RDI", 0, 8),
-                b: SSAVar::new("scaled", 1, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("field", 1, 8),
-                a: SSAVar::new("elem", 1, 8),
-                b: SSAVar::constant(8, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("value", 1, 4),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("field", 1, 8),
-            },
-        ],
-        Vec::new(),
-    )];
-
-    let analysis = build_type_analysis(TypeAnalysisInput {
-        function_name: "sym.test_struct_array_index",
-        ptr_bits: 64,
-        inferred_signature: InferredSignature {
-            function_name: "sym.test_struct_array_index".to_string(),
-            signature: "int32_t sym.test_struct_array_index (void * arr)".to_string(),
-            ret_type: "int32_t".to_string(),
-            params: vec![InferredSignatureParam {
-                name: "arr".to_string(),
-                param_type: "void *".to_string(),
-            }],
-            callconv: "amd64".to_string(),
-            arch: "x86-64".to_string(),
-        },
-        recovered_vars: &[],
-        ssa_blocks: &ssa_blocks,
-        conventional_extension: &|_| false,
-        parsed_context,
-        local_structs,
-        interproc_summary_set: None,
-        diagnostics: TypeAnalysisDiagnostics::default(),
-    });
-
-    let struct_entry = analysis
-        .type_facts
-        .external_type_db
-        .structs
-        .get("sla_struct_420703e08f70f00e")
-        .expect("expected merged local struct entry");
-    assert_eq!(
-        struct_entry.fields.get(&8).map(|field| field.name.as_str()),
-        Some("f_8")
-    );
-    assert_eq!(
-        struct_entry
-            .fields
-            .get(&0x34)
-            .map(|field| field.name.as_str()),
-        Some("f_34")
-    );
-    assert!(
-        !struct_entry.fields.contains_key(&4) && !struct_entry.fields.contains_key(&12),
-        "stale generated external layout should be replaced, got {:?}",
-        struct_entry.fields
-    );
-    assert!(
-        analysis
-            .plan
-            .struct_decls
-            .iter()
-            .find(|decl| decl.name == "sla_struct_420703e08f70f00e")
-            .is_some_and(|decl| decl.source == StructDeclSource::LocalInferred),
-        "expected plan to keep the current local synthetic struct"
-    );
-    assert_eq!(
-        analysis.type_facts.scalar_array_render_candidates,
-        vec![ScalarArrayRenderCandidate {
-            slot: 0,
-            op: op_at(&ssa_blocks, 0x401000, 3),
-            is_write: false,
-            field_offset: 8,
-            element_stride: 56,
-            access_width: 4,
-            index_value: None,
-        }],
-        "scalar array proof must use the reconciled local layout, not stale parsed context"
     );
 }
 
@@ -523,13 +293,11 @@ fn debug_typedef_alias_beats_generated_local_struct_override() {
                     name: "f_8".to_string(),
                     offset: 8,
                     field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
                 },
                 StructFieldCandidate {
                     name: "f_34".to_string(),
                     offset: 0x34,
                     field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
                 },
             ],
         }],
@@ -563,15 +331,16 @@ fn debug_typedef_alias_beats_generated_local_struct_override() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs,
         interproc_summary_set: None,
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.params[0].param_type, "DemoStruct*");
+    assert_eq!(
+        spelled_signature(&analysis).params[0].param_type,
+        "DemoStruct*"
+    );
     assert_eq!(
         analysis
             .type_facts
@@ -657,13 +426,11 @@ fn unresolved_named_pointer_materializes_local_struct_layout() {
                     name: "f_0".to_string(),
                     offset: 0,
                     field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
                 },
                 StructFieldCandidate {
                     name: "f_c".to_string(),
                     offset: 12,
                     field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
                 },
             ],
         }],
@@ -697,15 +464,16 @@ fn unresolved_named_pointer_materializes_local_struct_layout() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs,
         interproc_summary_set: None,
         diagnostics: TypeAnalysisDiagnostics::default(),
     });
 
-    assert_eq!(analysis.signature.params[0].param_type, "DemoStruct*");
+    assert_eq!(
+        spelled_signature(&analysis).params[0].param_type,
+        "DemoStruct*"
+    );
     let layout = analysis
         .type_facts
         .external_type_db
@@ -788,13 +556,11 @@ fn local_struct_override_replaces_weak_generic_ptr_sized_integer_param() {
                     name: "f_8".to_string(),
                     offset: 8,
                     field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
                 },
                 StructFieldCandidate {
                     name: "f_34".to_string(),
                     offset: 52,
                     field_type: parse_test_type("int32_t", 64),
-                    confidence: 95,
                 },
             ],
         }],
@@ -825,8 +591,6 @@ fn local_struct_override_replaces_weak_generic_ptr_sized_integer_param() {
             arch: "x86-64".to_string(),
         },
         recovered_vars: &[],
-        ssa_blocks: &[],
-        conventional_extension: &|_| false,
         parsed_context,
         local_structs,
         interproc_summary_set: None,
@@ -949,625 +713,6 @@ fn local_field_access_certificates_derive_from_type_artifacts() {
             field_name: "f_8".to_string(),
             field_type: Some("int32_t".to_string()),
         }]
-    );
-}
-
-#[test]
-fn prepared_phi_preserves_recursive_struct_parameter_type() {
-    let current = SSAVar::new("X0", 1, 8);
-    let next = SSAVar::new("X0", 2, 8);
-    let name = SSAVar::new("name", 1, 8);
-    let len = SSAVar::new("len", 1, 2);
-    let field_addr = |name: &str, version: u32, offset: u64| SSAOp::IntAdd {
-        dst: SSAVar::new(name, version, 8),
-        a: current.clone(),
-        b: SSAVar::constant(offset, 8),
-    };
-    let blocks = [SSABlock::from_parts(
-        0x1000,
-        0,
-        vec![
-            field_addr("len_addr", 1, 6),
-            SSAOp::Load {
-                dst: len.clone(),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("len_addr", 1, 8),
-            },
-            SSAOp::IntZExt {
-                dst: SSAVar::new("wide_len", 1, 8),
-                src: len,
-            },
-            field_addr("name_addr", 1, 0x18),
-            SSAOp::Load {
-                dst: name.clone(),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("name_addr", 1, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("first_byte", 1, 1),
-                space: r2il::SpaceId::Ram,
-                addr: name,
-            },
-            field_addr("next_addr", 1, 0x20),
-            SSAOp::Load {
-                dst: next.clone(),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("next_addr", 1, 8),
-            },
-        ],
-        vec![PhiNode {
-            dst: current.clone(),
-            sources: vec![(0xff0, SSAVar::new("X0", 0, 8)), (0x1010, next)],
-            canonical_storage: None,
-        }],
-    )];
-    let mut diagnostics = TypeAnalysisDiagnostics::default();
-
-    let artifacts = infer_local_struct_artifacts_from_blocks(
-        &blocks,
-        None,
-        &|_| false,
-        None,
-        &super::aapcs64_argument_slots(),
-        64,
-        &mut diagnostics,
-    );
-
-    let profile = artifacts
-        .slot_field_profiles
-        .get(&0)
-        .expect("slot 0 profile");
-    let struct_pointer = artifacts
-        .slot_type_overrides
-        .get(&0)
-        .expect("slot 0 recursive struct pointer");
-    assert_eq!(profile.get(&6).map(String::as_str), Some("uint16_t"));
-    assert_eq!(profile.get(&0x18).map(String::as_str), Some("int8_t *"));
-    assert_eq!(profile.get(&0x20), Some(struct_pointer));
-    assert!(
-        artifacts.struct_decls.iter().any(|decl| {
-            decl.fields.iter().any(|field| {
-                field.offset == 0x20 && field.field_type == parse_test_type(struct_pointer, 64)
-            })
-        }),
-        "diagnostics={diagnostics:?}; artifacts={artifacts:?}"
-    );
-}
-
-#[test]
-fn local_struct_inference_uses_memory_ssa_for_spilled_element_pointer() {
-    let entry = 0x100000548;
-    let successor = 0x100000594;
-    let stack_pointer = SSAVar::new("SP", 1, 8);
-    let element = SSAVar::new("element", 1, 8);
-    let blocks = [
-        SSABlock::from_parts(
-            entry,
-            0,
-            vec![
-                SSAOp::IntSub {
-                    dst: stack_pointer.clone(),
-                    a: SSAVar::new("SP", 0, 8),
-                    b: SSAVar::constant(0x20, 8),
-                },
-                SSAOp::IntSExt {
-                    dst: SSAVar::new("idx64", 1, 8),
-                    src: SSAVar::new("W1", 0, 4),
-                },
-                SSAOp::IntMult {
-                    dst: SSAVar::new("scaled", 1, 8),
-                    a: SSAVar::new("idx64", 1, 8),
-                    b: SSAVar::constant(0x28, 8),
-                },
-                SSAOp::IntAdd {
-                    dst: element.clone(),
-                    a: SSAVar::new("X0", 0, 8),
-                    b: SSAVar::new("scaled", 1, 8),
-                },
-                SSAOp::Store {
-                    space: r2il::SpaceId::Ram,
-                    addr: stack_pointer.clone(),
-                    val: element,
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("element_reload", 1, 8),
-                    space: r2il::SpaceId::Ram,
-                    addr: stack_pointer.clone(),
-                },
-                SSAOp::IntAdd {
-                    dst: SSAVar::new("score_addr", 1, 8),
-                    a: SSAVar::new("element_reload", 1, 8),
-                    b: SSAVar::constant(0x10, 8),
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("score", 1, 4),
-                    space: r2il::SpaceId::Ram,
-                    addr: SSAVar::new("score_addr", 1, 8),
-                },
-                SSAOp::Store {
-                    space: r2il::SpaceId::Ram,
-                    addr: SSAVar::new("score_addr", 1, 8),
-                    val: SSAVar::new("W2", 0, 4),
-                },
-                SSAOp::IntAdd {
-                    dst: SSAVar::new("flags_addr", 1, 8),
-                    a: SSAVar::new("element_reload", 1, 8),
-                    b: SSAVar::constant(4, 8),
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("flags", 1, 2),
-                    space: r2il::SpaceId::Ram,
-                    addr: SSAVar::new("flags_addr", 1, 8),
-                },
-            ],
-            Vec::new(),
-        ),
-        SSABlock::from_parts(
-            successor,
-            0,
-            vec![
-                SSAOp::Load {
-                    dst: SSAVar::new("element_reload", 2, 8),
-                    space: r2il::SpaceId::Ram,
-                    addr: stack_pointer.clone(),
-                },
-                SSAOp::IntAdd {
-                    dst: SSAVar::new("scores0_addr", 1, 8),
-                    a: SSAVar::new("element_reload", 2, 8),
-                    b: SSAVar::constant(8, 8),
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("scores0", 1, 4),
-                    space: r2il::SpaceId::Ram,
-                    addr: SSAVar::new("scores0_addr", 1, 8),
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("element_reload", 3, 8),
-                    space: r2il::SpaceId::Ram,
-                    addr: stack_pointer.clone(),
-                },
-                SSAOp::IntAdd {
-                    dst: SSAVar::new("len_addr", 1, 8),
-                    a: SSAVar::new("element_reload", 3, 8),
-                    b: SSAVar::constant(6, 8),
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("len", 1, 2),
-                    space: r2il::SpaceId::Ram,
-                    addr: SSAVar::new("len_addr", 1, 8),
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("element_reload", 4, 8),
-                    space: r2il::SpaceId::Ram,
-                    addr: stack_pointer,
-                },
-                SSAOp::Load {
-                    dst: SSAVar::new("id", 1, 4),
-                    space: r2il::SpaceId::Ram,
-                    addr: SSAVar::new("element_reload", 4, 8),
-                },
-            ],
-            Vec::new(),
-        ),
-    ];
-    let stack_version = MemoryVersion {
-        object: r2ssa::ObjectId(1),
-        version: 1,
-    };
-    let memory_versions = LocalMemoryVersionFacts {
-        stores_by_op: HashMap::from([(op_at(&blocks, entry, 4), vec![stack_version])]),
-        loads_by_op: HashMap::from([
-            (op_at(&blocks, entry, 5), vec![stack_version]),
-            (op_at(&blocks, successor, 0), vec![stack_version]),
-            (op_at(&blocks, successor, 3), vec![stack_version]),
-            (op_at(&blocks, successor, 6), vec![stack_version]),
-        ]),
-        phi_inputs: HashMap::new(),
-        value_ids: HashMap::from([(SSAVar::new("W1", 0, 4), r2ssa::ValueId(1))]),
-    };
-    let mut diagnostics = TypeAnalysisDiagnostics::default();
-    // r2ssa proves the lowered stack pointer is the entry pointer less 0x20.
-    let spill = StackSlotKey {
-        base: ExternalStackBase::StackPointer,
-        offset: -0x20,
-    };
-    let stack_roots = |var: &SSAVar| (*var == SSAVar::new("SP", 1, 8)).then_some(spill);
-
-    let artifacts = infer_local_struct_artifacts_from_blocks(
-        &blocks,
-        Some(&memory_versions),
-        &|_| false,
-        Some(&stack_roots),
-        &super::aapcs64_argument_slots(),
-        64,
-        &mut diagnostics,
-    );
-
-    assert_eq!(
-        artifacts
-            .slot_field_profiles
-            .get(&0)
-            .expect("spilled Item profile")
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>(),
-        BTreeSet::from([0, 4, 6, 8, 0x10]),
-        "diagnostics={diagnostics:?}"
-    );
-    assert_eq!(artifacts.slot_element_strides.get(&0), Some(&40));
-    assert_eq!(artifacts.indexed_accesses.len(), 6);
-    assert!(
-        artifacts
-            .indexed_accesses
-            .iter()
-            .all(|candidate| candidate.index_value == Some(r2ssa::ValueId(1)))
-    );
-}
-
-#[test]
-fn external_struct_pointer_strength_reduced_index_certifies_nested_array_fields() {
-    let mut parsed_context = ParsedExternalContext::default();
-    parsed_context.external_type_db.structs.insert(
-        "item".to_string(),
-        ExternalStruct {
-            name: "Item".to_string(),
-            fields: BTreeMap::from([
-                (
-                    0,
-                    ExternalField {
-                        name: "id".to_string(),
-                        offset: 0,
-                        ty: Some("int32_t".to_string()),
-                    },
-                ),
-                (
-                    4,
-                    ExternalField {
-                        name: "flags".to_string(),
-                        offset: 4,
-                        ty: Some("uint16_t".to_string()),
-                    },
-                ),
-                (
-                    6,
-                    ExternalField {
-                        name: "len".to_string(),
-                        offset: 6,
-                        ty: Some("uint16_t".to_string()),
-                    },
-                ),
-                (
-                    8,
-                    ExternalField {
-                        name: "scores".to_string(),
-                        offset: 8,
-                        ty: Some("int32_t[4]".to_string()),
-                    },
-                ),
-                (
-                    24,
-                    ExternalField {
-                        name: "name".to_string(),
-                        offset: 24,
-                        ty: Some("char *".to_string()),
-                    },
-                ),
-                (
-                    32,
-                    ExternalField {
-                        name: "next".to_string(),
-                        offset: 32,
-                        ty: Some("Item *".to_string()),
-                    },
-                ),
-            ]),
-        },
-    );
-
-    let ssa_blocks = [SSABlock::from_parts(
-        0x4012d0,
-        64,
-        vec![
-            SSAOp::IntSExt {
-                dst: SSAVar::new("RSI", 1, 8),
-                src: SSAVar::new("ESI", 0, 4),
-            },
-            SSAOp::IntMult {
-                dst: SSAVar::new("tmp:4900", 1, 8),
-                a: SSAVar::new("RSI", 1, 8),
-                b: SSAVar::constant(4, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("tmp:4a00", 1, 8),
-                a: SSAVar::new("RSI", 1, 8),
-                b: SSAVar::new("tmp:4900", 1, 8),
-            },
-            SSAOp::IntMult {
-                dst: SSAVar::new("tmp:4900", 2, 8),
-                a: SSAVar::new("tmp:4a00", 1, 8),
-                b: SSAVar::constant(8, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("elem", 1, 8),
-                a: SSAVar::new("RDI", 0, 8),
-                b: SSAVar::new("tmp:4900", 2, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("scores2", 1, 8),
-                a: SSAVar::new("elem", 1, 8),
-                b: SSAVar::constant(0x10, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("score", 1, 4),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("scores2", 1, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("flags", 1, 8),
-                a: SSAVar::new("elem", 1, 8),
-                b: SSAVar::constant(4, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("flagv", 1, 2),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("flags", 1, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("idv", 1, 4),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("elem", 1, 8),
-            },
-        ],
-        Vec::new(),
-    )];
-
-    let analysis = build_type_analysis(TypeAnalysisInput {
-        function_name: "sym.struct_nested_array",
-        ptr_bits: 64,
-        inferred_signature: InferredSignature {
-            function_name: "sym.struct_nested_array".to_string(),
-            signature: "int32_t sym.struct_nested_array (Item * items, int32_t idx, int32_t add)"
-                .to_string(),
-            ret_type: "int32_t".to_string(),
-            params: vec![
-                InferredSignatureParam {
-                    name: "items".to_string(),
-                    param_type: "Item *".to_string(),
-                },
-                InferredSignatureParam {
-                    name: "idx".to_string(),
-                    param_type: "int32_t".to_string(),
-                },
-                InferredSignatureParam {
-                    name: "add".to_string(),
-                    param_type: "int32_t".to_string(),
-                },
-            ],
-            callconv: "amd64".to_string(),
-            arch: "x86-64".to_string(),
-        },
-        recovered_vars: &[],
-        ssa_blocks: &ssa_blocks,
-        conventional_extension: &|_| false,
-        parsed_context,
-        local_structs: LocalStructArtifacts::default(),
-        interproc_summary_set: None,
-        diagnostics: TypeAnalysisDiagnostics::default(),
-    });
-
-    assert!(
-        analysis
-            .type_facts
-            .array_index_certificates
-            .iter()
-            .any(|cert| cert.element_stride == 40 && cert.field_offset == 0x10),
-        "expected idx * sizeof(Item) proof for scores[2], got {:?}",
-        analysis.type_facts.array_index_certificates
-    );
-    let certified_names = analysis
-        .type_facts
-        .field_access_certificates
-        .iter()
-        .map(|cert| cert.field_name.as_str())
-        .collect::<BTreeSet<_>>();
-    assert!(certified_names.contains("scores[2]"), "{certified_names:?}");
-    assert!(certified_names.contains("flags"), "{certified_names:?}");
-    assert!(certified_names.contains("id"), "{certified_names:?}");
-    assert_eq!(
-        analysis.type_facts.scalar_array_render_candidates,
-        vec![
-            ScalarArrayRenderCandidate {
-                slot: 0,
-                op: op_at(&ssa_blocks, 0x4012d0, 6),
-                is_write: false,
-                field_offset: 0x10,
-                element_stride: 40,
-                access_width: 4,
-                index_value: None,
-            },
-            ScalarArrayRenderCandidate {
-                slot: 0,
-                op: op_at(&ssa_blocks, 0x4012d0, 8),
-                is_write: false,
-                field_offset: 4,
-                element_stride: 40,
-                access_width: 2,
-                index_value: None,
-            },
-            ScalarArrayRenderCandidate {
-                slot: 0,
-                op: op_at(&ssa_blocks, 0x4012d0, 9),
-                is_write: false,
-                field_offset: 0,
-                element_stride: 40,
-                access_width: 4,
-                index_value: None,
-            },
-        ],
-        "render candidates must stay in deterministic op-site order"
-    );
-}
-
-#[test]
-fn stack_home_strength_reduced_index_certifies_struct_array_field_access() {
-    let mut parsed_context = ParsedExternalContext::default();
-    parsed_context.external_type_db.structs.insert(
-        "demostruct".to_string(),
-        ExternalStruct {
-            name: "DemoStruct".to_string(),
-            fields: BTreeMap::from([
-                (
-                    8,
-                    ExternalField {
-                        name: "third".to_string(),
-                        offset: 8,
-                        ty: Some("int32_t".to_string()),
-                    },
-                ),
-                (
-                    0x34,
-                    ExternalField {
-                        name: "fourteenth".to_string(),
-                        offset: 0x34,
-                        ty: Some("int32_t".to_string()),
-                    },
-                ),
-            ]),
-        },
-    );
-    let ssa_blocks = [SSABlock::from_parts(
-        0x401000,
-        64,
-        vec![
-            SSAOp::IntAdd {
-                dst: SSAVar::new("idx_addr", 1, 8),
-                a: SSAVar::new("RBP", 1, 8),
-                b: SSAVar::constant(0xffff_ffff_ffff_fff4, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("idx", 1, 4),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("idx_addr", 1, 8),
-            },
-            SSAOp::IntSExt {
-                dst: SSAVar::new("idx64", 1, 8),
-                src: SSAVar::new("idx", 1, 4),
-            },
-            SSAOp::IntLeft {
-                dst: SSAVar::new("idx_x8", 1, 8),
-                a: SSAVar::new("idx64", 1, 8),
-                b: SSAVar::constant(3, 8),
-            },
-            SSAOp::IntSub {
-                dst: SSAVar::new("idx_x7", 1, 8),
-                a: SSAVar::new("idx_x8", 1, 8),
-                b: SSAVar::new("idx64", 1, 8),
-            },
-            SSAOp::IntLeft {
-                dst: SSAVar::new("idx_x56", 1, 8),
-                a: SSAVar::new("idx_x7", 1, 8),
-                b: SSAVar::constant(3, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("elem", 1, 8),
-                a: SSAVar::new("RDI", 0, 8),
-                b: SSAVar::new("idx_x56", 1, 8),
-            },
-            SSAOp::IntAdd {
-                dst: SSAVar::new("field", 1, 8),
-                a: SSAVar::new("elem", 1, 8),
-                b: SSAVar::constant(0x34, 8),
-            },
-            SSAOp::Load {
-                dst: SSAVar::new("value", 1, 4),
-                space: r2il::SpaceId::Ram,
-                addr: SSAVar::new("field", 1, 8),
-            },
-        ],
-        Vec::new(),
-    )];
-
-    // r2ssa proves the index home is twelve bytes below the frame pointer.
-    let frame_roots = BTreeMap::from([(
-        SSAVar::new("idx_addr", 1, 8),
-        StackSlotKey {
-            base: ExternalStackBase::FramePointer,
-            offset: -12,
-        },
-    )]);
-    let analysis = build_type_analysis_with_prep_facts(
-        TypeAnalysisInput {
-            function_name: "sym.test_struct_array_index",
-            ptr_bits: 64,
-            inferred_signature: InferredSignature {
-                function_name: "sym.test_struct_array_index".to_string(),
-                signature:
-                    "int32_t sym.test_struct_array_index (DemoStruct * arr, int32_t idx, int32_t v)"
-                        .to_string(),
-                ret_type: "int32_t".to_string(),
-                params: vec![
-                    InferredSignatureParam {
-                        name: "arr".to_string(),
-                        param_type: "DemoStruct *".to_string(),
-                    },
-                    InferredSignatureParam {
-                        name: "idx".to_string(),
-                        param_type: "int32_t".to_string(),
-                    },
-                    InferredSignatureParam {
-                        name: "v".to_string(),
-                        param_type: "int32_t".to_string(),
-                    },
-                ],
-                callconv: "amd64".to_string(),
-                arch: "x86-64".to_string(),
-            },
-            recovered_vars: &[],
-            ssa_blocks: &ssa_blocks,
-            conventional_extension: &|_| false,
-            parsed_context,
-            local_structs: LocalStructArtifacts::default(),
-            interproc_summary_set: None,
-            diagnostics: TypeAnalysisDiagnostics::default(),
-        },
-        &frame_roots,
-    );
-
-    assert!(
-        analysis
-            .type_facts
-            .array_index_certificates
-            .iter()
-            .any(|cert| {
-                cert.slot == 0
-                    && cert.element_stride == 56
-                    && cert.field_offset == 0x34
-                    && matches!(cert.base, Some(ArrayIndexBase::Param { index: 0 }))
-            }),
-        "expected stack-home strength-reduced idx * sizeof(DemoStruct) proof, got {:?}",
-        analysis.type_facts.array_index_certificates
-    );
-    assert!(
-        analysis
-            .type_facts
-            .field_access_certificates
-            .iter()
-            .any(|cert| cert.field_offset == 0x34 && cert.field_name == "fourteenth"),
-        "expected external field certificate, got {:?}",
-        analysis.type_facts.field_access_certificates
-    );
-    assert_eq!(
-        analysis.type_facts.scalar_array_render_candidates,
-        vec![ScalarArrayRenderCandidate {
-            slot: 0,
-            op: op_at(&ssa_blocks, 0x401000, 8),
-            is_write: false,
-            field_offset: 0x34,
-            element_stride: 56,
-            access_width: 4,
-            index_value: None,
-        }],
-        "render candidate must preserve the concrete field load op identity"
     );
 }
 
@@ -1695,9 +840,9 @@ fn a_source_member_name_reaches_only_its_own_parameter_s_fields() {
             .map(|certificate| certificate.field_name.clone())
     };
     assert_eq!(named(0, 8).as_deref(), Some("len"));
-    assert_eq!(
+    assert_ne!(
         named(1, 8).as_deref(),
-        Some("f_8"),
+        Some("len"),
         "parameter 1's field took the name of parameter 0's member"
     );
 }

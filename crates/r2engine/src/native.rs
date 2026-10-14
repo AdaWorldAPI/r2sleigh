@@ -206,6 +206,7 @@ impl NativeRefusal {
             r2ssa::SsaPrepareError::Cancelled | r2ssa::SsaPrepareError::DeadlineExceeded => {
                 Self::Stopped(error)
             }
+            r2ssa::SsaPrepareError::Exhausted(exhausted) => Self::Prepare(exhausted.to_string()),
             error => Self::Prepare(format!("{error:?}")),
         }
     }
@@ -352,22 +353,23 @@ pub fn analysed(
     program: &dyn Program,
     entry: u64,
 ) -> Result<Prepared, NativeRefusal> {
-    analyse(target, program, entry, &walk(target, program, entry)?)
+    let walk = walk(target, program, entry)?;
+    analyse(target, program, entry, &walk, crate::program::Callers::Read)
 }
 
-/// Prepare one function from its walk; the query `Analysed` reads the walk from `Walked`.
+/// Prepare one function from its walk, reading its callers where `callers` says; the query
+/// `Analysed` reads the walk from `Walked`.
 pub(crate) fn analysed_from(
     target: &NativeTarget<'_>,
     program: &dyn Program,
-    entry: u64,
-    walk: &Walk,
+    (entry, walk): (u64, &Walk),
+    callers: crate::program::Callers,
 ) -> Result<Prepared, NativeRefusal> {
-    analyse(target, program, entry, walk)
+    analyse(target, program, entry, walk, callers)
 }
 
-/// What a prepared function keeps of its walk once preparation has read the lift: each block's
-/// extent and successors, where the walk stopped, and the callees it reached
-/// (doc/adr-memory-model.md, decision 1).
+/// What a prepared function keeps of its walk once the lift is read: block extents and successors,
+/// stops and callees reached (doc/adr-memory-model.md, decision 1).
 pub struct Outline {
     pub name: String,
     pub blocks: Vec<OutlineBlock>,
@@ -1025,6 +1027,7 @@ fn analyse(
     program: &dyn Program,
     entry: u64,
     walk: &Walk,
+    callers: crate::program::Callers,
 ) -> Result<Prepared, NativeRefusal> {
     // A convention whose boundaries carry what none states refuses before anything is read.
     if let Some(reason) = target.convention.refused {
@@ -1046,7 +1049,8 @@ fn analyse(
         unread,
     } = read_callees(&native, target, &walk.root, entry, ptr_bits);
 
-    let (artifact, _) = native.resolve(entry, walk, &callees, true)?;
+    let reads = callers == crate::program::Callers::Read;
+    let (artifact, _) = native.resolve(entry, walk, &callees, reads)?;
     let tables = walk.tables.iter().map(DispatchTable::of).collect();
     Ok(Prepared {
         artifact,
@@ -1712,7 +1716,7 @@ impl Native<'_> {
             Some(self.target.arch),
             &self.control,
             &evidence,
-            &accepted_premises(),
+            &premises_reading(result_reads.is_some()),
         )
         .map_err(NativeRefusal::of_preparation)?;
         Ok(Arc::new(artifact))
@@ -1871,37 +1875,20 @@ fn reached(body: &crate::body::Body, program: &dyn Program) -> Vec<u64> {
         .collect()
 }
 
-/// Where each direct call is made and what it reaches.
-///
-/// The walk collects call targets without saying which instruction made each
-/// one, so the instruction is found by looking for the call operation in the
-/// block that carries it.
+/// Where each transfer to another function is made and what it reaches, as the walk read it.
 fn call_sites(body: &crate::body::Body, program: &dyn Program) -> Vec<NativeCall> {
     let mut sites = Vec::new();
     for block in &body.blocks {
-        let ops = &block.lifted.ops;
-        // One forward read per block that calls through a value, so each such call folds in `O(1)`.
-        let mut origins = (ops
-            .iter()
-            .any(|op| matches!(op, r2il::R2ILOp::CallInd { .. })))
-        .then(r2ssa::origin::BlockOrigins::default);
-        for (index, op) in ops.iter().enumerate() {
-            let site = transfer(&block.lifted, index, body, origins.as_ref());
-            if let Some(origins) = &mut origins {
-                origins.step(op);
-            }
-            let Some((target, transfer)) = site else {
-                continue;
-            };
-            let Some(instruction) = block.lifted.instruction_of(index) else {
+        for transfer in &block.transfers {
+            let Some(instruction) = block.lifted.instruction_of(transfer.op) else {
                 continue;
             };
             sites.push(NativeCall {
                 instruction,
-                target,
-                name: program.name_at(target),
-                transfer,
-                linkage: match program.import_at(target) {
+                target: transfer.target,
+                name: program.name_at(transfer.target),
+                transfer: transfer.kind,
+                linkage: match program.import_at(transfer.target) {
                     Some(_) => r2source::AdvisoryCalleeLinkage::Imported,
                     None => r2source::AdvisoryCalleeLinkage::Internal,
                 },
@@ -1943,34 +1930,6 @@ fn reentering_calls(calls: &[NativeCall]) -> BTreeSet<u64> {
         })
         .map(|call| call.target)
         .collect()
-}
-
-/// How one operation reaches another function, where it does: a call target the walk folded and a
-/// jump's loaded slot are read by the passes r2ssa correlates the site with, so the two agree.
-fn transfer(
-    block: &r2il::R2ILBlock,
-    index: usize,
-    body: &crate::body::Body,
-    origins: Option<&r2ssa::origin::BlockOrigins>,
-) -> Option<(u64, r2source::AdvisoryCallTransfer)> {
-    match block.ops.get(index)? {
-        r2il::R2ILOp::Call { target } => {
-            Some((target.offset, r2source::AdvisoryCallTransfer::Call))
-        }
-        r2il::R2ILOp::CallInd { target } => origins?
-            .of(target)?
-            .constant()
-            .filter(|target| body.calls.contains(target))
-            .map(|target| (target, r2source::AdvisoryCallTransfer::Call)),
-        r2il::R2ILOp::Branch { target } if body.tail_calls.contains(&target.offset) => {
-            Some((target.offset, r2source::AdvisoryCallTransfer::TailJump))
-        }
-        r2il::R2ILOp::BranchInd { .. } => Some((
-            r2ssa::terminal_indirect_loaded_slot(block, index)?.offset,
-            r2source::AdvisoryCallTransfer::TailSlot,
-        )),
-        _ => None,
-    }
 }
 
 impl Native<'_> {
@@ -2295,9 +2254,13 @@ pub(crate) fn convention_slots(
             .collect::<Result<Vec<_>, _>>()
     };
     let argument_slots = place(registers_of(&prototype.inputs, EntryClass::General))?;
-    let result_slot = place(registers_of(&prototype.outputs, EntryClass::General))?
-        .first()
-        .copied();
+    let result_slots = place(registers_of(&prototype.outputs, EntryClass::General))?;
+    let result_slot = result_slots.first().copied();
+    // The specification's second integer result entry holds a two-register value's high half.
+    let second_result_slot = result_slots
+        .get(1)
+        .copied()
+        .filter(|second| result_slot.is_some_and(|first| first.size == second.size));
     let float_slots = place(registers_of(&prototype.inputs, EntryClass::Float))?;
     let float_result = place(registers_of(&prototype.outputs, EntryClass::Float))?
         .first()
@@ -2312,6 +2275,7 @@ pub(crate) fn convention_slots(
     Ok(
         SourceConventionSlots::new(target.convention.name, argument_slots, result_slot)
             .and_then(|slots| slots.with_float_slots(float_slots, float_result))
+            .and_then(|slots| slots.with_second_result_slot(second_result_slot))
             .map_err(|_| NativeRefusal::Machine("the convention names one register twice"))?
             .with_shared_positions(prototype.shares_positions())
             .with_stack_arguments(stack_arguments)
@@ -2535,6 +2499,16 @@ pub(crate) fn accepted_premises() -> std::collections::BTreeSet<r2source::Premis
         r2source::Premise::UbFreeSource,
         r2source::Premise::GoRuntime,
     ])
+}
+
+/// Those premises, and a closed world where the request read the program's callers (`aa`): what
+/// every call the image shows does is what the program does (doc/adr-resolved-bodies.md).
+fn premises_reading(callers_read: bool) -> std::collections::BTreeSet<r2source::Premise> {
+    let mut premises = accepted_premises();
+    if callers_read {
+        premises.insert(r2source::Premise::ClosedWorld);
+    }
+    premises
 }
 
 #[cfg(test)]

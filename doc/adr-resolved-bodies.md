@@ -78,18 +78,89 @@ read decides the call's result, a float at the read's width; r2types types it
 there (`call_result_type`). Both or neither leave the call without a contract.
 The cost is one scan of the call's block, O(ops after the call).
 
-The function's own rendering asks every call in the program: the walked
-bodies whose trace calls it (`Survey`, inverted once, O(call edges)), each
-lifted without preparation. Every reading call agreeing on one register
+After `aa`, the function's own rendering asks every call in the program: the
+walked bodies whose trace calls it (`Survey`, inverted once, O(call edges)),
+each lifted without preparation. Every reading call agreeing on one register
 decides it; none, or calls that disagree, leave it unproven. Only the
-rendered root is prepared again with that evidence (`SourceResultReads`):
-a callee read for its caller never asks, so a `pdd` pays whole-program
-discovery only for a function whose own body is ambiguous.
+rendered root is prepared again with that evidence (`SourceResultReads`); a
+callee read for its caller never asks.
+
+Reading callers surveys the whole program, so a fresh open reads the body
+alone and its open result stays a residual. On pumasim, `pdd @ 0x4baf30`
+takes 4.6 s alone and 10.3 s with the survey (contabo, 2026-10-13). `aa`
+surveys once and sets `Callers::Read`, which every analysis, sealing and
+rendering key carries, so a session's answers never depend on which command
+first ran the survey. Census, certification, the coverage sweep and
+equivalence run `aa` first.
 
 The evidence is as strong as the body's own writes: a compiler reads a
 clobbered register after a call only as the callee's result. A caller that
 hands the value straight back without reading it (`return f();`) is no
-evidence, and a void function whose callers read nothing stays unproven.
+evidence. A void function whose callers read nothing stays unproven, except
+in a closed world, below.
+
+### Closed world
+
+An unproven result that every call writes before reading, in each result
+register, is read by no call the image shows. It is void only if those calls
+are every way into the function: the void rests on `Premise::ClosedWorld`,
+which r2engine grants only under `aa` and r2dec spells on the proof line
+("no call reads the result (assuming closed-world)"). A proven result is
+never made void this way: a helper whose callers ignore its value keeps it.
+
+A call overwrites a result register when its writes cover every byte of it
+before any byte is read: `xor eax, eax` lifts to a 4-byte write and a
+zero-extension that covers RAX. The float register must be overwritten only
+where the body writes it.
+
+`SourceResultReads.exhaustive` states that the calls read are every way in.
+r2engine sets it where all of these hold:
+
+1. Every caller the survey found was walked and lifted, and the reference
+   index claims exactly as many calls to the function as were read.
+2. No reference other than a call names the entry: no jump from another
+   function (a tail call), no computed address (`lea`, `adrp`+`add`, a
+   loader write). A jump to a function's own entry is a loop.
+3. The container states no other entry there: no entry point, initialiser
+   or finaliser, and no export (ELF's dynamic table, any non-local Mach-O
+   symbol).
+4. No mapped file word names it (`Escapes`): every pointer-wide window, and
+   on a 64-bit machine every 32-bit one (`imm32`, `.long`), with bit 0
+   cleared. This catches a non-PIE vtable or function table, which holds
+   absolute words with no relocation and no code reference.
+5. The index read every body, and every code byte the file holds is in a
+   walked body, a linkage section, or filler: zeros, instructions that lift
+   to no operation, traps, or direct transfers to code discovery knows (the
+   `bl abort` after a call that never returns). Code no walk decoded, past an
+   unresolved transfer or never reached, may call or name anything, so any
+   other byte refuses, named on the refusal. The sections the container
+   states as code are read, else its executable segments: AArch64's R-X
+   segment also holds the headers, `.rodata` and `.eh_frame`. This replaced
+   refusing on any unresolved transfer, which crt's `br x16` tail calls
+   through the GOT made true of every program (2026-10-13).
+6. The machine is x86-64 or AArch64, whose addresses an index claim or a
+   word holds whole. `movw`/`movt` and `lui`+`addi` split one across
+   immediates and hide it from both. The format is ELF or Mach-O, and the
+   function's language C, C++ or Rust: Swift, Objective-C, Go and .NET reach
+   functions through tables of relative offsets.
+
+AArch64's large code model builds an address with `movz`/`movk`, which item
+6 does not catch. No compiler in the corpus emits it.
+x86 `int3` lifts to a software interrupt, an indirect call and a return, so
+lld's `int3` padding between functions refuses the closed world; GNU ld pads
+with no-operation instructions. Code in a gap is read instruction by
+instruction, so an `adrp`+`add` there that names a function is missed, the
+large-code-model limit of item 6 in unreachable code.
+
+Cost: `Escapes` is computed once per program under `aa`: one pass over the
+references, symbols and entries, and one over the mapped file bytes, with a
+range check per word and a search per word in range: O(R + S + B log F).
+
+Two shapes stay residual, measured at #215: a call whose next instruction is
+another call (`call crc32_init; call fnv1a32`), where the block-local read
+stops at the transfer, and a later call to a stripped local function, which
+has no stated interface. Deciding them needs the caller's liveness past later
+calls and their callees' entry reads.
 
 ### Budget
 

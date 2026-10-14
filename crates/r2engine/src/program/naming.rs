@@ -107,9 +107,11 @@ pub fn of(source: &impl Source) -> NameDb {
                 preinits += 1;
                 format!("entry.preinit{}", preinits - 1)
             }
-            // The symbol table names one of these already, and a stated
-            // function start is a position rather than a name.
-            EntryKind::Symbol | EntryKind::Declared => continue,
+            // The symbol table names one of these already, a stated function start is a position
+            // rather than a name, and radare2 names no loader hook.
+            EntryKind::Symbol | EntryKind::Declared | EntryKind::InitHook | EntryKind::FiniHook => {
+                continue;
+            }
         };
         db.insert(
             entry.vaddr,
@@ -458,6 +460,7 @@ fn section_stubs(
             .ops
             .iter()
             .any(|op| matches!(op, R2ILOp::BranchInd { .. }));
+        let direct = (lifted.ops.iter()).any(|op| matches!(op, R2ILOp::Branch { .. }));
         let section_range = section.vaddr..end;
         entered.extend(lifted.ops.iter().filter_map(|op| match op {
             R2ILOp::Branch { target }
@@ -475,7 +478,6 @@ fn section_stubs(
         if !leaves {
             continue;
         }
-        left = true;
         let terminal = run.ops.len().saturating_sub(1);
         let slot = indirect
             .then(|| r2ssa::terminal_indirect_loaded_slot(&run, terminal))
@@ -488,6 +490,9 @@ fn section_stubs(
         if slot.is_some_and(|slot| container.loader_write_at(slot).is_none()) {
             return None;
         }
+        // Linkage is shown by a jump within the section or through a loader word; an unplaced
+        // indirect jump (a tail call, a dispatch) shows nothing.
+        left |= direct || slot.is_some();
         // A stub's slot is a word the container states the loader fills with an address or a
         // symbol; the header's reserved resolver word states nothing and lies at another phase.
         let stated = slot

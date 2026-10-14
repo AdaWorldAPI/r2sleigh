@@ -7,7 +7,7 @@
 //! may deep-copy the opaque radare snapshot into [`OwnedFunctionSnapshot`].
 //! Stable hashes remain diagnostics; exact authority is the retained `Arc`
 //! identity of one capture event.
-
+#![cfg_attr(dylint_lib = "r2sleigh_lints", deny(entity_keyed_map))]
 // This crate holds the source's own facts and has no reason to reach for
 // unsafe; the manifest said so until the lints moved to the workspace.
 #![deny(unsafe_code)]
@@ -97,10 +97,18 @@ pub struct SourceResultReads {
     pub float: u32,
     /// The width those float reads take.
     pub float_width: SourceFloatReadWidth,
-    /// Calls whose every result register is written before any read, in the call's own block.
-    pub overwritten: u32,
+    /// Calls that write every byte of the integer result register before reading any, in the call's
+    /// own block.
+    pub integer_overwritten: u32,
+    /// Calls that write every byte of the float result register before reading any, likewise.
+    pub float_overwritten: u32,
+    /// Calls whose first touch of the second integer result register after the call is a read.
+    pub second: u32,
     /// Calls read.
     pub calls: u32,
+    /// Whether these calls are every way the image enters the function: each caller read, and no
+    /// export, entry, jump, computed or stored address reaches it (`Premise::ClosedWorld`).
+    pub exhaustive: bool,
 }
 
 impl SourceResultReads {
@@ -111,9 +119,32 @@ impl SourceResultReads {
             integer: self.integer.saturating_add(other.integer),
             float: self.float.saturating_add(other.float),
             float_width: self.float_width.and(other.float_width),
-            overwritten: self.overwritten.saturating_add(other.overwritten),
+            integer_overwritten: (self.integer_overwritten)
+                .saturating_add(other.integer_overwritten),
+            float_overwritten: self
+                .float_overwritten
+                .saturating_add(other.float_overwritten),
+            second: self.second.saturating_add(other.second),
             calls: self.calls.saturating_add(other.calls),
+            exhaustive: self.exhaustive && other.exhaustive,
         }
+    }
+
+    /// Whether no call reads a result register and every call writes the integer one before reading
+    /// it, and the float one too where `float`.
+    pub const fn all_overwrite(&self, float: bool) -> bool {
+        self.calls > 0
+            && self.integer == 0
+            && self.float == 0
+            && self.second == 0
+            && self.integer_overwritten == self.calls
+            && (!float || self.float_overwritten == self.calls)
+    }
+
+    /// Whether, besides, these calls are every way in: under a closed world, the program reads no
+    /// result of the function.
+    pub const fn none_read(&self, float: bool) -> bool {
+        self.exhaustive && self.all_overwrite(float)
     }
 }
 

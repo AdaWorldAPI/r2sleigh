@@ -480,7 +480,12 @@ fn exact_source_return_type_preserves_signed_i32_with_matching_certificate() {
         ),
         ..FunctionTypeFacts::default()
     });
-    facts.apply_return_type_fact(&source, &crate::EvidenceTypes::default());
+    let returns = ReturnTypeFact::decide(
+        &source,
+        &facts.callsite_signatures(),
+        &crate::EvidenceTypes::default(),
+    );
+    facts.apply_return_type_fact(returns);
     assert_eq!(
         facts.return_type(),
         Some(&ReturnTypeFact::Decided {
@@ -1523,8 +1528,9 @@ fn an_implicit_call_read_keeps_its_entry_value_as_a_certified_parameter() {
     let source_owned_signature =
         SourceOwnedCalleeSignature::new(&callee_source, signed_signature.clone())
             .expect("logical type fits the exact low-bit carrier");
-    facts.apply_source_owned_callee_signatures(
+    FunctionFacts::apply_callsite_callee_signatures(
         &prepared,
+        &mut facts.callsites,
         &BTreeMap::from([(0x402000, source_owned_signature)]),
     );
     assert_eq!(
@@ -1687,7 +1693,15 @@ fn the_enriched_report_holds_the_projection_of_its_final_types() {
     assert!(!report.call_render.by_callsite.is_empty());
     assert!(!report.control.control_domains.by_block.is_empty());
     let mut again = report.clone();
-    SourceOwnedFunctionFacts::project(source.as_ref(), &mut again, &BTreeMap::new());
+    let calls = CallFacts::project(
+        source.as_ref(),
+        &again.display_names,
+        &again.types.known_function_signatures,
+        &again.types.callee_facts,
+        &BTreeMap::new(),
+    );
+    again.install_calls(calls);
+    SourceOwnedFunctionFacts::project_render(source.as_ref(), &mut again);
     assert_eq!(again.types, report.types);
     assert_eq!(again.callee_resolution, report.callee_resolution);
     assert_eq!(again.callsites, report.callsites);
@@ -3487,7 +3501,12 @@ fn a_locally_inferred_signature_does_not_decide_the_return() {
         ),
         ..FunctionTypeFacts::default()
     });
-    facts.apply_return_type_fact(&source, &crate::EvidenceTypes::default());
+    let returns = ReturnTypeFact::decide(
+        &source,
+        &facts.callsite_signatures(),
+        &crate::EvidenceTypes::default(),
+    );
+    facts.apply_return_type_fact(returns);
     assert_eq!(
         facts.return_type(),
         Some(&ReturnTypeFact::Refused(ReturnTypeRefusal::UntypedReturn))

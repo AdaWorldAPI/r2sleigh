@@ -88,7 +88,8 @@ def census_one(executable, binary, out):
     listing = r2s(binary, "afl", executable)
     addresses = [line.split()[0] for line in listing.splitlines() if line.startswith("0x")]
     with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
-        rendered = list(pool.map(lambda a: r2s(binary, f"pdd @ {a}", executable), addresses))
+        # `aa` first: each rendering reads its callers, as an analysed session's does.
+        rendered = list(pool.map(lambda a: r2s(binary, f"aa; pdd @ {a}", executable), addresses))
     text = "".join(f"== {a}\n{body}" for a, body in zip(addresses, rendered))
     (out / f"{binary.name}.txt").write_text(text)
     return binary.name, len(addresses)
@@ -255,6 +256,9 @@ def time_cases(args):
         elif counts.get("head"):
             allocations = f"{counts['head']:,}"
         heap = ["", "", ""]
+        # A base from before the count may print none; the head's counting build must print its peak.
+        if len(args.count_r2s or ()) == 2 and Path(args.count_r2s[1]).exists() and not heaps.get("head"):
+            failed.append(f"{case}: the head's counting run printed no heap peak")
         if heaps.get("head"):
             heap[1] = f"{heaps['head']:.1f}"
         if heaps.get("base") and heaps.get("head"):

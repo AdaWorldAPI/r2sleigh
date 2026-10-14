@@ -13,16 +13,16 @@ fn tail_jump_identity_requires_matching_terminal_branch() {
         0x1000,
     );
     let tail = advisory_call_site(0x1000, 0x5000, r2source::AdvisoryCallTransfer::TailJump);
-    let identity = unique_call_site_identity(&[branch.clone()], &tail)
+    let identity = identity_of(&[branch.clone()], &tail)
         .expect("exact terminal branch is the source-proven callsite");
     assert_eq!(identity.instruction(), 0x1000);
     assert_eq!(identity.target().offset, 0x5000);
 
     let ordinary_call = advisory_call_site(0x1000, 0x5000, r2source::AdvisoryCallTransfer::Call);
-    assert!(unique_call_site_identity(&[branch.clone()], &ordinary_call).is_none());
+    assert!(identity_of(&[branch.clone()], &ordinary_call).is_none());
 
     branch.ops.push(R2ILOp::Nop);
-    assert!(unique_call_site_identity(&[branch], &tail).is_none());
+    assert!(identity_of(&[branch], &tail).is_none());
 
     let mut call = R2ILBlock::new(0x2000, 4);
     call.push_from(
@@ -34,7 +34,7 @@ fn tail_jump_identity_requires_matching_terminal_branch() {
     call.push(R2ILOp::Nop);
     let ordinary_call = advisory_call_site(0x2000, 0x6000, r2source::AdvisoryCallTransfer::Call);
     assert!(
-        unique_call_site_identity(&[call], &ordinary_call).is_some(),
+        identity_of(&[call], &ordinary_call).is_some(),
         "ordinary calls keep their original nonterminal correlation rule"
     );
 }
@@ -1524,4 +1524,39 @@ fn the_graph_spells_the_blocks_as_the_function_does() {
             .any(|(_, _, _, phis)| phis.contains("canonical_storage"))
     );
     assert_eq!(from_graph, spelled(function.named_blocks()));
+}
+
+/// A pass that moved a state past its stated height leaves no partial facts behind: preparation
+/// refuses the function, naming the pass (doc/adr-fixpoint.md).
+#[test]
+fn an_exhausted_pass_refuses_the_function() {
+    let mut block = R2ILBlock::new(0x1000, 4);
+    block.push_from(
+        R2ILOp::Return {
+            target: make_const(0, 8),
+        },
+        0x1000,
+    );
+    let context = SourceMachineContext::from_blocks_with_interfaces_and_tail_calls(
+        &[block.clone()],
+        None,
+        None,
+        SourceMachineRoles::default(),
+        None,
+        None,
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut function = SSAFunction::from_blocks_for_decompile(&[block], None).expect("SSA");
+    let exhausted = crate::fixpoint::Exhausted {
+        pass: "frame-address-merges",
+        height: 2,
+    };
+    function.note_exhausted(exhausted);
+    let prepared = SsaArtifact::new_with_context_and_control(
+        function,
+        context,
+        &crate::control::UncheckedSsaWorkControl,
+    );
+    assert_eq!(prepared.err(), Some(SsaPrepareError::Exhausted(exhausted)));
 }

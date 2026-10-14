@@ -24,13 +24,11 @@ pub fn parse_external_type_like_spec(spec: &str, ptr_bits: u32) -> Option<CTypeL
     convert::parse_c_type_like(spec, ptr_bits)
 }
 
-pub(crate) use evidence::solve_evidence_types;
 pub(crate) use external::ExternalAggregateKind;
 pub(crate) use facts::{
-    SIGNATURE_PROJECTION_STRONG_CONFIDENCE, SignatureCertificate, is_generic_signature_type,
-    signature_hint_can_replace_existing, signature_param_count_is_authoritative,
-    signature_param_name_is_weak, signature_projection_is_exact,
-    signature_return_hint_can_replace_existing, signature_strength,
+    SignatureCertificate, is_generic_signature_type, signature_hint_can_replace_existing,
+    signature_is_specific, signature_param_count_is_authoritative, signature_param_name_is_weak,
+    signature_projection_is_exact, signature_return_hint_can_replace_existing,
     summary_hint_can_replace_weak_existing,
 };
 
@@ -42,8 +40,7 @@ pub use callee::{
 pub use constraint::{Constraint, ConstraintSource, SolverNode};
 pub(crate) use register_identity::RegisterIdentity;
 pub(crate) use signature_infer::{
-    format_signature_prototype, infer_signature_from_prepared_ssa,
-    inferred_signature_from_signature_spec, render_signature_type,
+    format_signature_prototype, infer_signature_from_prepared_ssa, render_signature_type,
 };
 pub use solver::{SolvedTypes, solve_constraints};
 

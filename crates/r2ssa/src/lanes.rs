@@ -307,10 +307,7 @@ impl Writes {
 /// Record what `id` wrote to `dst`, joined with what it was recorded as
 /// writing before; whether that moved anything.
 fn settle(records: &mut Records, id: OpId, dst: VarId, bytes: Bytes) -> bool {
-    debug_assert!(
-        records.defs.get(dst).is_none_or(|op| *op == id),
-        "one definition per variable"
-    );
+    // A second definition of `dst` is the validator's typed refusal, which runs after capture.
     records.defs.insert(dst, id);
     let joined = match records.by_op.get(id) {
         // Data joined with anything is data.
@@ -433,6 +430,14 @@ pub fn written_width(bytes: &[Byte], storage: CanonicalStorageId) -> Option<u32>
         .find(|&at| bytes[at].written_at(home(Some(storage), at as u64)))?;
     let width = u32::try_from(highest + 1).ok()?.next_power_of_two();
     Some(width.min(storage.size))
+}
+
+/// Whether a byte of `storage` holds what the caller left in that byte, on some path.
+pub fn keeps_callers(bytes: &[Byte], storage: CanonicalStorageId) -> bool {
+    let callers = |at: usize, way: &Fill| matches!(way, Fill::Entry(from) if Some(*from) == home(Some(storage), at as u64));
+    (bytes.iter().enumerate()).any(
+        |(at, byte)| matches!(byte, Byte::Filled(ways) if ways.iter().any(|way| callers(at, way))),
+    )
 }
 
 /// Whether a result of `width` bytes is signed by what wrote it: its top

@@ -50,6 +50,7 @@ impl SSAFunction {
             formal_roots: crate::dense::IdMap::default(),
             entry_lanes: crate::dense::IdMap::default(),
             written: crate::lanes::Written::default(),
+            exhausted: None,
         }
     }
 
@@ -214,7 +215,7 @@ impl SSAFunction {
         // the declared stack bases.
         let prepared = Lifted::new(func).prepare(
             &crate::optimize::DecompilePrepConfig::default(),
-            questions.return_carrier(),
+            &questions.return_carriers(),
             control,
         )?;
         phase("prepared", prepared.num_blocks());
@@ -565,6 +566,7 @@ impl SSAFunction {
             formal_roots: crate::dense::IdMap::default(),
             entry_lanes: crate::dense::IdMap::default(),
             written: crate::lanes::Written::default(),
+            exhausted: None,
         };
         function.zero_scratch_insert_roots(abi_carriers);
         // The validator answers with a typed integrity error naming the block

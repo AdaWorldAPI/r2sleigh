@@ -14,8 +14,10 @@ fn proof_columns(
     let mut line = String::new();
     if closure.compiler_inserted > 0 {
         // Each decided check passes under its premise: a canary the UB-free source, Go's stack
-        // check the runtime's contract.
-        let premises = ledger.premises().iter().map(|premise| premise.spelled());
+        // check the runtime's contract. A closed world is the result's, spelled below.
+        let premises = (ledger.premises().iter())
+            .filter(|premise| **premise != r2source::Premise::ClosedWorld)
+            .map(|premise| premise.spelled());
         let _ = write!(
             &mut line,
             ", {} compiler-inserted (assuming {})",
@@ -33,6 +35,10 @@ fn proof_columns(
             if exits == 1 { "returns" } else { "return" },
             premises.collect::<Vec<_>>().join(", ")
         );
+    }
+    // A void result no call reads holds only where those calls are every way in.
+    if ledger.premises().contains(&r2source::Premise::ClosedWorld) {
+        line.push_str(", no call reads the result (assuming closed-world)");
     }
     if closure.assumed > 0 {
         let _ = write!(
@@ -67,7 +73,7 @@ pub(crate) fn note_unproven_constructs(
     radare2_variadic_format_counts: usize,
     radare2_prototypes: usize,
     radare2_local_names: usize,
-    unassigned: &[UnassignedRead],
+    (unassigned, open_second_result): (&[UnassignedRead], bool),
 ) {
     let rendered_nothing = func.body.is_empty();
     // Each residual is a construct the rendering says it did not prove, and
@@ -153,6 +159,9 @@ pub(crate) fn note_unproven_constructs(
             &mut detail,
             "; {radare2_prototypes} {noun} supplied by the source"
         );
+    }
+    if open_second_result {
+        detail.push_str("; the result's second register is open: no call read decides it");
     }
     if radare2_local_names > 0 {
         let noun = if radare2_local_names == 1 {

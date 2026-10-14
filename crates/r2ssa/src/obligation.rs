@@ -143,12 +143,26 @@ impl std::fmt::Display for SpelledInstruction {
     }
 }
 
-/// Why a source instruction must survive.
-///
-/// One instruction can own more than one obligation. For example, an atomic
-/// compare-and-swap owns both memory-read and memory-write obligations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum SemanticObligationKind {
+/// One list makes the enum and `ALL`, so no kind can be missing from the seed bits.
+macro_rules! obligation_kinds {
+    ($($(#[$doc:meta])* $kind:ident,)+) => {
+        /// Why a source instruction must survive.
+        ///
+        /// One instruction can own more than one obligation. For example, an atomic
+        /// compare-and-swap owns both memory-read and memory-write obligations.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        pub enum SemanticObligationKind {
+            $($(#[$doc])* $kind,)+
+        }
+
+        impl SemanticObligationKind {
+            /// Every kind in declaration order, which is its `Ord` and its seed bit.
+            const ALL: &'static [Self] = &[$(Self::$kind,)+];
+        }
+    };
+}
+
+obligation_kinds! {
     ObservableMemoryRead,
     ObservableMemoryWrite,
     Call,
@@ -180,28 +194,6 @@ pub enum SemanticObligationKind {
 }
 
 impl SemanticObligationKind {
-    /// Every kind in declaration order, which is its `Ord` and its seed bit.
-    const ALL: [Self; 18] = [
-        Self::ObservableMemoryRead,
-        Self::ObservableMemoryWrite,
-        Self::Call,
-        Self::CallArgument,
-        Self::CallResult,
-        Self::Return,
-        Self::ReturnValue,
-        Self::ControlPredicate,
-        Self::ControlTransfer,
-        Self::Trap,
-        Self::Atomicity,
-        Self::MemoryOrdering,
-        Self::VolatileOrUnknownEffect,
-        Self::NoNativeSemantics,
-        Self::CompilerInserted,
-        Self::LoopCarriedState,
-        Self::LiveStateTransition,
-        Self::LiveValueProducer,
-    ];
-
     /// Whether this obligation independently proves a program observation.
     ///
     /// Producer and loop-transition obligations are dependency annotations:
@@ -632,6 +624,13 @@ impl<'a> SeedingFacts<'a> {
 
     /// Seed each conditional branch ending a block whose arms meet as the direct transfer it is,
     /// with no inputs: its condition is unread. The branches seeded.
+    #[cfg_attr(
+        dylint_lib = "r2sleigh_lints",
+        allow(
+            entity_keyed_map,
+            reason = "debt: keyed by a function's entity, to become an index over dense ids (ROADMAP LX2)"
+        )
+    )]
     fn seed_direct_branches(
         &self,
         graph: &SsaGraph,
@@ -669,6 +668,13 @@ impl<'a> SeedingFacts<'a> {
 }
 
 impl SemanticObligationInventory {
+    #[cfg_attr(
+        dylint_lib = "r2sleigh_lints",
+        allow(
+            entity_keyed_map,
+            reason = "debt: keyed by a function's entity, to become an index over dense ids (ROADMAP LX2)"
+        )
+    )]
     pub(crate) fn collect(
         graph: &SsaGraph,
         structured: &StructuredDataflowFacts,
@@ -1642,7 +1648,7 @@ impl ObligationSeeds {
             .into_iter()
             .peekable();
         let mut owed = Vec::new();
-        for kind in SemanticObligationKind::ALL {
+        for &kind in SemanticObligationKind::ALL {
             if whole & (1 << kind as u32) != 0 {
                 owed.push((kind, SemanticObligationComponent::Whole));
             }
@@ -1654,10 +1660,8 @@ impl ObligationSeeds {
     }
 }
 
-/// Every definition that may reach a return whose interface is unproven: none can be proven dead.
-///
-/// One backward walk from all of them, `O(B + E + I)` (doc/adr-memory-model.md, MM.10): a block
-/// reached through an edge keeps every definition, a return's own block those before its last.
+/// Every definition that may reach a return whose interface is unproven, none provably dead: one
+/// backward walk from all of them, `O(B + E + I)` (doc/adr-memory-model.md, MM.10).
 fn taint_incomplete_boundary_inputs(
     graph: &SsaGraph,
     returns: &[InstId],
@@ -1698,6 +1702,13 @@ fn taint_incomplete_boundary_inputs(
     }
 }
 
+#[cfg_attr(
+    dylint_lib = "r2sleigh_lints",
+    allow(
+        entity_keyed_map,
+        reason = "debt: keyed by a function's entity, to become an index over dense ids (ROADMAP LX2)"
+    )
+)]
 fn seed_direct_obligations(
     graph: &SsaGraph,
     inst: &crate::graph::GraphInst,
@@ -1924,6 +1935,13 @@ fn seed_instruction(
     required.insert(inst, kind, component);
 }
 
+#[cfg_attr(
+    dylint_lib = "r2sleigh_lints",
+    allow(
+        entity_keyed_map,
+        reason = "debt: keyed by a function's entity, to become an index over dense ids (ROADMAP LX2)"
+    )
+)]
 fn seed_instruction_with_inputs(
     inst: InstId,
     kind: SemanticObligationKind,

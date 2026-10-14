@@ -99,6 +99,11 @@ impl RecoveredResult {
 pub enum RecoveredFunctionResult {
     Void,
     Register(RecoveredResult),
+    /// One value in two registers, the low half in `low` (doc/adr-language-profile.md, item 1).
+    Pair {
+        low: CanonicalStorageId,
+        high: CanonicalStorageId,
+    },
     Unproven,
 }
 
@@ -107,7 +112,7 @@ impl RecoveredFunctionResult {
     pub const fn register(self) -> Option<RecoveredResult> {
         match self {
             Self::Register(result) => Some(result),
-            Self::Void | Self::Unproven => None,
+            Self::Void | Self::Pair { .. } | Self::Unproven => None,
         }
     }
 }
@@ -165,9 +170,16 @@ pub struct RecoveredInterface {
     result_carriers: Option<r2source::SourceResultCarriers>,
     /// Whether an argument slot past the parameters is read, or a call's arguments are unproven.
     reads_past_parameters: bool,
+    /// Whether the result is void because no call reads it, which holds under a closed world only.
+    closed_world: bool,
 }
 
 impl RecoveredInterface {
+    /// Whether the result rests on `Premise::ClosedWorld`: void because no call the image shows reads it.
+    pub const fn assumes_closed_world(&self) -> bool {
+        self.closed_world
+    }
+
     /// The direct callees whose stated result could prove this one's.
     pub const fn result_owners(&self) -> &BTreeSet<u64> {
         &self.result_owners
@@ -675,11 +687,24 @@ fn returned_by_call(
         boundary.result_kind
     );
     // A declared void callee proves no value; a boundary naming no result kind proves nothing either way.
+    // A register outside the stated result holds what the callee left there, which is no value either.
+    let held = graph.value(value).and_then(|value| value.canonical_storage);
+    let outside = |result: crate::SourceCallResult| {
+        held.is_some_and(|held| result.storages().all(|storage| !overlaps(storage, held)))
+    };
     match (boundary.results_complete, boundary.result_kind) {
         (true, Some(crate::SourceCallResult::Void)) => ReturnedByCall::Void,
         (true, None) => ReturnedByCall::Unstated(*id),
+        (true, Some(result)) if outside(result) => ReturnedByCall::Void,
         _ => ReturnedByCall::Produced,
     }
+}
+
+/// Whether two storages share a byte.
+fn overlaps(one: CanonicalStorageId, other: CanonicalStorageId) -> bool {
+    one.space == other.space
+        && one.offset < other.offset + u64::from(other.size)
+        && other.offset < one.offset + u64::from(one.size)
 }
 
 /// The one carrier a body leaves defined at every exit, where the convention's
@@ -900,6 +925,38 @@ fn float_result_written(
     None
 }
 
+/// `slot`, where every return hands back a value the body wrote there: no path leaves it as the
+/// caller left it, and no call nothing states clobbers it.
+fn written_on_every_return(
+    func: &SSAFunction,
+    graph: &SsaGraph,
+    facts: &crate::semantic::PreparedFunctionFacts,
+    slot: Option<CanonicalStorageId>,
+) -> Option<CanonicalStorageId> {
+    let slot = slot?;
+    let live_out = crate::liveout::FunctionLiveOut::compute(func, graph, &[slot]);
+    let whole = live_out.has_returns()
+        && live_out.unresolved_blocks().next().is_none()
+        && live_out.clobbered_blocks().next().is_none()
+        && !returns_the_callers_value(graph, &live_out, slot);
+    // A half is the body's on every path: `sete dl` over the caller's other seven bytes is none.
+    let written = func.written_or_captured();
+    let whole_width = |value: crate::ValueId| {
+        let Some(storage) = graph.value(value).and_then(|value| value.canonical_storage) else {
+            return false;
+        };
+        let bytes = written_bytes(&written, graph, value, &mut BTreeSet::new());
+        !crate::lanes::keeps_callers(&bytes, storage)
+    };
+    (whole
+        && live_out.iter().all(whole_width)
+        && matches!(
+            recovered_result(func, graph, facts, &live_out, slot),
+            RecoveredFunctionResult::Register(_)
+        ))
+    .then_some(slot)
+}
+
 /// Which result register the program's calls read, where every reading call agrees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CarrierRead {
@@ -920,7 +977,7 @@ fn read_of(
     float: Option<CanonicalStorageId>,
 ) -> Option<ResultRead> {
     match (reads.integer, reads.float, float) {
-        (0, 0, _) if reads.calls > 0 && reads.overwritten == reads.calls => Some(ResultRead::None),
+        (0, 0, _) if reads.all_overwrite(float.is_some()) => Some(ResultRead::None),
         // A read past the call's block (the next call's argument, under IPA-RA) is still the
         // integer register the call leaves.
         (_, 0, None) => Some(ResultRead::Carrier(CarrierRead::Integer)),
@@ -1232,7 +1289,9 @@ fn recover_interface_inner(
                 "a tail transfer owns one path and a direct return owns another; \
                  the direct return's {slot:?} is the result"
             );
-            TailResult::Exact(slot)
+            TailResult::Exact(slot.map_or(SourceCallResult::Void, |storage| {
+                SourceCallResult::Register { storage }
+            }))
         }
         TailResult::Unproven => {
             r2il::refusal_evidence!(
@@ -1262,13 +1321,18 @@ fn recover_interface_inner(
     // The loader's hook has a void result whatever its tail leaves behind.
     let mut result = match tail {
         TailResult::Unproven => RecoveredFunctionResult::Unproven,
-        TailResult::Exact(Some(slot)) if loader_role.is_none() => {
+        TailResult::Exact(SourceCallResult::Register { storage: slot })
+            if loader_role.is_none() =>
+        {
             RecoveredFunctionResult::Register(RecoveredResult {
                 slot,
                 observed: slot,
                 signed: false,
                 float: false,
             })
+        }
+        TailResult::Exact(SourceCallResult::Pair { low, high }) if loader_role.is_none() => {
+            RecoveredFunctionResult::Pair { low, high }
         }
         TailResult::NoTailBoundary | TailResult::Exact(_) => RecoveredFunctionResult::Void,
     };
@@ -1293,6 +1357,7 @@ fn recover_interface_inner(
             result_carriers = Some(r2source::SourceResultCarriers {
                 integer: candidate,
                 float: None,
+                second: None,
             });
         }
         // A body that writes both result registers on its way out hands back one of them: the
@@ -1317,6 +1382,7 @@ fn recover_interface_inner(
                     result_carriers = Some(r2source::SourceResultCarriers {
                         integer: candidate,
                         float: Some(float),
+                        second: None,
                     });
                     result = RecoveredFunctionResult::Unproven;
                     result_ambiguous = true;
@@ -1373,9 +1439,45 @@ fn recover_interface_inner(
                 None => result_ambiguous = true,
             }
         }
+        // An integer result whose second register the body also writes on every return is one
+        // value in both where every reading call reads the second (doc/adr-language-profile.md,
+        // item 1); unasked, it asks them.
+        if let RecoveredFunctionResult::Register(low) = result
+            && !low.float()
+            && let Some(high) =
+                written_on_every_return(func, graph, &facts, slots.second_result_slot())
+        {
+            let both =
+                || crate::liveout::FunctionLiveOut::compute(func, graph, &[low.slot(), high]);
+            match result_reads.map(|reads| reads.second) {
+                // One call reading the second register is evidence the value spans both: a call
+                // that reads only the first discards the high half.
+                Some(1..) => {
+                    result = RecoveredFunctionResult::Pair {
+                        low: low.slot(),
+                        high,
+                    };
+                    candidate_live_out = both();
+                }
+                Some(0) => {}
+                // Read for a caller: the result stays the first register, the second is a carrier
+                // a reading call takes, and what feeds it is observed (its parameters are the
+                // call's).
+                None => {
+                    result_ambiguous = true;
+                    result_carriers = Some(r2source::SourceResultCarriers {
+                        integer: low.slot(),
+                        float: None,
+                        second: Some(high),
+                    });
+                    candidate_live_out = both();
+                }
+            }
+        }
         if !candidate_live_out.is_empty()
             && (candidate_live_out.unresolved_blocks().next().is_none()
-                || result.register().is_some())
+                || result.register().is_some()
+                || matches!(result, RecoveredFunctionResult::Pair { .. }))
         {
             live_out = candidate_live_out;
         }
@@ -1391,6 +1493,20 @@ fn recover_interface_inner(
             result = recovered_result(func, graph, &facts, &candidate_live_out, candidate);
             live_out = candidate_live_out;
         }
+    }
+    // An unproven result no call reads is none, where those calls are every way in
+    // (doc/adr-resolved-bodies.md, "Closed world").
+    let closed_world = result == RecoveredFunctionResult::Unproven
+        && machine_context.is_some_and(|context| context.accepts(r2source::Premise::ClosedWorld))
+        && result_reads.is_some_and(|reads| {
+            // The float register is a result only where the body writes it.
+            reads.none_read(float_result_written(func, graph, slots).is_some())
+        });
+    if closed_world {
+        result = RecoveredFunctionResult::Void;
+        live_out = crate::liveout::FunctionLiveOut::default();
+        result_carriers = None;
+        result_ambiguous = false;
     }
     r2il::refusal_evidence!(
         "interface-recovery",
@@ -1526,6 +1642,7 @@ fn recover_interface_inner(
         result_ambiguous,
         result_carriers,
         reads_past_parameters,
+        closed_world,
     })
 }
 
@@ -1650,9 +1767,8 @@ fn result_owners(
 enum TailResult {
     /// No exit is a tail transfer; ordinary live-out recovery answers.
     NoTailBoundary,
-    /// Every tail transfer names a complete prototype and they agree:
-    /// `None` is an exact void result, `Some` the carrier.
-    Exact(Option<CanonicalStorageId>),
+    /// Every tail transfer names a complete prototype and they agree on its result.
+    Exact(SourceCallResult),
     /// Some tail transfer reaches a body whose prototype is unknown or
     /// incomplete, or two tail transfers disagree. The result is owned by a
     /// body not read here, so nothing can be recovered for it.
@@ -1727,10 +1843,7 @@ fn tail_result_storage(facts: &crate::semantic::PreparedFunctionFacts) -> TailRe
     if results.any(|result| result != Some(first)) {
         return TailResult::Unproven;
     }
-    TailResult::Exact(match first {
-        SourceCallResult::Void => None,
-        SourceCallResult::Register { storage } => Some(storage),
-    })
+    TailResult::Exact(first)
 }
 
 /// The width of a register storage, where it is one an integer type can have.
@@ -1895,11 +2008,18 @@ fn mint_recovered_interface_inner(
                 .map(|parameter| parameter.slot_bytes().checked_mul(8)),
         )
         .collect::<Option<Vec<_>>>()?;
-    let result_width = match recovered.result().register() {
-        Some(result) if !result.float() => {
+    let result_width = match recovered.result() {
+        RecoveredFunctionResult::Register(result) if !result.float() => {
             let bits = storage_bits(result.observed())?;
             note_type(&mut widths, bits, result.signed());
             Some((bits, result.signed()))
+        }
+        // One integer as wide as both halves (doc/adr-language-profile.md, item 1).
+        RecoveredFunctionResult::Pair { low, high } => {
+            let half = storage_bits(low).filter(|bits| Some(*bits) == storage_bits(high))?;
+            let bits = half.checked_mul(2)?;
+            note_type(&mut widths, bits, false);
+            Some((bits, false))
         }
         _ => None,
     };
@@ -2007,6 +2127,12 @@ fn mint_recovered_interface_inner(
         (RecoveredFunctionResult::Register(result), None) if result.float() => {
             float_return(result, float_type?)?
         }
+        (RecoveredFunctionResult::Pair { low, high }, Some((bits, signed))) => (
+            SourceFunctionReturn::Pair { low, high },
+            Some(logical(bits, signed, bits)?),
+        ),
+        // A pair is typed or the interface is not minted: no half of it stands for the whole.
+        (RecoveredFunctionResult::Pair { .. }, None) => return None,
         // A body nobody read owns this result, so nothing is claimed for it.
         (RecoveredFunctionResult::Unproven, _) => (SourceFunctionReturn::Unproven, None),
         _ => (SourceFunctionReturn::Void, None),
@@ -2129,7 +2255,19 @@ pub fn mint_recovered_call_site_interface(
     });
     let result = match callee.return_kind() {
         SourceFunctionReturn::Void => SourceCallResult::Void,
-        SourceFunctionReturn::Register { storage } => SourceCallResult::Register { storage },
+        // A call that reads the second register a carrier names takes the pair.
+        SourceFunctionReturn::Register { storage } => match (
+            callee
+                .result_carriers()
+                .and_then(|carriers| carriers.second),
+            caller_reads,
+        ) {
+            (Some(high), Some(reads)) if reads.second > 0 => {
+                SourceCallResult::Pair { low: storage, high }
+            }
+            _ => SourceCallResult::Register { storage },
+        },
+        SourceFunctionReturn::Pair { low, high } => SourceCallResult::Pair { low, high },
         // A body nobody read owns the arguments beside the result: an import
         // thunk forwards every one and reads none, so what its own body proves
         // is a floor rather than this call's contract.
