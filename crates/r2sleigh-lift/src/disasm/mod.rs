@@ -1458,6 +1458,12 @@ struct DisasmInstructionWrapper<'a> {
 }
 
 impl<'a> PcodeSource for DisasmInstructionWrapper<'a> {
+    fn addr_size(&self) -> Option<u32> {
+        // The default CODE space's address width — the one a branch target
+        // addresses into. Read from the loaded spec, never assumed.
+        u32::try_from(self.disasm.default_code_space().address_size).ok()
+    }
+
     fn output(&self) -> Option<Varnode> {
         // translate_pcode_op validates every operand before creating this view.
         self.instr
@@ -3399,8 +3405,7 @@ impl Disassembler {
 
             // Control flow
             OpCode::Branch => {
-                let target =
-                    translate::require_input(&source, 0, "BRANCH").map_err(translate_err)?;
+                let target = translate::cf_target(&source, 0, "BRANCH").map_err(translate_err)?;
                 Ok(Some(R2ILOp::Branch { target }))
             }
 
@@ -3410,24 +3415,22 @@ impl Disassembler {
 
             OpCode::BranchIndirect => {
                 let target =
-                    translate::require_input(&source, 0, "BRANCHIND").map_err(translate_err)?;
+                    translate::cf_target(&source, 0, "BRANCHIND").map_err(translate_err)?;
                 Ok(Some(R2ILOp::BranchInd { target }))
             }
 
             OpCode::Call => {
-                let target = translate::require_input(&source, 0, "CALL").map_err(translate_err)?;
+                let target = translate::cf_target(&source, 0, "CALL").map_err(translate_err)?;
                 Ok(Some(R2ILOp::Call { target }))
             }
 
             OpCode::CallIndirect => {
-                let target =
-                    translate::require_input(&source, 0, "CALLIND").map_err(translate_err)?;
+                let target = translate::cf_target(&source, 0, "CALLIND").map_err(translate_err)?;
                 Ok(Some(R2ILOp::CallInd { target }))
             }
 
             OpCode::Return => {
-                let target =
-                    translate::require_input(&source, 0, "RETURN").map_err(translate_err)?;
+                let target = translate::cf_target(&source, 0, "RETURN").map_err(translate_err)?;
                 Ok(Some(R2ILOp::Return { target }))
             }
 
