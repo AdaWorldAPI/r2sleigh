@@ -29,8 +29,8 @@ pub(super) struct Spell<'a> {
     pub(super) return_address: Option<(ObjectId, u32)>,
     /// A read at the start of a caller's stack slot nothing here writes, which C cannot read.
     pub(super) caller: &'a dyn Fn(ObjectId, &MachineType) -> Option<CExpr>,
-    /// The structure member a cell is, as an lvalue and its declared type (doc/adr-aggregates.md).
-    pub(super) member: &'a dyn Fn(TermId) -> Option<(CExpr, CType)>,
+    /// The address of the structure member a cell is, `&arg0->f_2` (doc/adr-aggregates.md).
+    pub(super) member: &'a dyn Fn(TermId) -> Option<CExpr>,
 }
 
 /// A frame object's address in the frame array and its extent.
@@ -813,9 +813,9 @@ impl Spell<'_> {
             TermKind::ObjectAddress(object) => {
                 Some(cast(integer(bits)?, (self.object)(object)?.base))
             }
+            // A member is read by a byte copy at its address, as any cell is: no type is asserted.
             TermKind::Load { .. } | TermKind::Subscript { .. } if (self.member)(id).is_some() => {
-                let (member, declared) = (self.member)(id)?;
-                super::calls::from_declared(member, &declared, &ty, u64::MAX)
+                self.load(&ty, (self.member)(id)?)
             }
             TermKind::Load { object, address } => self.load_of(&ty, object, address),
             TermKind::Subscript { base, index } => {

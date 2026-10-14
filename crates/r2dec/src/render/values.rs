@@ -36,7 +36,7 @@ pub(super) struct Values<'a> {
     declared: Vec<bool>,
     /// The structure member each cell term is, by term index: the accesses through a parameter
     /// that points to its inferred structure.
-    members: Vec<Option<(CExpr, CType)>>,
+    members: Vec<Option<CExpr>>,
     /// The named values a statement written so far assigns: a read of any other is a residual.
     assigned: RefCell<Vec<bool>>,
     /// By instruction index: whether a statement assigns the instruction's output where it stands.
@@ -820,8 +820,12 @@ impl<'a> Values<'a> {
         &self,
         input: &RenderInput<'_>,
         pointing: Vec<(usize, String, CExpr)>,
-    ) -> Vec<Option<(CExpr, CType)>> {
+    ) -> Vec<Option<CExpr>> {
         let mut members = Vec::new();
+        // A member is read and written by a byte copy, which only a little-endian target matches.
+        if !self.little_endian {
+            return members;
+        }
         let fields = &self.artifact.certificates().parameter_fields;
         for (slot, tag, base) in pointing {
             let Some(structure) = input.parameter_structures().get(&slot) else {
@@ -839,7 +843,7 @@ impl<'a> Values<'a> {
                 continue;
             };
             let cells = accesses.iter().map(|access| {
-                let (ty, name) = definition
+                let (_, name) = definition
                     .members
                     .get(*structure.fields.get(&access.offset)?)?;
                 let cell = self.roots.access(access.access)?.canonical;
@@ -847,7 +851,7 @@ impl<'a> Values<'a> {
                     base: Box::new(base.clone()),
                     member: name.clone(),
                 };
-                Some((cell, member, ty.clone()))
+                Some((cell, CExpr::addr_of(member)))
             });
             let Some(cells) = cells.collect::<Option<Vec<_>>>() else {
                 continue;
@@ -855,9 +859,9 @@ impl<'a> Values<'a> {
             if members.is_empty() {
                 members = vec![None; self.roots.arena().len()];
             }
-            for (cell, member, ty) in cells {
+            for (cell, address) in cells {
                 if let Some(at) = members.get_mut(cell.index()) {
-                    *at = Some((member, ty));
+                    *at = Some(address);
                 }
             }
         }
@@ -1824,20 +1828,17 @@ impl<'a> Values<'a> {
         }
         let arena = self.roots.arena();
         let access_id = store_access(self.inventory, inst);
-        if let Some(access) = self.roots.access(access_id)
-            && let Some(member) = self
-                .members
-                .get(access.canonical.index())
-                .cloned()
-                .flatten()
-        {
-            return self.store_member(inst, access_id, access.canonical, value, member);
-        }
         let (address, cell) = match self.roots.access(access_id) {
             Some(access) => {
                 let cell = arena.term(access.canonical);
                 let bytes = cell.ty.width_bits() / 8;
+                let member = self
+                    .members
+                    .get(access.canonical.index())
+                    .cloned()
+                    .flatten();
                 let address = match cell.kind {
+                    _ if member.is_some() => member?,
                     TermKind::Load { object, address } => {
                         self.spelling(|spell| spell.address(address, bytes, Some(object)))?
                     }
@@ -1881,31 +1882,6 @@ impl<'a> Values<'a> {
             }
             ty => Helper::Store(ResidualType::of(&ty)?).call(vec![pointer, written]),
         }))
-    }
-
-    /// A store to a structure member: the member is assigned, and the address arithmetic it
-    /// replaces is discharged as the byte spelling's would be.
-    fn store_member(
-        &self,
-        inst: InstId,
-        access_id: StructuredAccessId,
-        cell: TermId,
-        value: ValueId,
-        (member, declared): (CExpr, CType),
-    ) -> Option<CStmt> {
-        let discharges = (self.roots).access_discharges(self.artifact, &self.projection, access_id);
-        for discharged in discharged_insts(self.graph, discharges.iter()) {
-            self.mark(discharged);
-        }
-        let cell = self.roots.arena().term(cell).ty;
-        let ty = terms::c_type(&cell)?;
-        let written = terms::reclass(self.operand(value, inst)?, &self.value_type(value)?, &cell)?;
-        let written = match ty {
-            CType::BitVector(_) => written,
-            _ => CExpr::cast(ty.clone(), written),
-        };
-        let written = calls::to_declared(written, &ty, &declared);
-        Some(CStmt::Expr(CExpr::assign(member, written)))
     }
 
     /// The test a conditional branch ending `addr` takes its true edge on.

@@ -105,24 +105,26 @@ declared tag. Accesses keep their byte-load spelling. That spelling is what
 the declared path renders today: `declarations.rs` asserts no `->`.
 
 Second exit (P9b, inferred aggregates, 2026-10-14): an access through a
-parameter that points to its inferred structure is the member at its offset.
-r2types states each structure's member per accessed offset
-(`FunctionTypeFacts::parameter_structures`). r2dec joins it with r2ssa's
-`parameter_fields`, which names each access by its structured access id, and
-maps that access's canonical cell to `arg0->f_<offset>`. A load reads the
-member through `from_declared`, and a store assigns it through `to_declared`,
-as a named global's does. The address arithmetic is discharged as the byte
-spelling's was, so the proof line does not move. All or nothing per
-parameter: one access with no member keeps the byte spelling for every
-access through that parameter. The gate is the parameter's rendered type, so
-a declaration that wins keeps the byte spelling. Declared aggregates need
-that check against the declared layout and are the next step.
+parameter that points to its inferred structure is spelled at the member's
+address, `r2sleigh_load_u16((void*)&arg0->f_2)`. r2types states each
+structure's member per accessed offset (`FunctionTypeFacts::parameter_structures`).
+r2dec joins it with r2ssa's `parameter_fields`, which names each access by
+its structured access id, and gives that access's canonical cell the member's
+address in place of the byte offset. The read or write stays the byte copy
+every cell uses. The address arithmetic is discharged as before, so the
+proof line does not move. All or nothing per parameter: one access with no
+member keeps the byte spelling for every access through that parameter. The
+gate is the parameter's rendered type, so a declaration that wins keeps the
+byte spelling. Declared aggregates need that check against the declared
+layout and are the next step.
 
-Aliasing: a member is spelled directly, `arg0->f_2`, not as a helper over
-`&arg0->f_2`. The rendering is its own shared object, its callers' object
-types are opaque to it, and the equivalence harness builds it at `-O0` and
-`-O2`, so a miscompile from strict aliasing grades the cell `ub`. The
-helper form is the fallback for such a cell.
+Aliasing and alignment: the accesses prove offsets and widths. They do not
+prove the effective type or the alignment of what the parameter points to:
+a serialized byte buffer read at the same offsets is indistinguishable. So no
+member lvalue is formed. `arg0->f_2` would assert both, and optimized C could
+then miscompile a valid program. The byte copy at the member's address
+asserts neither. Like every byte copy, it is spelled only for a
+little-endian target.
 
 ### Cost
 
