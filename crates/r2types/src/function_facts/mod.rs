@@ -773,17 +773,17 @@ pub struct SourceOwnedCalleeSignature {
     signature: crate::FunctionType,
 }
 
-/// Whether `storage` is a float's width inside the convention's float result register.
-fn float_carrier(source: &r2ssa::SsaArtifact, storage: r2ssa::CanonicalStorageId) -> bool {
-    let Some(slot) = (source.machine_context().convention_slots())
-        .and_then(r2ssa::SourceConventionSlots::float_result_slot)
-    else {
-        return false;
-    };
-    matches!(storage.size, 4 | 8)
-        && storage.space == slot.space
-        && storage.offset >= slot.offset
-        && storage.offset + u64::from(storage.size) <= slot.offset + u64::from(slot.size)
+/// Whether `storage` is a float's width at the low end of the float result register `slot`, the
+/// lane `SourceResultCarriers::holds` names.
+pub(super) fn float_lane(
+    slot: Option<r2ssa::CanonicalStorageId>,
+    storage: r2ssa::CanonicalStorageId,
+) -> bool {
+    slot.is_some_and(|slot| {
+        matches!(storage.size, 4 | 8)
+            && storage.size <= slot.size
+            && (storage.space, storage.offset) == (slot.space, slot.offset)
+    })
 }
 
 /// The type a call returns where its callee's result is one of two carriers: the float register's
@@ -1523,6 +1523,8 @@ impl FunctionFacts {
                 .map(r2ssa::SourceCallSiteInterface::result);
             // A call that takes a pair takes the type of both halves, whatever the callee's own
             // signature says of its first register.
+            let float_slot = (source.machine_context().convention_slots())
+                .and_then(r2ssa::SourceConventionSlots::float_result_slot);
             let pair_callee = matches!(
                 signature.interface.return_kind(),
                 r2ssa::SourceFunctionReturn::Pair { .. }
@@ -1546,7 +1548,7 @@ impl FunctionFacts {
                 (
                     Some(r2ssa::SourceCallResult::Register { storage }),
                     CTypeLike::Int { bits, .. },
-                ) if float_carrier(source, storage) && *bits == storage.size * 8 => {
+                ) if float_lane(float_slot, storage) && *bits == storage.size * 8 => {
                     Some(CTypeLike::Float(*bits))
                 }
                 (_, declared) => Some(declared.clone()),

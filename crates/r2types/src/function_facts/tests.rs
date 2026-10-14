@@ -3447,3 +3447,19 @@ fn an_exact_source_return_rests_on_the_interface_s_basis() {
     );
     assert_eq!(fact.basis(&source), Some(r2source::Basis::Declared));
 }
+
+/// A float result is the float register's low lane; an upper lane (`XMM0_Qb`) is none.
+#[test]
+fn a_float_result_is_the_low_lane_of_the_float_register() {
+    let register = |offset, size| r2ssa::CanonicalStorageId {
+        space: r2ssa::CanonicalStorageSpace::Register,
+        offset,
+        size,
+    };
+    let xmm0 = Some(register(0x1200, 16));
+    assert!(super::float_lane(xmm0, register(0x1200, 8)));
+    assert!(super::float_lane(xmm0, register(0x1200, 4)));
+    assert!(!super::float_lane(xmm0, register(0x1208, 8)));
+    assert!(!super::float_lane(xmm0, register(0x1200, 2)));
+    assert!(!super::float_lane(None, register(0x1200, 8)));
+}
