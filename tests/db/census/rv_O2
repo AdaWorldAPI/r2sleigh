@@ -64,7 +64,6 @@ uint64_t _init(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -76,7 +75,6 @@ EXPECT=<<EOF
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -89,7 +87,6 @@ extern uint64_t strlen(const char*);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -102,7 +99,6 @@ extern void __stack_chk_fail(void);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -115,7 +111,6 @@ extern void* memcpy(void*, const void*, uint64_t);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -128,7 +123,6 @@ extern int32_t __printf_chk(int32_t, const char*, ...);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -183,7 +177,7 @@ uint32_t fcn_10c0(uint64_t arg0, uint64_t* arg1)
     uint32_t tmp_lane_11c4_70_52_1;
     _Alignas(16) uint8_t frame[232];
 
-    /* r2dec proof: 2 constructs are marked below; 248 source obligations: 181 rendered, 60 elided, 0 refused, 5 compiler-inserted (assuming ub-free), 2 residual; 41 statements rendered; 1 never assigned, read as residuals (XMM0_4); 1 data object type refused; 1 callee prototype supplied by the source */
+    /* r2dec proof: 2 constructs are marked below; 248 source obligations: 181 rendered, 60 elided, 0 refused, 5 compiler-inserted (assuming ub-free), 2 residual; 41 statements rendered; 1 never assigned, read as residuals (XMM0_4); 1 data object type refused; 1 callee prototype supplied by the source; the result's second register is open: no call read decides it */
     /* symbol `main`; C allows that name no other prototype */
     {
         tmp_lane_10c0_b_0_1 = (uint32_t)((uint64_t)arg0 >> 0U);
@@ -238,7 +232,6 @@ uint32_t fcn_10c0(uint64_t arg0, uint64_t* arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -264,7 +257,6 @@ void _start(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -297,7 +289,6 @@ uint64_t deregister_tm_clones(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -330,7 +321,6 @@ uint64_t register_tm_clones(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -372,7 +362,6 @@ uint64_t __do_global_dtors_aux(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -392,7 +381,6 @@ uint64_t frame_dummy(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -410,7 +398,6 @@ uint32_t add(uint32_t arg0, uint32_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -459,7 +446,6 @@ uint32_t sum_array(uint64_t arg0, uint32_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -490,7 +476,6 @@ uint64_t classify(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -533,7 +518,6 @@ uint32_t list_len(uint64_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -600,7 +584,6 @@ uint64_t mul_div(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -659,7 +642,6 @@ L1: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -702,7 +684,6 @@ uint64_t fact(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -802,7 +783,6 @@ uint64_t fill(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -830,7 +810,6 @@ uint64_t copy_name(uint8_t* arg0, uint64_t arg1, uint64_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -843,7 +822,7 @@ uint32_t sext(uint8_t arg0)
     uint16_t tmp_lane_1560_0_1_1;
     uint64_t rax_1;
 
-    /* r2dec proof: 1 construct is marked below; 12 source obligations: 7 rendered, 4 elided, 0 refused, 1 residual; 3 statements rendered; 1 held from entry, read as residuals (RAX_0) */
+    /* r2dec proof: 1 construct is marked below; 12 source obligations: 7 rendered, 4 elided, 0 refused, 1 residual; 3 statements rendered; 1 held from entry, read as residuals (RAX_0); the result's second register is open: no call read decides it */
     {
         tmp_lane_1560_0_1_1 = (uint16_t)(int8_t)arg0;
         rax_1 = (uint64_t)(((uint64_t)r2sleigh_residual_u64(1) & (uint64_t)0xffffffffffff0000U) | ((uint64_t)tmp_lane_1560_0_1_1 & (uint64_t)0xffffU) << 0U);
@@ -853,7 +832,6 @@ uint32_t sext(uint8_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -874,7 +852,6 @@ uint32_t rotl(uint32_t arg0, uint8_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -919,7 +896,6 @@ uint32_t bit_count(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -972,7 +948,6 @@ L1: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -990,7 +965,6 @@ uint64_t dispatch(uint64_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1008,6 +982,5 @@ void _fini(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN

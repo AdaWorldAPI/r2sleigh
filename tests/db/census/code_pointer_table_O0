@@ -29,7 +29,6 @@ uint64_t _table_op_add(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -47,7 +46,6 @@ uint64_t _table_op_xor(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -65,7 +63,6 @@ uint64_t _table_op_mul(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -117,7 +114,6 @@ uint64_t _table_dispatch(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -138,6 +134,5 @@ uint64_t _main(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN

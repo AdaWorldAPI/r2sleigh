@@ -69,7 +69,6 @@ void _start(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -77,17 +76,16 @@ NAME=0x01001cda
 FILE=tests/fixtures/shapes_zig_riscv64_O0
 CMDS=aa; pdd @ 0x01001cda
 EXPECT=<<EOF
-uint64_t entry_preinit0(void)
+uint64_t entry_preinit0(uint64_t arg0)
 {
-    /* r2dec proof: 1 construct is marked below; 2 source obligations: 0 rendered, 0 elided, 0 refused, 2 residual; 1 statements rendered */
+    /* r2dec proof: no individual construct is marked; 2 source obligations: 2 rendered, 0 elided, 0 refused; 1 statements rendered */
     {
-        return r2sleigh_residual_u64(1);
+        return (uint64_t)arg0;
     }
 }
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -203,7 +201,6 @@ uint64_t shape_variadic(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -279,7 +276,6 @@ uint64_t vfold(uint32_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint6
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -314,7 +310,6 @@ uint64_t shape_variadic_local(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint6
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -337,7 +332,6 @@ uint64_t shape_step(uint64_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -347,7 +341,7 @@ CMDS=aa; pdd @ 0x0100201a
 EXPECT=<<EOF
 uint64_t shape_stash(uint64_t* arg0, uint64_t arg1)
 {
-    /* r2dec proof: no individual construct is marked; 8 source obligations: 4 rendered, 4 elided, 0 refused; 2 statements rendered */
+    /* r2dec proof: no individual construct is marked; 8 source obligations: 4 rendered, 4 elided, 0 refused; 2 statements rendered; the result's second register is open: no call read decides it */
     {
         r2sleigh_store_u64((void*)(uint64_t)arg0, (uint64_t)arg1);
         return (uint64_t)arg1;
@@ -356,7 +350,6 @@ uint64_t shape_stash(uint64_t* arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -444,7 +437,6 @@ uint64_t shape_call_chain(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -463,7 +455,7 @@ uint64_t mixed_touch(void* arg0)
     uint8_t tmp_2d80_2;
     uint64_t a0_10;
 
-    /* r2dec proof: no individual construct is marked; 47 source obligations: 43 rendered, 4 elided, 0 refused; 13 statements rendered */
+    /* r2dec proof: no individual construct is marked; 47 source obligations: 43 rendered, 4 elided, 0 refused; 13 statements rendered; the result's second register is open: no call read decides it */
     {
         tmp_2d80_1 = r2sleigh_load_u8((void*)(uint64_t)arg0);
         r2sleigh_store_u8((void*)(uint64_t)arg0, (uint8_t)((uint64_t)((uint64_t)(uint8_t)tmp_2d80_1 + (uint64_t)3U) >> 0U));
@@ -483,7 +475,6 @@ uint64_t mixed_touch(void* arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -510,7 +501,6 @@ uint64_t mixed_fold(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -521,12 +511,13 @@ EXPECT=<<EOF
 uint64_t shape_struct_pointer(uint64_t arg0, uint64_t arg1)
 {
     __attribute__((noreturn)) void __stack_chk_fail(void);
-    uint64_t mixed_from(uint32_t, uint32_t);
+    __uint128_t mixed_from(uint64_t, uint64_t);
     uint64_t mixed_touch(uint64_t);
 
     uint64_t a2_2;
     uint64_t a2_3;
     uint64_t a0_2;
+    uint64_t a1_2;
     uint64_t a0_7;
     uint8_t tmp_2d80_1;
     uint64_t a2_7;
@@ -538,8 +529,9 @@ uint64_t shape_struct_pointer(uint64_t arg0, uint64_t arg1)
     uint64_t a0_8;
     uint64_t a1_10;
     _Alignas(16) uint8_t frame[80];
+    __uint128_t pair_100220e;
 
-    /* r2dec proof: 1 construct is marked below; 91 source obligations: 58 rendered, 22 elided, 0 refused, 10 assumed (frame extent unproven), 1 residual; 26 statements rendered; 1 never assigned, read as residuals (A1_2); 1 callee prototype supplied by the source */
+    /* r2dec proof: no individual construct is marked; 92 source obligations: 61 rendered, 21 elided, 0 refused, 10 assumed (frame extent unproven); 28 statements rendered; 1 callee prototype supplied by the source */
     {
         a2_2 = r2sleigh_load_u64((void*)(uint64_t)0x1004350U);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)a2_2);
@@ -547,8 +539,10 @@ uint64_t shape_struct_pointer(uint64_t arg0, uint64_t arg1)
         r2sleigh_store_u64((void*)((uint64_t)(frame + 40U) + (uint64_t)16U), (uint64_t)a2_3);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 32U), (uint64_t)arg0);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 24U), (uint64_t)arg1);
-        a0_2 = mixed_from((uint32_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 32U)), (uint32_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
-        r2sleigh_store_u64((void*)((uint64_t)(frame + 40U) + (uint64_t)8U), (uint64_t)r2sleigh_residual_u64(1));
+        pair_100220e = mixed_from(r2sleigh_load_u64((void*)(uint64_t)(frame + 32U)), r2sleigh_load_u64((void*)(uint64_t)(frame + 24U)));
+        a0_2 = (uint64_t)((__uint128_t)pair_100220e >> 0U);
+        a1_2 = (uint64_t)((__uint128_t)pair_100220e >> 64U);
+        r2sleigh_store_u64((void*)((uint64_t)(frame + 40U) + (uint64_t)8U), (uint64_t)a1_2);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 40U), (uint64_t)a0_2);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 0U), (uint64_t)(frame + 40U));
         mixed_touch((uint64_t)(frame + 40U));
@@ -576,7 +570,6 @@ uint64_t shape_struct_pointer(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -584,24 +577,21 @@ NAME=0x01002286
 FILE=tests/fixtures/shapes_zig_riscv64_O0
 CMDS=aa; pdd @ 0x01002286
 EXPECT=<<EOF
-uint64_t mixed_from(uint32_t arg0, uint32_t arg1)
+__uint128_t mixed_from(uint64_t arg0, uint64_t arg1)
 {
-    uint64_t a0_1;
     _Alignas(16) uint8_t frame[32];
 
-    /* r2dec proof: no individual construct is marked; 22 source obligations: 13 rendered, 9 elided, 0 refused; 5 statements rendered */
+    /* r2dec proof: no individual construct is marked; 23 source obligations: 14 rendered, 9 elided, 0 refused; 4 statements rendered */
     {
-        a0_1 = (uint64_t)(uint32_t)arg0;
-        r2sleigh_store_u8((void*)(uint64_t)(frame + 0U), (uint8_t)((uint64_t)a0_1 >> 0U));
-        r2sleigh_store_u16((void*)((uint64_t)(frame + 0U) + (uint64_t)2U), (uint16_t)((uint64_t)((uint64_t)8U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)a0_1 >> (uint64_t)8U)) >> 0U));
-        r2sleigh_store_u32((void*)((uint64_t)(frame + 0U) + (uint64_t)4U), (uint32_t)arg1);
-        return (uint64_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 0U));
+        r2sleigh_store_u8((void*)(uint64_t)(frame + 0U), (uint8_t)((uint64_t)arg0 >> 0U));
+        r2sleigh_store_u16((void*)((uint64_t)(frame + 0U) + (uint64_t)2U), (uint16_t)((uint64_t)((uint64_t)8U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)arg0 >> (uint64_t)8U)) >> 0U));
+        r2sleigh_store_u32((void*)((uint64_t)(frame + 0U) + (uint64_t)4U), (uint32_t)((uint64_t)arg1 >> 0U));
+        return (__uint128_t)((__uint128_t)(uint64_t)((uint64_t)arg0 ^ (uint64_t)arg1) << 64U | (__uint128_t)r2sleigh_load_u64((void*)(uint64_t)(frame + 0U)));
     }
 }
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -612,24 +602,28 @@ EXPECT=<<EOF
 uint64_t shape_struct_value(uint64_t arg0, uint64_t arg1)
 {
     uint64_t mixed_fold(uint64_t, uint64_t);
-    uint64_t mixed_from(uint32_t, uint32_t);
+    __uint128_t mixed_from(uint64_t, uint64_t);
 
     uint64_t a0_2;
+    uint64_t a1_2;
     uint64_t a0_4;
     uint64_t a1_5;
     uint64_t a0_6;
     uint64_t a1_6;
     uint64_t a0_11;
+    __uint128_t pair_10022ea;
     _Alignas(16) uint8_t frame[64];
 
-    /* r2dec proof: 2 constructs are marked below; 52 source obligations: 33 rendered, 14 elided, 0 refused, 5 residual; 10 statements rendered; 1 never assigned, read as residuals (A1_2) */
+    /* r2dec proof: no individual construct is marked; 53 source obligations: 40 rendered, 13 elided, 0 refused; 12 statements rendered */
     {
-        a0_2 = mixed_from((uint32_t)arg0, (uint32_t)arg1);
+        pair_10022ea = mixed_from(arg0, arg1);
+        a0_2 = (uint64_t)((__uint128_t)pair_10022ea >> 0U);
+        a1_2 = (uint64_t)((__uint128_t)pair_10022ea >> 64U);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)a0_2);
-        a0_4 = mixed_fold(r2sleigh_load_u64((void*)(uint64_t)(frame + 16U)), r2sleigh_residual_u64(1));
+        a0_4 = mixed_fold(r2sleigh_load_u64((void*)(uint64_t)(frame + 16U)), a1_2);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 8U), (uint64_t)a0_4);
         a1_5 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
-        a0_6 = (uint64_t)((uint64_t)r2sleigh_residual_u64(2) ^ (uint64_t)a1_5);
+        a0_6 = (uint64_t)((uint64_t)a1_2 ^ (uint64_t)a1_5);
         r2sleigh_store_u32((void*)((uint64_t)(frame + 16U) + (uint64_t)4U), (uint32_t)r2sleigh_load_u32((void*)((uint64_t)(frame + 8U) + (uint64_t)4U)));
         a1_6 = r2sleigh_load_u64((void*)(uint64_t)(frame + 8U));
         a0_11 = mixed_fold(r2sleigh_load_u64((void*)(uint64_t)(frame + 16U)), a0_6);
@@ -639,7 +633,6 @@ uint64_t shape_struct_value(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -740,7 +733,6 @@ uint64_t shape_struct_array(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -836,7 +828,6 @@ uint64_t shape_stack_buffer(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -869,7 +860,6 @@ uint64_t shape_recurse_direct(uint8_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -884,7 +874,7 @@ uint64_t shape_mutual_even(uint64_t arg0, uint64_t arg1)
     uint64_t a0_5;
     uint64_t stack_m24_1;
 
-    /* r2dec proof: no individual construct is marked; 29 source obligations: 25 rendered, 4 elided, 0 refused; 5 statements rendered */
+    /* r2dec proof: no individual construct is marked; 29 source obligations: 25 rendered, 4 elided, 0 refused; 5 statements rendered; the result's second register is open: no call read decides it */
     {
         if ((uint8_t)((uint64_t)arg0 != (uint64_t)0U)) {
             a0_5 = shape_mutual_odd((uint64_t)((uint64_t)arg0 - (uint64_t)1U), (uint64_t)((uint64_t)((uint64_t)((uint64_t)arg1 * (uint64_t)32U) + (uint64_t)arg0) - (uint64_t)arg1));
@@ -902,7 +892,6 @@ uint64_t shape_mutual_even(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -918,7 +907,7 @@ uint64_t shape_mutual_odd(uint64_t arg0, uint64_t arg1)
     uint64_t a0_5;
     uint64_t stack_m24_1;
 
-    /* r2dec proof: no individual construct is marked; 29 source obligations: 25 rendered, 4 elided, 0 refused; 6 statements rendered */
+    /* r2dec proof: no individual construct is marked; 29 source obligations: 25 rendered, 4 elided, 0 refused; 6 statements rendered; the result's second register is open: no call read decides it */
     {
         if ((uint8_t)((uint64_t)arg0 != (uint64_t)0U)) {
             a2_2 = (uint64_t)2U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)arg0 << (uint64_t)2U);
@@ -937,7 +926,6 @@ uint64_t shape_mutual_odd(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -965,7 +953,6 @@ uint64_t shape_recurse_mutual(uint8_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1056,7 +1043,6 @@ uint64_t shape_signed_divmod(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1064,21 +1050,21 @@ NAME=0x01002832
 FILE=tests/fixtures/shapes_zig_riscv64_O0
 CMDS=aa; pdd @ 0x01002832
 EXPECT=<<EOF
-uint64_t wide_make(uint64_t arg0, uint64_t arg1)
+__uint128_t wide_make(uint64_t arg0, uint64_t arg1)
 {
     uint64_t a1_3;
+    uint64_t a1_8;
 
-    /* r2dec proof: no individual construct is marked; 12 source obligations: 8 rendered, 4 elided, 0 refused; 3 statements rendered */
+    /* r2dec proof: no individual construct is marked; 17 source obligations: 13 rendered, 4 elided, 0 refused; 3 statements rendered */
     {
         a1_3 = r2sleigh_load_u64((void*)(uint64_t)0x1000588U);
-        (void)r2sleigh_load_u64((void*)(uint64_t)0x1000570U);
-        return (uint64_t)((uint64_t)((uint64_t)arg0 * (uint64_t)a1_3) + (uint64_t)arg1);
+        a1_8 = r2sleigh_load_u64((void*)(uint64_t)0x1000570U);
+        return (__uint128_t)((__uint128_t)(uint64_t)((uint64_t)((uint64_t)arg0 ^ (uint64_t)arg1) * (uint64_t)a1_8) << 64U | (__uint128_t)(uint64_t)((uint64_t)((uint64_t)arg0 * (uint64_t)a1_3) + (uint64_t)arg1));
     }
 }
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1088,22 +1074,29 @@ CMDS=aa; pdd @ 0x0100288a
 EXPECT=<<EOF
 uint64_t shape_multiword_return(uint64_t arg0, uint64_t arg1)
 {
-    uint64_t wide_make(uint64_t, uint64_t);
+    __uint128_t wide_make(uint64_t, uint64_t);
 
     uint64_t a0_2;
+    uint64_t a1_2;
     uint64_t a0_4;
+    uint64_t a1_4;
+    __uint128_t pair_10028a6;
+    __uint128_t pair_10028be;
 
-    /* r2dec proof: 3 constructs are marked below; 25 source obligations: 13 rendered, 6 elided, 0 refused, 6 residual; 3 statements rendered; 2 never assigned, read as residuals (A1_2, A1_4) */
+    /* r2dec proof: no individual construct is marked; 27 source obligations: 23 rendered, 4 elided, 0 refused; 7 statements rendered */
     {
-        a0_2 = wide_make(arg0, arg1);
-        a0_4 = wide_make(r2sleigh_residual_u64(1), a0_2);
-        return (uint64_t)((uint64_t)((uint64_t)r2sleigh_residual_u64(2) ^ (uint64_t)a0_2) + (uint64_t)((uint64_t)a0_4 ^ (uint64_t)r2sleigh_residual_u64(3)));
+        pair_10028a6 = wide_make(arg0, arg1);
+        a0_2 = (uint64_t)((__uint128_t)pair_10028a6 >> 0U);
+        a1_2 = (uint64_t)((__uint128_t)pair_10028a6 >> 64U);
+        pair_10028be = wide_make(a1_2, a0_2);
+        a0_4 = (uint64_t)((__uint128_t)pair_10028be >> 0U);
+        a1_4 = (uint64_t)((__uint128_t)pair_10028be >> 64U);
+        return (uint64_t)((uint64_t)((uint64_t)a1_4 ^ (uint64_t)a0_2) + (uint64_t)((uint64_t)a0_4 ^ (uint64_t)a1_2));
     }
 }
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1124,7 +1117,6 @@ uint64_t indirect_load(uint64_t* arg0, uint32_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1136,7 +1128,7 @@ uint64_t indirect_store(uint64_t* arg0, uint32_t arg1, uint64_t arg2)
 {
     uint64_t a1_3;
 
-    /* r2dec proof: no individual construct is marked; 13 source obligations: 9 rendered, 4 elided, 0 refused; 3 statements rendered */
+    /* r2dec proof: no individual construct is marked; 13 source obligations: 9 rendered, 4 elided, 0 refused; 3 statements rendered; the result's second register is open: no call read decides it */
     {
         a1_3 = r2sleigh_load_u64((void*)((uint64_t)arg0 + (uint64_t)(uint32_t)arg1 * 8U));
         r2sleigh_store_u64((void*)a1_3, (uint64_t)arg2);
@@ -1146,7 +1138,6 @@ uint64_t indirect_store(uint64_t* arg0, uint32_t arg1, uint64_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1267,7 +1258,6 @@ uint64_t shape_pointer_to_pointer(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1285,7 +1275,6 @@ uint64_t op_add(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1297,7 +1286,7 @@ uint64_t op_xor(uint64_t arg0, uint64_t arg1)
 {
     uint64_t a1_2;
 
-    /* r2dec proof: no individual construct is marked; 9 source obligations: 5 rendered, 4 elided, 0 refused; 2 statements rendered */
+    /* r2dec proof: no individual construct is marked; 9 source obligations: 5 rendered, 4 elided, 0 refused; 2 statements rendered; the result's second register is open: no call read decides it */
     {
         a1_2 = (uint64_t)((uint64_t)arg1 ^ (uint64_t)arg0);
         return (uint64_t)((uint64_t)a1_2 + (uint64_t)((uint64_t)a1_2 * (uint64_t)2U));
@@ -1306,7 +1295,6 @@ uint64_t op_xor(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1316,7 +1304,7 @@ CMDS=aa; pdd @ 0x01002af6
 EXPECT=<<EOF
 uint64_t op_mul(uint64_t arg0, uint64_t arg1)
 {
-    /* r2dec proof: no individual construct is marked; 8 source obligations: 4 rendered, 4 elided, 0 refused; 1 statements rendered */
+    /* r2dec proof: no individual construct is marked; 8 source obligations: 4 rendered, 4 elided, 0 refused; 1 statements rendered; the result's second register is open: no call read decides it */
     {
         return (uint64_t)((uint64_t)((uint64_t)arg1 | (uint64_t)1U) * (uint64_t)arg0);
     }
@@ -1324,7 +1312,6 @@ uint64_t op_mul(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1408,7 +1395,6 @@ uint64_t shape_function_pointer(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1599,7 +1585,6 @@ uint64_t shape_byte_indexed_buffer(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1617,7 +1602,6 @@ uint64_t shape_bool_probe(uint64_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1662,7 +1646,6 @@ uint64_t shape_bool_caller(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1748,7 +1731,6 @@ uint64_t fcn_1002ecc(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1786,7 +1768,6 @@ void __libc_csu_init(int32_t argc, char** argv, char** envp)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1804,7 +1785,6 @@ void __libc_csu_fini(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1817,7 +1797,6 @@ extern int32_t __libc_start_main(void(*)(), int32_t, char**, void(*)(), void(*)(
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1830,7 +1809,6 @@ extern int32_t snprintf(char*, uint64_t, const char*, ...);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1843,7 +1821,6 @@ extern void __stack_chk_fail(void);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1856,6 +1833,5 @@ extern int32_t printf(const char*, ...);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN

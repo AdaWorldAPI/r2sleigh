@@ -52,7 +52,6 @@ uint32_t _struct_nested_array(void* arg0, uint32_t arg1, uint32_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -60,7 +59,15 @@ NAME=0x1000004e0
 FILE=tests/fixtures/manual_limits_O2
 CMDS=aa; pdd @ 0x1000004e0
 EXPECT=<<EOF
-uint64_t _out_param_parse(uint8_t* arg0, void* arg1)
+struct fcn_1000004e0_arg1 {
+    uint32_t f_0;
+    uint8_t _pad_4[4];
+    uint64_t f_8;
+    uint64_t f_10;
+    uint64_t f_18;
+};
+
+uint64_t _out_param_parse(uint8_t* arg0, struct fcn_1000004e0_arg1* arg1)
 {
     uint8_t tmp_25400_1;
     uint64_t x9_1;
@@ -84,7 +91,7 @@ uint64_t _out_param_parse(uint8_t* arg0, void* arg1)
     uint32_t tmp_lane_100000564_a_b_1;
     uint8_t tmp_25600_2;
 
-    /* r2dec proof: no individual construct is marked; 98 source obligations: 98 rendered, 0 elided, 0 refused; 39 statements rendered */
+    /* r2dec proof: no individual construct is marked; 98 source obligations: 98 rendered, 0 elided, 0 refused; 39 statements rendered; 1 structure laid out from a parameter's accesses */
     {
         tmp_25400_1 = r2sleigh_load_u8((void*)(uint64_t)arg0);
         x9_1 = (uint64_t)(uint8_t)tmp_25400_1;
@@ -141,7 +148,6 @@ uint64_t _out_param_parse(uint8_t* arg0, void* arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -193,7 +199,6 @@ uint64_t _fnv_fold(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -243,7 +248,6 @@ uint64_t _sparse_switch(uint32_t arg0, uint32_t arg1, uint32_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -365,7 +369,6 @@ L4: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -538,7 +541,6 @@ L7: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -2841,7 +2843,6 @@ L4: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -3004,6 +3005,5 @@ uint64_t _main(uint64_t arg0, uint64_t* arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN

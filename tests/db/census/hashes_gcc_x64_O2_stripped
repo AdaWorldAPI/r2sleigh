@@ -5,6 +5,7 @@ NAME=afl
 FILE=tests/fixtures/hashes_gcc_x64_O2_stripped
 CMDS=afl
 EXPECT=<<EOF
+0x00401000    3     27 fcn.00401000
 0x00401040    1     10 sym.imp.__printf_chk
 0x00401050    1    493 fcn.00401050
 0x00401240    1     37 entry0
@@ -26,6 +27,37 @@ EXPECT=<<EOF
 0x004018b0    4    215 fcn.004018b0
 0x00401b10    5     41 fcn.00401b10
 0x00401b50    1     80 fcn.00401b50
+0x00401ba0    1     13 fcn.00401ba0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00401000
+FILE=tests/fixtures/hashes_gcc_x64_O2_stripped
+CMDS=aa; pdd @ 0x00401000
+EXPECT=<<EOF
+uint64_t fcn_401000(void)
+{
+    uint64_t rax_1;
+    uint64_t rax_2;
+    uint64_t rax_3;
+
+    /* r2dec proof: no individual construct is marked; 22 source obligations: 12 rendered, 10 elided, 0 refused; 6 statements rendered */
+    {
+        rax_1 = r2sleigh_load_u64((void*)(uint64_t)0x403fe0U);
+        if ((uint8_t)((uint64_t)rax_1 == (uint64_t)0U)) {
+            rax_3 = rax_1;
+        } else {
+            rax_2 = ((uint64_t(*)(void))(uint64_t)rax_1)();
+            rax_3 = rax_2;
+        }
+        {
+            return (uint64_t)rax_3;
+        }
+    }
+}
+
 EOF
 EXPECT_ERR=<<EOF
 EOF
@@ -40,7 +72,6 @@ extern int32_t __printf_chk(int32_t, const char*, ...);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -115,7 +146,6 @@ uint32_t fcn_401050(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -141,7 +171,6 @@ void entry0(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -159,7 +188,6 @@ void fcn_401270(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -190,7 +218,6 @@ uint64_t fcn_401280(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -219,7 +246,6 @@ uint64_t entry_fini0(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -252,7 +278,6 @@ uint64_t entry_init0(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -297,7 +322,6 @@ uint64_t fcn_401330(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -344,7 +368,6 @@ uint64_t fcn_401370(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -389,7 +412,6 @@ uint64_t fcn_4013b0(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -434,7 +456,6 @@ uint32_t fcn_4013f0(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -488,7 +509,6 @@ uint64_t fcn_401420(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -546,7 +566,6 @@ uint64_t fcn_4014a0(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -609,7 +628,6 @@ uint32_t fcn_401530(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -997,7 +1015,6 @@ uint64_t fcn_401580(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1044,7 +1061,6 @@ uint32_t fcn_401630(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1079,7 +1095,7 @@ uint32_t fcn_401680(uint8_t* arg0, uint64_t arg1, uint32_t arg2)
     uint32_t tmp_lane_4016fe_3f_35_1;
     uint32_t tmp_lane_4016fe_7a_40_1;
 
-    /* r2dec proof: no individual construct is marked; 121 source obligations: 116 rendered, 5 elided, 0 refused; 42 statements rendered */
+    /* r2dec proof: no individual construct is marked; 121 source obligations: 116 rendered, 5 elided, 0 refused; 42 statements rendered; the result's second register is open: no call read decides it */
     {
         rcx_1 = (uint64_t)(uint32_t)arg2;
         rax_2 = (uint64_t)(uint32_t)2U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)arg1 >> (uint64_t)(uint32_t)2U);
@@ -1149,7 +1165,6 @@ L2: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1303,7 +1318,6 @@ uint32_t fcn_401750(uint64_t arg0, uint64_t arg1, uint32_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1587,7 +1601,6 @@ L7: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1634,7 +1647,6 @@ uint32_t fcn_401b10(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1670,6 +1682,22 @@ uint64_t fcn_401b50(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x00401ba0
+FILE=tests/fixtures/hashes_gcc_x64_O2_stripped
+CMDS=aa; pdd @ 0x00401ba0
+EXPECT=<<EOF
+void fcn_401ba0(void)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 1 rendered, 6 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
 EOF
 RUN

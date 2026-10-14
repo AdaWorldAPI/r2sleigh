@@ -5,6 +5,7 @@ NAME=afl
 FILE=tests/fixtures/rv_O0g_stripped
 CMDS=afl
 EXPECT=<<EOF
+0x00001000    3     27 fcn.00001000
 0x00001070    1     10 sym.imp.__cxa_finalize
 0x00001080    1     10 sym.imp.strlen
 0x00001090    1     10 sym.imp.__stack_chk_fail
@@ -29,6 +30,37 @@ EXPECT=<<EOF
 0x000014b5   10    108 fcn.000014b5
 0x00001521    1     40 fcn.00001521
 0x00001549    6    640 fcn.00001549
+0x000017cc    1     13 fcn.000017cc
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=0x00001000
+FILE=tests/fixtures/rv_O0g_stripped
+CMDS=aa; pdd @ 0x00001000
+EXPECT=<<EOF
+uint64_t fcn_1000(void)
+{
+    uint64_t rax_1;
+    uint64_t rax_2;
+    uint64_t rax_3;
+
+    /* r2dec proof: no individual construct is marked; 22 source obligations: 12 rendered, 10 elided, 0 refused; 6 statements rendered */
+    {
+        rax_1 = r2sleigh_load_u64((void*)(uint64_t)0x3fe8U);
+        if ((uint8_t)((uint64_t)rax_1 == (uint64_t)0U)) {
+            rax_3 = rax_1;
+        } else {
+            rax_2 = ((uint64_t(*)(void))(uint64_t)rax_1)();
+            rax_3 = rax_2;
+        }
+        {
+            return (uint64_t)rax_3;
+        }
+    }
+}
+
 EOF
 EXPECT_ERR=<<EOF
 EOF
@@ -42,7 +74,6 @@ EXPECT=<<EOF
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -55,7 +86,6 @@ extern uint64_t strlen(const char*);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -68,7 +98,6 @@ extern void __stack_chk_fail(void);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -81,7 +110,6 @@ extern int32_t printf(const char*, ...);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -94,7 +122,6 @@ extern void* memcpy(void*, const void*, uint64_t);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -120,7 +147,6 @@ void entry0(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -153,7 +179,6 @@ uint64_t fcn_10f0(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -193,7 +218,6 @@ uint64_t entry_fini0(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -228,7 +252,6 @@ uint64_t entry_init0(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -238,7 +261,7 @@ CMDS=aa; pdd @ 0x000011a9
 EXPECT=<<EOF
 uint32_t fcn_11a9(uint32_t arg0, uint32_t arg1)
 {
-    /* r2dec proof: no individual construct is marked; 10 source obligations: 3 rendered, 7 elided, 0 refused; 1 statements rendered */
+    /* r2dec proof: no individual construct is marked; 10 source obligations: 3 rendered, 7 elided, 0 refused; 1 statements rendered; the result's second register is open: no call read decides it */
     {
         return (uint32_t)((uint32_t)arg1 + (uint32_t)arg0);
     }
@@ -246,7 +269,6 @@ uint32_t fcn_11a9(uint32_t arg0, uint32_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -281,7 +303,6 @@ uint32_t fcn_11c1(uint32_t* arg0, uint32_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -349,7 +370,6 @@ L1: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -384,7 +404,6 @@ uint32_t fcn_1277(uint64_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -451,7 +470,6 @@ uint64_t fcn_12a8(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -500,7 +518,6 @@ double fcn_12ef(uint64_t* arg0, uint32_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -529,7 +546,6 @@ uint64_t fcn_1362(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -543,7 +559,7 @@ uint32_t fcn_1391(uint32_t arg0)
     uint32_t tmp_lane_13cf_0_7_1;
     uint32_t tmp_lane_13cf_8_b_1;
 
-    /* r2dec proof: no individual construct is marked; 32 source obligations: 24 rendered, 8 elided, 0 refused; 10 statements rendered */
+    /* r2dec proof: no individual construct is marked; 32 source obligations: 24 rendered, 8 elided, 0 refused; 10 statements rendered; the result's second register is open: no call read decides it */
     {
         stack_m12_1 = 0;
         for (; ; ) {
@@ -565,7 +581,6 @@ uint32_t fcn_1391(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -582,7 +597,7 @@ uint64_t fcn_13e3(uint8_t* arg0, uint64_t arg1, uint64_t arg2)
     uint64_t stack_m16_2;
     uint64_t stack_m16_1;
 
-    /* r2dec proof: no individual construct is marked; 39 source obligations: 26 rendered, 13 elided, 0 refused; 6 statements rendered; 2 callee prototypes supplied by the source */
+    /* r2dec proof: no individual construct is marked; 39 source obligations: 26 rendered, 13 elided, 0 refused; 6 statements rendered; 2 callee prototypes supplied by the source; the result's second register is open: no call read decides it */
     {
         rax_2 = strlen((const char*)arg1);
         stack_m16_2 = rax_2;
@@ -597,7 +612,6 @@ uint64_t fcn_13e3(uint8_t* arg0, uint64_t arg1, uint64_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -611,7 +625,7 @@ uint32_t fcn_144c(uint32_t arg0)
     uint16_t tmp_lane_144c_b_3_1;
     uint64_t rax_2;
 
-    /* r2dec proof: no individual construct is marked; 17 source obligations: 10 rendered, 7 elided, 0 refused; 4 statements rendered */
+    /* r2dec proof: no individual construct is marked; 17 source obligations: 10 rendered, 7 elided, 0 refused; 4 statements rendered; the result's second register is open: no call read decides it */
     {
         rax_1 = (uint64_t)(uint32_t)arg0;
         tmp_lane_144c_b_3_1 = (uint16_t)(int8_t)((uint32_t)arg0 >> 0U);
@@ -622,7 +636,6 @@ uint32_t fcn_144c(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -634,7 +647,7 @@ uint32_t fcn_146d(uint32_t arg0, uint8_t arg1)
 {
     uint8_t tmp_63380_1;
 
-    /* r2dec proof: no individual construct is marked; 17 source obligations: 10 rendered, 7 elided, 0 refused; 2 statements rendered */
+    /* r2dec proof: no individual construct is marked; 17 source obligations: 10 rendered, 7 elided, 0 refused; 2 statements rendered; the result's second register is open: no call read decides it */
     {
         tmp_63380_1 = (uint8_t)((uint32_t)arg1 & (uint32_t)(uint8_t)31U);
         return (uint32_t)((uint32_t)((uint32_t)tmp_63380_1 >= (uint32_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)arg0 << (uint32_t)tmp_63380_1)) | (uint32_t)((uint32_t)(uint8_t)((uint32_t)(uint8_t)32U - (uint32_t)tmp_63380_1) >= (uint32_t)32U ? (uint32_t)0U : (uint32_t)((uint32_t)arg0 >> (uint32_t)(uint8_t)((uint32_t)(uint8_t)32U - (uint32_t)tmp_63380_1))));
@@ -643,7 +656,6 @@ uint32_t fcn_146d(uint32_t arg0, uint8_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -676,7 +688,6 @@ uint32_t fcn_1489(uint32_t arg0)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -735,7 +746,6 @@ L4: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -757,7 +767,6 @@ uint64_t fcn_1521(uint64_t arg0, uint32_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -823,7 +832,7 @@ uint32_t fcn_1549(uint32_t arg0, uint64_t* arg1)
     uint32_t tmp_lane_16f0_94_4d_1;
     _Alignas(16) uint8_t frame[248];
 
-    /* r2dec proof: 1 construct is marked below; 364 source obligations: 197 rendered, 95 elided, 0 refused, 5 compiler-inserted (assuming ub-free), 66 assumed (frame extent unproven), 1 residual; 106 statements rendered; 1 callee prototype supplied by the source */
+    /* r2dec proof: 1 construct is marked below; 364 source obligations: 197 rendered, 95 elided, 0 refused, 5 compiler-inserted (assuming ub-free), 66 assumed (frame extent unproven), 1 residual; 106 statements rendered; 1 callee prototype supplied by the source; the result's second register is open: no call read decides it */
     {
         r2sleigh_store_u32((void*)(uint64_t)(frame + 28U), (uint32_t)arg0);
         r2sleigh_store_u64((void*)(uint64_t)(frame + 16U), (uint64_t)arg1);
@@ -942,6 +951,22 @@ uint32_t fcn_1549(uint32_t arg0, uint64_t* arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
+EOF
+RUN
+
+NAME=0x000017cc
+FILE=tests/fixtures/rv_O0g_stripped
+CMDS=aa; pdd @ 0x000017cc
+EXPECT=<<EOF
+void fcn_17cc(void)
+{
+    /* r2dec proof: no individual construct is marked; 7 source obligations: 1 rendered, 6 elided, 0 refused; 1 statements rendered */
+    {
+        return;
+    }
+}
+
+EOF
+EXPECT_ERR=<<EOF
 EOF
 RUN

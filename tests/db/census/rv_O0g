@@ -64,7 +64,6 @@ uint64_t _init(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -76,7 +75,6 @@ EXPECT=<<EOF
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -89,7 +87,6 @@ extern uint64_t strlen(const char*);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -102,7 +99,6 @@ extern void __stack_chk_fail(void);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -115,7 +111,6 @@ extern int32_t printf(const char*, ...);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -128,7 +123,6 @@ extern void* memcpy(void*, const void*, uint64_t);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -154,7 +148,6 @@ void _start(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -187,7 +180,6 @@ uint64_t deregister_tm_clones(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -220,7 +212,6 @@ uint64_t register_tm_clones(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -262,7 +253,6 @@ uint64_t __do_global_dtors_aux(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -282,7 +272,6 @@ uint64_t frame_dummy(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -300,7 +289,6 @@ int32_t add(int32_t a, int32_t b)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -342,7 +330,6 @@ uint32_t sum_array(const uint32_t* v, int32_t n)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -410,7 +397,6 @@ L1: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -454,7 +440,6 @@ int32_t list_len(const struct node* n)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -521,7 +506,6 @@ int64_t mul_div(int64_t a, int64_t b)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -577,7 +561,6 @@ double avg(const double* v, int32_t n)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -606,7 +589,6 @@ int32_t fact(int32_t n)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -651,7 +633,6 @@ void fill(int32_t v)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -693,7 +674,6 @@ uint64_t copy_name(char* dst, const char* src, uint64_t cap)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -724,7 +704,6 @@ int16_t sext(int8_t x)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -745,7 +724,6 @@ uint32_t rotl(uint32_t x, int32_t r)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -785,7 +763,6 @@ int32_t bit_count(uint32_t x)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -854,7 +831,6 @@ L4: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -877,7 +853,6 @@ int32_t dispatch(int32_t (*fn)(int32_t, int32_t), int32_t a)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1069,7 +1044,6 @@ int32_t main(int32_t argc, char** argv)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1087,6 +1061,5 @@ void _fini(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN

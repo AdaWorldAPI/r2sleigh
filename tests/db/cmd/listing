@@ -26,7 +26,7 @@ EXPECT=<<EOF
             0x0040135d      0f1f00         nop dword [rax]
             0x00401360      b8c59d1c81     mov eax, 0x811c9dc5
             0x00401365      c3             ret
-            0x00401366      662e0f1f84..   nop word ptr cs:[rax + rax*0x1]
+            0x00401366      662e0f1f84..   nop word cs:[rax + rax]
             0x00401370      f30f1efa       endbr64
             0x00401374      48b8252322..   mov rax, -0x340d631b7bdddcdb
             0x0040137e      4885f6         test rsi, rsi
@@ -62,7 +62,7 @@ EXPECT=<<EOF
             0x0040103e      6690           nop
             0x00401040      f30f1efa       endbr64
             0x00401044      ff25b62f0000   jmp qword [reloc.__printf_chk]
-            0x0040104a      660f1f440000   nop word [rax + rax*0x1]
+            0x0040104a      660f1f440000   nop word [rax + rax]
             0x00401050      f30f1efa       endbr64
             0x00401054      4883ec08       sub rsp, 0x8
             0x00401058      be3d000000     mov esi, 0x3d
@@ -98,7 +98,7 @@ EXPECT=<<EOF
             0x00401548      0fb617         movzx edx, byte [rdi] ; loop: latches 0x40156d, exits 0x401576 (certified) ; induction rdi = rdi@entry, +0x1 per trip (certified) ; trips rsi@entry (solved)
             0x0040154b      31d0           xor eax, edx
             0x0040154d      ba08000000     mov edx, 0x8
-            0x00401552      660f1f440000   nop word [rax + rax*0x1]
+            0x00401552      660f1f440000   nop word [rax + rax]
             0x00401558      89c1           mov ecx, eax ; loop: latches 0x401558, exits 0x40156d (certified)
             0x0040155a      83e001         and eax, 0x1 ; defines rax in [0x0, 0x1] (decoded)
             0x0040155d      f7d8           neg eax
@@ -175,7 +175,7 @@ EXPECT=<<EOF
             0x00401975      4939fa         cmp r10, rdi
             0x00401978      758e           jne 0x401908
             0x0040197a      4183e007       and r8d, 0x7 ; defines r8 in [0x0, 0x7] (decoded)
-            0x0040197e      3e42ff24c5..   jmp qword ptr ds:[0x402020 + r8*0x8] ; switch table (8 cases) at 0x402020 (solved)
+            0x0040197e      3e42ff24c5..   jmp qword ds:[0x402020 + r8*0x8] ; switch table (8 cases) at 0x402020 (solved)
             ;-- case 7:                                                ; from 0x0040197e
             0x00401990      410fb67a06     movzx edi, byte [r10 + 0x6]
             0x00401995      48c1e730       shl rdi, 0x30
@@ -205,7 +205,7 @@ EXPECT=<<EOF
             0x004019dc      4809fe         or rsi, rdi
             ;-- case 0:                                                ; from 0x0040197e
             0x004019df      4831f1         xor rcx, rsi
-            0x004019e2      4a8d3c18       lea rdi, [rax + r11*0x1]
+            0x004019e2      4a8d3c18       lea rdi, [rax + r11]
             0x004019e6      49c1c30d       rol r11, 0xd
             0x004019ea      4801ca         add rdx, rcx
             0x004019ed      4889f8         mov rax, rdi
@@ -214,7 +214,7 @@ EXPECT=<<EOF
             0x004019f7      4831d1         xor rcx, rdx
             0x004019fa      48c1c020       rol rax, 0x20
             0x004019fe      4c01da         add rdx, r11
-            0x00401a01      488d3c08       lea rdi, [rax + rcx*0x1]
+            0x00401a01      488d3c08       lea rdi, [rax + rcx]
             0x00401a05      4c89d8         mov rax, r11
             0x00401a08      48c1c115       rol rcx, 0x15
             0x00401a0c      48c1c011       rol rax, 0x11

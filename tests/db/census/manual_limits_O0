@@ -59,7 +59,6 @@ uint32_t _struct_nested_array(void* arg0, uint32_t arg1, uint32_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -67,7 +66,15 @@ NAME=0x1000005d8
 FILE=tests/fixtures/manual_limits_O0
 CMDS=aa; pdd @ 0x1000005d8
 EXPECT=<<EOF
-uint32_t _out_param_parse(uint8_t* arg0, void* arg1)
+struct fcn_1000005d8_arg1 {
+    uint32_t f_0;
+    uint8_t _pad_4[4];
+    uint64_t f_8;
+    uint64_t f_10;
+    uint64_t f_18;
+};
+
+uint32_t _out_param_parse(uint8_t* arg0, struct fcn_1000005d8_arg1* arg1)
 {
     uint8_t tmp_25a00_1;
     uint64_t stack_m40_1;
@@ -85,7 +92,7 @@ uint32_t _out_param_parse(uint8_t* arg0, void* arg1)
     uint8_t tmp_26000_4;
     uint32_t stack_m56_1;
 
-    /* r2dec proof: no individual construct is marked; 121 source obligations: 118 rendered, 3 elided, 0 refused; 33 statements rendered */
+    /* r2dec proof: no individual construct is marked; 121 source obligations: 118 rendered, 3 elided, 0 refused; 33 statements rendered; 1 structure laid out from a parameter's accesses */
     {
         tmp_25a00_1 = r2sleigh_load_u8((void*)(uint64_t)arg0);
         if ((uint8_t)((uint32_t)((uint64_t)(int8_t)tmp_25a00_1 >> 0U) != (uint32_t)45U)) {
@@ -152,7 +159,6 @@ uint32_t _out_param_parse(uint8_t* arg0, void* arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -211,7 +217,6 @@ uint64_t _fnv_fold(uint8_t* arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -276,7 +281,6 @@ uint32_t _sparse_switch(uint32_t arg0, uint32_t arg1, uint32_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -401,7 +405,6 @@ L7: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -636,7 +639,6 @@ L17: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -699,7 +701,6 @@ uint64_t _mem_scan2(uint8_t* arg0, uint64_t arg1, uint8_t arg2, uint8_t arg3)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -884,7 +885,6 @@ uint64_t _main(uint32_t arg0, uint64_t* arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -897,6 +897,5 @@ extern void* memcpy(void*, const void*, uint64_t);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN

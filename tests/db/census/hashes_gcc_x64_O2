@@ -61,7 +61,6 @@ uint64_t _init(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -74,7 +73,6 @@ extern int32_t __printf_chk(int32_t, const char*, ...);
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -150,7 +148,6 @@ uint32_t fcn_401050(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -176,7 +173,6 @@ void _start(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -194,7 +190,6 @@ void _dl_relocate_static_pie(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -225,7 +220,6 @@ uint64_t deregister_tm_clones(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -256,7 +250,6 @@ uint64_t register_tm_clones(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -286,7 +279,6 @@ uint64_t __do_global_dtors_aux(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -306,7 +298,6 @@ uint64_t frame_dummy(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -351,7 +342,6 @@ uint64_t fnv1a32(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -398,7 +388,6 @@ uint64_t fnv1a64(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -443,7 +432,6 @@ uint64_t djb2(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -488,7 +476,6 @@ uint32_t sdbm(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -542,7 +529,6 @@ uint64_t adler32(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -600,7 +586,6 @@ uint64_t fletcher32(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -663,7 +648,6 @@ uint32_t crc32_bitwise(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1051,7 +1035,6 @@ uint64_t crc32_init(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1100,7 +1083,6 @@ uint32_t crc32_table(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1135,7 +1117,7 @@ uint32_t murmur3_32(uint8_t* arg0, uint64_t arg1, uint32_t arg2)
     uint32_t tmp_lane_4016fe_3f_35_1;
     uint32_t tmp_lane_4016fe_7a_40_1;
 
-    /* r2dec proof: no individual construct is marked; 121 source obligations: 116 rendered, 5 elided, 0 refused; 42 statements rendered */
+    /* r2dec proof: no individual construct is marked; 121 source obligations: 116 rendered, 5 elided, 0 refused; 42 statements rendered; the result's second register is open: no call read decides it */
     {
         rcx_1 = (uint64_t)(uint32_t)arg2;
         rax_2 = (uint64_t)(uint32_t)2U >= (uint64_t)64U ? (uint64_t)0U : (uint64_t)((uint64_t)arg1 >> (uint64_t)(uint32_t)2U);
@@ -1205,7 +1187,6 @@ L2: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1359,7 +1340,6 @@ uint32_t xxhash32(uint64_t arg0, uint64_t arg1, uint32_t arg2)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1643,7 +1623,6 @@ L7: ;
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1692,7 +1671,6 @@ uint32_t pearson(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1728,7 +1706,6 @@ uint64_t combined(uint64_t arg0, uint64_t arg1)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
 
@@ -1746,6 +1723,5 @@ void _fini(void)
 
 EOF
 EXPECT_ERR=<<EOF
-r2s: unknown command 'aa'
 EOF
 RUN
