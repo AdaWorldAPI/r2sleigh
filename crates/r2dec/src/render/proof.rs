@@ -73,7 +73,7 @@ pub(crate) fn note_unproven_constructs(
     radare2_variadic_format_counts: usize,
     radare2_prototypes: usize,
     radare2_local_names: usize,
-    (unassigned, open_second_result): (&[UnassignedRead], bool),
+    (unassigned, open_second_result, laid_out): (&[UnassignedRead], bool, usize),
 ) {
     let rendered_nothing = func.body.is_empty();
     // Each residual is a construct the rendering says it did not prove, and
@@ -162,6 +162,17 @@ pub(crate) fn note_unproven_constructs(
     }
     if open_second_result {
         detail.push_str("; the result's second register is open: no call read decides it");
+    }
+    // A layout the accesses prove, spelled as a structure no declaration states (doc/adr-aggregates.md).
+    match laid_out {
+        0 => {}
+        1 => detail.push_str("; 1 structure laid out from a parameter's accesses"),
+        n => {
+            let _ = write!(
+                &mut detail,
+                "; {n} structures laid out from parameters' accesses"
+            );
+        }
     }
     if radare2_local_names > 0 {
         let noun = if radare2_local_names == 1 {

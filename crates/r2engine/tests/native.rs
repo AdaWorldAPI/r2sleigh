@@ -6158,6 +6158,10 @@ fn a_parameter_read_at_constant_offsets_points_to_the_structure_they_lay_out() {
         assert!(text.contains(&line), "no `{line}`:\n{text}");
     }
     assert!(text.contains(&format!("(struct {tag}* arg0)")), "{text}");
+    assert!(
+        text.contains("1 structure laid out from a parameter's accesses"),
+        "{text}"
+    );
 }
 
 /// One access at the parameter itself is a scalar pointer, fields of one width are an array's as

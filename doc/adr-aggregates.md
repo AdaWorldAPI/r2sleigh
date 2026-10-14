@@ -1,4 +1,4 @@
-# ADR: aggregates a function's accesses prove
+# ADR: structures laid out from a parameter's accesses
 
 Status: proposed 2026-10-14 (ROADMAP P9's first exit, T's exit).
 
@@ -28,6 +28,14 @@ graded output. They are measured and deleted under ROADMAP T.
 A pointer parameter whose every access is a constant-offset field is typed as
 a pointer to a structure laid out from those accesses. Any other parameter
 keeps today's rendering, and the proof line states the reason.
+
+What the accesses prove is the layout: which bytes are read and written, at
+which widths. Spelling that layout as a structure is a choice. A source that
+read a serialized `uint8_t *` buffer at the same offsets compiles to the same
+loads, so the structure states no semantics the accesses do not. Whether the
+source declared a structure is unprovable either way. The tag
+`fcn_<entry>_arg<slot>` marks the type as inferred, and the proof line says
+`1 structure laid out from a parameter's accesses`.
 
 ### The invariant
 
@@ -105,8 +113,9 @@ was deleted (doc/adr-access-syntax.md).
 
 ### Cost
 
-- r2ssa's reach fact is one forward pass over P's def-use closure,
-  `O(values + uses)`.
+- r2ssa's reach fact is one forward pass over each formal's def-use closure,
+  ending at load outputs, calls and stores: `O(P · (values + uses))` for P
+  formals, since closures that two formals share are walked once for each.
 - The layout is one pass over the function's certified accesses,
   `O(A log A)`, sorted by offset.
 - Neither runs a fixpoint.
@@ -141,3 +150,7 @@ became structures. Requiring two widths keeps them pointers.
 - Structures reached through a local or a global.
 - Arrays of structures (`shape_struct_array`).
 - Member spelling for locals.
+- Member spelling must stay alias-safe. A byte buffer read through
+  `arg0->f_0` is undefined behaviour under strict aliasing in the rendered
+  program, so P9b keeps the `r2sleigh_load_*` helpers under members, or
+  equivalence compiles with `-fno-strict-aliasing`.
