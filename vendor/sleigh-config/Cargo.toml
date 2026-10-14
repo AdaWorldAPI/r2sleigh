@@ -24,6 +24,7 @@ sleigh-compiler = { version = "2.0" }
 
 [features]
 # Processors vendored here (vendor/README.md)
+6502 = []
 AARCH64 = []
 ARM = []
 MIPS = []

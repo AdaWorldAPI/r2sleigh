@@ -34,3 +34,8 @@ lengths it used (`{0,1,2,3,4,7,8,15,16,17,31,32,61}`).
 - `cast_census.py` counts casts and narrowing reads in rendered C.
 - `arg_census.py` and `structure_census.py` measure the Rust tree itself
   (parameter counts, identifier lengths, loop nesting).
+
+## The 6502 conformance corpus
+
+`fetch-6502-suite.sh` fetches a separate, 6502-only corpus; see
+`README-6502.md`.
