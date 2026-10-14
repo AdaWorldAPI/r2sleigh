@@ -93,7 +93,7 @@
 /// simulate the `B` flag's push-time-only semantics (no BRK/interrupt
 /// handling is implemented at all), so bit 4 is simply carried as a normal
 /// bit with no special behaviour attached.
-mod flag {
+pub mod flag {
     pub const N: u8 = 0b1000_0000;
     pub const V: u8 = 0b0100_0000;
     pub const UNUSED: u8 = 0b0010_0000;
@@ -159,11 +159,11 @@ impl Mos6502 {
         }
     }
 
-    fn get_flag(&self, mask: u8) -> bool {
+    pub fn get_flag(&self, mask: u8) -> bool {
         self.p & mask != 0
     }
 
-    fn set_flag(&mut self, mask: u8, value: bool) {
+    pub fn set_flag(&mut self, mask: u8, value: bool) {
         if value {
             self.p |= mask;
         } else {
