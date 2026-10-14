@@ -38,7 +38,7 @@ z3 = "0.21.0"
 insta = "1"
 # The golden tests' harness (crates/r2s/tests/golden.rs) and its diffs.
 libtest-mimic = "0.8"
-similar = "2"
+similar = "3"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 crossterm = "0.29"
 # reedline and ratatui are on the one crossterm: one terminal library in the

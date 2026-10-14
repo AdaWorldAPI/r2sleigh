@@ -930,7 +930,7 @@ fn the_image_reports_what_the_container_states() {
 /// What the listing states beyond its text; the listings themselves are golden files in
 /// `tests/db/cmd/listing`.
 mod listing {
-    use super::{FNV1A32, Run, on, r2s};
+    use super::{Run, on};
     use std::path::PathBuf;
 
     fn at(fixture: &str, script: &str) -> Run {
