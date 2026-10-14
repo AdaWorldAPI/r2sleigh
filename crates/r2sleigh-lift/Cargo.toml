@@ -28,3 +28,7 @@ sleigh-config = { workspace = true, features = ["AARCH64"] }
 
 [lints]
 workspace = true
+
+[[example]]
+name = "win32_census"
+required-features = ["x86"]
