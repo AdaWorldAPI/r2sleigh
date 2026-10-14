@@ -144,6 +144,9 @@ pub struct DbStats {
 /// A held answer found good, with what it depends on.
 type Green<V> = (Rc<V>, Rc<[Dep]>);
 
+/// The `Newest` entries a held frame read, by query and key.
+type Pending = Vec<(TypeId, Rc<dyn Any>)>;
+
 /// What one running query has read, and which held answers' dependencies it has already taken.
 #[derive(Default)]
 struct Frame {
@@ -157,6 +160,8 @@ struct Frame {
     stopped: bool,
     /// Whether the query running is held: what it reads of a `Newest` query keeps its entry.
     held: bool,
+    /// The `Newest` entries this held frame read, kept until its answer is held or not.
+    pending: Pending,
 }
 
 #[derive(Clone)]
@@ -194,6 +199,8 @@ struct Entry<V> {
     /// Whether a held answer read it: a dropped value then keeps the entry, so that answer can
     /// still say it is good after a write.
     read_by_held: bool,
+    /// Held queries still running that read it: it keeps its entry until each ends.
+    pending: u32,
 }
 
 /// The answers to one query, by key.
@@ -211,6 +218,8 @@ trait AnyTable<I: Inputs> {
     /// The revision `key`'s answer last changed at, rechecking or
     /// recomputing it first; `None` where nothing is held for `key`.
     fn verify(&self, db: &Db<I>, key: &dyn Any) -> Result<Option<u64>, Cycle>;
+    /// A held query that read `key` ended, its answer `held` or not.
+    fn settle(&self, key: &dyn Any, held: bool);
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -303,37 +312,51 @@ impl<I: Inputs + 'static> Db<I> {
             false => typed.execute(self, key)?,
         };
         // An answer not held has no entry to depend on: it tainted the asker or handed it its reads.
-        if changed_at.is_some() {
-            self.record_query::<Q>(key);
-            let held = self.frames.borrow().last().is_some_and(|frame| frame.held);
-            if held
-                && Q::RETENTION == Retention::Newest
-                && let Some(entry) = typed.entries.borrow_mut().get_mut(key)
-            {
-                entry.read_by_held = true;
-            }
+        if changed_at.is_some()
+            && let Some(asked) = self.record_query::<Q>(key)
+            && Q::RETENTION == Retention::Newest
+            && let Some(frame) = self
+                .frames
+                .borrow_mut()
+                .last_mut()
+                .filter(|frame| frame.held)
+            && let Some(entry) = typed.entries.borrow_mut().get_mut(key)
+        {
+            entry.pending += 1;
+            frame.pending.push((TypeId::of::<Q>(), asked));
         }
         Ok(value)
     }
 
-    /// Record that the query running asked `Q` at `key`, once per frame.
-    fn record_query<Q: Query<I>>(&self, key: &Q::Key) {
+    /// Settle the `Newest` entries a held query read, now that it ended `held` or not.
+    fn settle(&self, pending: Pending, held: bool) {
+        for (table, key) in pending {
+            let table = self.tables.borrow().get(&table).map(Rc::clone);
+            if let Some(table) = table {
+                table.settle(key.as_ref(), held);
+            }
+        }
+    }
+
+    /// Record that the query running asked `Q` at `key`, once per frame: the key where first asked.
+    fn record_query<Q: Query<I>>(&self, key: &Q::Key) -> Option<Rc<dyn Any>> {
         let mut frames = self.frames.borrow_mut();
-        let Some(frame) = frames.last_mut() else {
-            return;
-        };
+        let frame = frames.last_mut()?;
         let asked = frame
             .asked
             .entry(TypeId::of::<Q>())
             .or_insert_with(|| Box::new(BTreeSet::<Q::Key>::new()))
             .downcast_mut::<BTreeSet<Q::Key>>()
             .expect("a query's asked keys are kept under its own type");
-        if asked.insert(key.clone()) {
-            frame.deps.push(Dep::Query {
-                table: TypeId::of::<Q>(),
-                key: Rc::new(key.clone()),
-            });
+        if !asked.insert(key.clone()) {
+            return None;
         }
+        let key: Rc<dyn Any> = Rc::new(key.clone());
+        frame.deps.push(Dep::Query {
+            table: TypeId::of::<Q>(),
+            key: Rc::clone(&key),
+        });
+        Some(key)
     }
 
     /// `Q`'s answer at `key` where held and good; never computes, and records the answer's own dependencies, so no cycle closes.
@@ -373,12 +396,16 @@ impl<I: Inputs + 'static> Db<I> {
             if running.contains(&key) {
                 continue;
             }
-            let (changed_at, read_by_held) = match entries.get(&key) {
+            let (changed_at, read_by_held, pending) = match entries.get(&key) {
                 Some(held) if held.verified_at == now && held.value.is_some() => continue,
                 Some(held) if held.value.as_deref() == Some(&value) => {
-                    (held.changed_at, held.read_by_held)
+                    (held.changed_at, held.read_by_held, held.pending)
                 }
-                held => (now, held.is_some_and(|held| held.read_by_held)),
+                held => (
+                    now,
+                    held.is_some_and(|held| held.read_by_held),
+                    held.map_or(0, |held| held.pending),
+                ),
             };
             entries.insert(
                 key.clone(),
@@ -388,6 +415,7 @@ impl<I: Inputs + 'static> Db<I> {
                     verified_at: now,
                     changed_at,
                     read_by_held,
+                    pending,
                 },
             );
             typed.bound(&mut entries, &key);
@@ -416,13 +444,13 @@ struct Running<'a, I: Inputs + 'static, K: Ord> {
 }
 
 impl<I: Inputs + 'static, K: Ord> Running<'_, I, K> {
-    /// What the query read, and whether it read a stopped answer.
-    fn finish(mut self) -> (Vec<Dep>, bool) {
+    /// What the query read, whether it read a stopped answer, and the `Newest` entries it holds.
+    fn finish(mut self) -> (Vec<Dep>, bool, Pending) {
         if let Some(key) = self.key.take() {
             self.running.borrow_mut().remove(&key);
         }
         let frame = self.db.frames.borrow_mut().pop().unwrap_or_default();
-        (coalesced(frame.deps), frame.stopped)
+        (coalesced(frame.deps), frame.stopped, frame.pending)
     }
 }
 
@@ -506,7 +534,7 @@ impl<Q: Query<I>, I: Inputs + 'static> Table<Q, I> {
             return;
         };
         match entries.get_mut(&previous) {
-            Some(entry) if entry.read_by_held => entry.value = None,
+            Some(entry) if entry.read_by_held || entry.pending > 0 => entry.value = None,
             Some(_) => {
                 entries.remove(&previous);
             }
@@ -583,7 +611,7 @@ impl<Q: Query<I>, I: Inputs + 'static> Table<Q, I> {
             key: Some(key.clone()),
         };
         let value = Q::compute(db, key);
-        let (deps, tainted) = frame.finish();
+        let (deps, tainted, mut pending) = frame.finish();
         self.count(|stats| stats.computed += 1);
         db.stats.borrow_mut().computed += 1;
         let mut entries = self.entries.borrow_mut();
@@ -593,15 +621,22 @@ impl<Q: Query<I>, I: Inputs + 'static> Table<Q, I> {
         };
         if hold != Hold::Held {
             entries.remove(key);
+            drop(entries);
+            // A held asker reads what this read, so the entries wait on it; else none is held.
             if let Some(asker) = db.frames.borrow_mut().last_mut() {
                 asker.stopped |= hold == Hold::Stopped;
                 asker.deps.extend(deps);
+                if asker.held {
+                    asker.pending.append(&mut pending);
+                }
             }
+            db.settle(pending, false);
             return Ok((Rc::new(value), None));
         }
         let now = db.inputs.byte_revision();
         let old = entries.remove(key);
         let read_by_held = old.as_ref().is_some_and(|old| old.read_by_held);
+        let old_pending = old.as_ref().map_or(0, |old| old.pending);
         let (value, changed_at) = match old {
             Some(Entry {
                 value: Some(old),
@@ -621,9 +656,12 @@ impl<Q: Query<I>, I: Inputs + 'static> Table<Q, I> {
                 verified_at: now,
                 changed_at,
                 read_by_held,
+                pending: old_pending,
             },
         );
         self.bound(&mut entries, key);
+        drop(entries);
+        db.settle(pending, true);
         Ok((value, Some(changed_at)))
     }
 }
@@ -640,6 +678,22 @@ impl<Q: Query<I>, I: Inputs + 'static> AnyTable<I> for Table<Q, I> {
         match self.fresh(db, key)? {
             Some(changed_at) => Ok(Some(changed_at)),
             None => self.execute(db, key).map(|(_, changed_at)| changed_at),
+        }
+    }
+
+    fn settle(&self, key: &dyn Any, held: bool) {
+        let key = key
+            .downcast_ref::<Q::Key>()
+            .expect("a pending key is its query's key type");
+        let mut entries = self.entries.borrow_mut();
+        let Some(entry) = entries.get_mut(key) else {
+            return;
+        };
+        entry.pending = entry.pending.saturating_sub(1);
+        entry.read_by_held |= held;
+        // A dropped value nothing held read leaves no entry, as `bound` would have left none.
+        if entry.pending == 0 && !entry.read_by_held && entry.value.is_none() {
+            entries.remove(key);
         }
     }
 
@@ -875,6 +929,37 @@ mod tests {
         assert_eq!(db.changed_at::<Doubled>(&4), None, "nothing held read it");
         assert_eq!(*db.get::<Quadrupled>(&7).unwrap(), 4);
         assert_eq!(*db.get::<Doubled>(&8).unwrap(), 2);
+        assert!(db.changed_at::<Doubled>(&7).is_some(), "Quadrupled read it");
+    }
+
+    /// A held query whose every answer is transient, reading a doubled byte, and at an odd key a
+    /// quadrupled one, which is held, beneath it.
+    struct Unheld;
+    impl Query<Memory> for Unheld {
+        type Key = u64;
+        type Value = u16;
+        const NAME: &'static str = "unheld";
+        const RETENTION: Retention = Retention::Held;
+        fn compute(db: &Db<Memory>, at: &u64) -> u16 {
+            let doubled = *db.get::<Doubled>(at).expect("acyclic");
+            match at % 2 {
+                1 => *db.get::<Quadrupled>(at).expect("acyclic"),
+                _ => doubled,
+            }
+        }
+        fn hold(_: &u16) -> Hold {
+            Hold::Transient
+        }
+    }
+
+    /// What a held query read keeps its entry only where the answer is held, its own or one beneath.
+    #[test]
+    fn an_answer_held_by_nothing_keeps_no_entry_it_read() {
+        let db = Db::new(Memory::new(vec![1; 16]));
+        assert_eq!(*db.get::<Unheld>(&6).unwrap(), 2);
+        assert_eq!(*db.get::<Unheld>(&7).unwrap(), 4);
+        assert_eq!(*db.get::<Doubled>(&8).unwrap(), 2);
+        assert_eq!(db.changed_at::<Doubled>(&6), None, "nothing held read it");
         assert!(db.changed_at::<Doubled>(&7).is_some(), "Quadrupled read it");
     }
 
