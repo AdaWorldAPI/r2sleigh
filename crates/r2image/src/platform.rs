@@ -16,7 +16,7 @@ use object::read::elf::{ElfFile, FileHeader, ProgramHeader};
 use crate::{Libc, PlatformEvidence};
 
 /// Bionic's identification note: `Android`, type 1, the API level it targets.
-const NT_ANDROID_TYPE_IDENT: u32 = 1;
+const NT_ANDROID_TYPE_IDENT: elf::NoteType = elf::NoteType(1);
 
 /// Everything this file states about its C library.
 pub(crate) fn evidence(file: &object::File<'_>) -> BTreeSet<PlatformEvidence> {
@@ -35,7 +35,7 @@ fn of<'data, E: FileHeader, R: object::ReadRef<'data>>(
     let mut found = BTreeSet::new();
     let os_abi = file.elf_header().e_ident().os_abi;
     if os_abi != elf::ELFOSABI_NONE {
-        found.insert(PlatformEvidence::OsAbi(os_abi));
+        found.insert(PlatformEvidence::OsAbi(os_abi.0));
     }
     for header in file.elf_program_headers() {
         if let Ok(Some(path)) = header.interpreter(endian, data)
@@ -54,7 +54,7 @@ fn of<'data, E: FileHeader, R: object::ReadRef<'data>>(
                 (elf::ELF_NOTE_GNU, elf::NT_GNU_ABI_TAG) => note
                     .desc()
                     .first_chunk::<4>()
-                    .map(|os| endian.read_u32_bytes(*os))
+                    .map(|os| endian.read_u32(*os))
                     .filter(|os| *os == elf::ELF_NOTE_OS_LINUX)
                     .map(|_| Libc::Glibc),
                 _ => None,

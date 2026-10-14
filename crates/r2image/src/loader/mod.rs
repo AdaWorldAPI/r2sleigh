@@ -63,14 +63,13 @@ pub(crate) fn read(
 pub(crate) fn sealed(file: &object::File<'_>) -> Vec<Range<u64>> {
     use object::read::ObjectSegment as _;
     use object::read::elf::ProgramHeader as _;
-    const SG_READ_ONLY: u32 = 0x10;
     let ranges = match file {
         object::File::Elf32(elf) => relro(elf),
         object::File::Elf64(elf) => relro(elf),
         object::File::MachO32(_) | object::File::MachO64(_) => file
             .segments()
             .filter(|segment| {
-                matches!(segment.flags(), object::SegmentFlags::MachO { flags, .. } if flags & SG_READ_ONLY != 0)
+                matches!(segment.flags(), object::SegmentFlags::MachO { flags, .. } if flags.contains(object::macho::SG_READ_ONLY))
             })
             .map(|segment| written(segment.address(), segment.size()))
             .collect(),
@@ -266,7 +265,7 @@ fn thunk_count<Pe: ImageNtHeaders>(mut thunks: object::read::pe::ImportThunkList
 }
 
 /// How many bytes a PE base relocation of this type rewrites.
-fn based_width(typ: u16) -> u64 {
+fn based_width(typ: object::pe::BaseRelocationType) -> u64 {
     use object::pe;
     match typ {
         pe::IMAGE_REL_BASED_ABSOLUTE => 0,

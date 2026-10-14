@@ -306,9 +306,8 @@ where
 /// ELF says so outright with `SHF_ALLOC`. The other formats have no section a
 /// loader ignores in the same way, so a section they declare is mapped.
 fn section_is_loaded<'a>(section: &impl object::read::ObjectSection<'a>) -> bool {
-    const SHF_ALLOC: u64 = 0x2;
     match section.flags() {
-        object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
+        object::SectionFlags::Elf { sh_flags, .. } => sh_flags.contains(object::elf::SHF_ALLOC),
         _ => true,
     }
 }
@@ -324,8 +323,8 @@ fn section_is_loaded<'a>(section: &impl object::read::ObjectSection<'a>) -> bool
 fn states_instructions<'a>(section: &impl object::read::ObjectSection<'a>) -> bool {
     use object::macho::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
     match section.flags() {
-        object::SectionFlags::MachO { flags } => {
-            flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+        object::SectionFlags::MachO { flags, .. } => {
+            flags.intersects(S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS)
         }
         _ => section.kind() == object::SectionKind::Text,
     }
@@ -475,7 +474,7 @@ impl Image {
                 let (file_offset, file_size) = held(section.file_range().unwrap_or((0, 0)));
                 let vaddr = placed(&section);
                 let loaded = section_is_loaded(&section);
-                let stated = section_statement(&file, &section);
+                let stated = section_statement(&section);
                 Section {
                     index: section.index().0,
                     name: section.name().unwrap_or_default().to_owned(),
@@ -576,10 +575,10 @@ impl Image {
                     && address & 1 == 1,
                 binding: symbol_binding(&symbol),
                 visibility: match symbol.flags() {
-                    object::SymbolFlags::Elf { st_other, .. } => match st_other & 3 {
-                        1 => Visibility::Internal,
-                        2 => Visibility::Hidden,
-                        3 => Visibility::Protected,
+                    object::SymbolFlags::Elf { st_other, .. } => match st_other.visibility() {
+                        object::elf::STV_INTERNAL => Visibility::Internal,
+                        object::elf::STV_HIDDEN => Visibility::Hidden,
+                        object::elf::STV_PROTECTED => Visibility::Protected,
                         _ => Visibility::Default,
                     },
                     _ => Visibility::Default,
@@ -1165,33 +1164,16 @@ fn base_address(file: &object::File<'_>, segments: &[Segment]) -> u64 {
 }
 
 /// A section's type and flags as its format numbers them.
-fn section_statement(
-    file: &object::File<'_>,
-    section: &object::read::Section<'_, '_>,
-) -> SectionStatement {
-    use object::read::elf::SectionHeader as _;
-    let elf_type = |index: object::SectionIndex| match file {
-        object::File::Elf32(elf) => elf
-            .elf_section_table()
-            .section(index)
-            .ok()
-            .map(|header| header.sh_type(elf.endian())),
-        object::File::Elf64(elf) => elf
-            .elf_section_table()
-            .section(index)
-            .ok()
-            .map(|header| header.sh_type(elf.endian())),
-        _ => None,
-    };
+fn section_statement(section: &object::read::Section<'_, '_>) -> SectionStatement {
     match section.flags() {
-        object::SectionFlags::Elf { sh_flags } => SectionStatement::Elf {
-            sh_type: elf_type(section.index()).unwrap_or_default(),
-            sh_flags,
+        object::SectionFlags::Elf { sh_type, sh_flags } => SectionStatement::Elf {
+            sh_type: sh_type.0,
+            sh_flags: sh_flags.0,
         },
-        object::SectionFlags::MachO { flags } => SectionStatement::MachO { flags },
-        object::SectionFlags::Coff { characteristics } => {
-            SectionStatement::Coff { characteristics }
-        }
+        object::SectionFlags::MachO { flags, .. } => SectionStatement::MachO { flags: flags.0 },
+        object::SectionFlags::Coff { characteristics } => SectionStatement::Coff {
+            characteristics: characteristics.0,
+        },
         _ => SectionStatement::Unstated,
     }
 }
@@ -1199,11 +1181,11 @@ fn section_statement(
 /// A symbol's binding, as its table states it.
 fn symbol_binding(symbol: &object::read::Symbol<'_, '_>) -> Binding {
     match symbol.flags() {
-        object::SymbolFlags::Elf { st_info, .. } => match st_info >> 4 {
-            0 => Binding::Local,
-            1 => Binding::Global,
-            2 => Binding::Weak,
-            other => Binding::Other(other),
+        object::SymbolFlags::Elf { st_info, .. } => match st_info.st_bind() {
+            object::elf::STB_LOCAL => Binding::Local,
+            object::elf::STB_GLOBAL => Binding::Global,
+            object::elf::STB_WEAK => Binding::Weak,
+            other => Binding::Other(other.0),
         },
         _ if symbol.is_weak() => Binding::Weak,
         _ if symbol.is_local() => Binding::Local,
@@ -1214,15 +1196,15 @@ fn symbol_binding(symbol: &object::read::Symbol<'_, '_>) -> Binding {
 /// What a loaded section permits, as its own flags state it.
 fn section_permissions(flags: object::SectionFlags) -> Permissions {
     match flags {
-        object::SectionFlags::Elf { sh_flags } => Permissions {
+        object::SectionFlags::Elf { sh_flags, .. } => Permissions {
             read: true,
-            write: sh_flags & 0x1 != 0,
-            execute: sh_flags & 0x4 != 0,
+            write: sh_flags.contains(object::elf::SHF_WRITE),
+            execute: sh_flags.contains(object::elf::SHF_EXECINSTR),
         },
         object::SectionFlags::Coff { characteristics } => Permissions {
-            read: characteristics & 0x4000_0000 != 0,
-            write: characteristics & 0x8000_0000 != 0,
-            execute: characteristics & 0x2000_0000 != 0,
+            read: characteristics.contains(object::pe::IMAGE_SCN_MEM_READ),
+            write: characteristics.contains(object::pe::IMAGE_SCN_MEM_WRITE),
+            execute: characteristics.contains(object::pe::IMAGE_SCN_MEM_EXECUTE),
         },
         _ => Permissions::RX,
     }
@@ -1231,21 +1213,21 @@ fn section_permissions(flags: object::SectionFlags) -> Permissions {
 fn map_permissions(flags: object::SegmentFlags) -> Permissions {
     match flags {
         object::SegmentFlags::Elf { p_flags, .. } => Permissions {
-            read: p_flags & 0x4 != 0,
-            write: p_flags & 0x2 != 0,
-            execute: p_flags & 0x1 != 0,
+            read: p_flags.contains(object::elf::PF_R),
+            write: p_flags.contains(object::elf::PF_W),
+            execute: p_flags.contains(object::elf::PF_X),
         },
         object::SegmentFlags::MachO { initprot, .. } => Permissions {
-            read: initprot & 0x1 != 0,
-            write: initprot & 0x2 != 0,
-            execute: initprot & 0x4 != 0,
+            read: initprot.contains(object::macho::VM_PROT_READ),
+            write: initprot.contains(object::macho::VM_PROT_WRITE),
+            execute: initprot.contains(object::macho::VM_PROT_EXECUTE),
         },
         object::SegmentFlags::Coff {
             characteristics, ..
         } => Permissions {
-            read: characteristics & 0x4000_0000 != 0,
-            write: characteristics & 0x8000_0000 != 0,
-            execute: characteristics & 0x2000_0000 != 0,
+            read: characteristics.contains(object::pe::IMAGE_SCN_MEM_READ),
+            write: characteristics.contains(object::pe::IMAGE_SCN_MEM_WRITE),
+            execute: characteristics.contains(object::pe::IMAGE_SCN_MEM_EXECUTE),
         },
         _ => Permissions::RX,
     }

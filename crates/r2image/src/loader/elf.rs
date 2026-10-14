@@ -36,19 +36,19 @@ pub(super) fn read(
 }
 
 /// Tags Android's linker reads beside the standard ones.
-const DT_ANDROID_REL: u32 = 0x6000_000f;
-const DT_ANDROID_RELSZ: u32 = 0x6000_0010;
-const DT_ANDROID_RELA: u32 = 0x6000_0011;
-const DT_ANDROID_RELASZ: u32 = 0x6000_0012;
-const DT_ANDROID_RELR: u32 = 0x6fff_e000;
-const DT_ANDROID_RELRSZ: u32 = 0x6fff_e001;
+const DT_ANDROID_REL: elf::DynamicTag = elf::DynamicTag(0x6000_000f);
+const DT_ANDROID_RELSZ: elf::DynamicTag = elf::DynamicTag(0x6000_0010);
+const DT_ANDROID_RELA: elf::DynamicTag = elf::DynamicTag(0x6000_0011);
+const DT_ANDROID_RELASZ: elf::DynamicTag = elf::DynamicTag(0x6000_0012);
+const DT_ANDROID_RELR: elf::DynamicTag = elf::DynamicTag(0x6fff_e000);
+const DT_ANDROID_RELRSZ: elf::DynamicTag = elf::DynamicTag(0x6fff_e001);
 /// The generic packed relative table, which `object` does not name.
-const DT_RELR: u32 = 36;
-const DT_RELRSZ: u32 = 35;
+const DT_RELR: elf::DynamicTag = elf::DynamicTag(36);
+const DT_RELRSZ: elf::DynamicTag = elf::DynamicTag(35);
 /// Android's section types for the same tables.
-const SHT_ANDROID_REL: u32 = 0x6000_0001;
-const SHT_ANDROID_RELA: u32 = 0x6000_0002;
-const SHT_ANDROID_RELR: u32 = 0x6fff_ff00;
+const SHT_ANDROID_REL: elf::SectionType = elf::SectionType(0x6000_0001);
+const SHT_ANDROID_RELA: elf::SectionType = elf::SectionType(0x6000_0002);
+const SHT_ANDROID_RELR: elf::SectionType = elf::SectionType(0x6fff_ff00);
 
 /// How a table spells its records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +75,7 @@ enum Symbols {
 
 /// One entry as its table encodes it: where its bytes are, where it writes,
 /// its type, its symbol's index and its addend.
-type Encoded = (Record, u64, u32, u32, Option<i64>);
+type Encoded = (Record, u64, elf::RelocationType, u32, Option<i64>);
 
 /// One table of relocation records, located in the file.
 #[derive(Debug, Clone, Copy)]
@@ -197,14 +197,12 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
     /// never exported to be replaced; and `DT_SYMBOLIC` binds a library's own
     /// references to its own definitions.
     fn binds_locally(&self, symbol: &RelocationSymbol) -> bool {
-        const DF_SYMBOLIC: u64 = 0x2;
-        const DF_1_PIE: u64 = 0x0800_0000;
         let endian = self.endian;
         let header = self.file.elf_header();
         let executable = header.e_type(endian) == elf::ET_EXEC
             || self
                 .tag(elf::DT_FLAGS_1)
-                .is_some_and(|flags| flags & DF_1_PIE != 0)
+                .is_some_and(|flags| elf::DynamicFlags1(flags).contains(elf::DF_1_PIE))
             || self
                 .file
                 .elf_program_headers()
@@ -213,7 +211,7 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
         let symbolic = self.tag(elf::DT_SYMBOLIC).is_some()
             || self
                 .tag(elf::DT_FLAGS)
-                .is_some_and(|flags| flags & DF_SYMBOLIC != 0);
+                .is_some_and(|flags| elf::DynamicFlags(flags).contains(elf::DF_SYMBOLIC));
         executable
             || symbolic
             || symbol.binding == Binding::Local
@@ -236,11 +234,11 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
         }))
     }
 
-    fn tag(&self, wanted: u32) -> Option<u64> {
+    fn tag(&self, wanted: elf::DynamicTag) -> Option<u64> {
         let entry = self
             .dynamic
             .iter()
-            .find(|entry| entry.tag32(self.endian) == Some(wanted))?;
+            .find(|entry| entry.tag(self.endian) == wanted)?;
         Some(entry.d_val(self.endian).into())
     }
 
@@ -271,7 +269,7 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
 
     /// The tables the dynamic table names, as the loader reads them: through the program headers, whatever sections remain.
     fn tabled(&self) -> Vec<View> {
-        let plt_rela = self.tag(elf::DT_PLTREL) == Some(u64::from(elf::DT_RELA));
+        let plt_rela = self.tag(elf::DT_PLTREL) == u64::try_from(elf::DT_RELA.0).ok();
         let tables = [
             (DT_RELR, DT_RELRSZ, Form::Relr, 0),
             (DT_ANDROID_RELR, DT_ANDROID_RELRSZ, Form::Relr, 0),
@@ -325,8 +323,7 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
                 SHT_ANDROID_RELA => Form::Packed { addend: true },
                 _ => continue,
             };
-            let flags: u64 = header.sh_flags(endian).into();
-            if flags & u64::from(elf::SHF_ALLOC) == 0 {
+            if !header.sh_flags(endian).contains(elf::SHF_ALLOC) {
                 continue;
             }
             let link = header.sh_link(endian);
@@ -361,7 +358,7 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
                 Some(Relocation {
                     vaddr,
                     record,
-                    ntype,
+                    ntype: ntype.0,
                     width,
                     addend,
                     symbol: symbol.map(Box::new),
@@ -416,7 +413,7 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
                             table: view.offset + offset,
                             index: bit,
                         };
-                        (record, vaddr, relative.unwrap_or(0), 0, None)
+                        (record, vaddr, relative.unwrap_or_default(), 0, None)
                     })
                     .collect()
             }
@@ -427,8 +424,11 @@ impl<'f, 'data, E: FileHeader, R: object::ReadRef<'data>> Elf<'f, 'data, E, R> {
                     .enumerate()
                     .map(|(index, (vaddr, info, addend))| {
                         let (symbol, typ) = match is_64 {
-                            true => ((info >> 32) as u32, info as u32),
-                            false => ((info >> 8) as u32, (info & 0xff) as u32),
+                            true => ((info >> 32) as u32, elf::RelocationType(info as u32)),
+                            false => (
+                                (info >> 8) as u32,
+                                elf::RelocationType((info & 0xff) as u32),
+                            ),
                         };
                         let record = Record {
                             table: view.offset,
@@ -537,7 +537,7 @@ fn hooks_of<'data, E: FileHeader, R: object::ReadRef<'data>>(
     let size = std::mem::size_of::<E::Dyn>() as u64;
     let entries = dynamic_entries(file).unwrap_or_default();
     let named = entries.iter().enumerate().filter_map(|(at, entry)| {
-        let kind = match entry.tag32(endian)? {
+        let kind = match entry.tag(endian) {
             elf::DT_INIT => EntryKind::InitHook,
             elf::DT_FINI => EntryKind::FiniHook,
             _ => return None,
@@ -568,7 +568,7 @@ fn dynamic_entries<'data, E: FileHeader, R: object::ReadRef<'data>>(
     // The loader reads to the terminating entry, whatever size the header claims.
     let end = entries
         .iter()
-        .position(|entry| entry.d_tag(endian).into() == 0);
+        .position(|entry| entry.d_tag(endian) == elf::DT_NULL);
     Some(&entries[..end.unwrap_or(entries.len())])
 }
 
@@ -585,17 +585,17 @@ fn extent(record: &Relocation, pointer: u64) -> u64 {
     }
 }
 
-fn binding(bind: u8) -> Binding {
+fn binding(bind: elf::SymbolBind) -> Binding {
     match bind {
         elf::STB_LOCAL => Binding::Local,
         elf::STB_GLOBAL => Binding::Global,
         elf::STB_WEAK => Binding::Weak,
-        other => Binding::Other(other),
+        other => Binding::Other(other.0),
     }
 }
 
-fn visibility(other: u8) -> Visibility {
-    match other & 3 {
+fn visibility(visibility: elf::SymbolVisibility) -> Visibility {
+    match visibility {
         elf::STV_INTERNAL => Visibility::Internal,
         elf::STV_HIDDEN => Visibility::Hidden,
         elf::STV_PROTECTED => Visibility::Protected,
@@ -604,7 +604,7 @@ fn visibility(other: u8) -> Visibility {
 }
 
 /// The machine's type number for a relative relocation, which a `RELR` word applies.
-fn relative_type(machine: u16) -> Option<u32> {
+fn relative_type(machine: elf::Machine) -> Option<elf::RelocationType> {
     Some(match machine {
         elf::EM_X86_64 => elf::R_X86_64_RELATIVE,
         elf::EM_386 => elf::R_386_RELATIVE,
@@ -620,9 +620,13 @@ fn relative_type(machine: u16) -> Option<u32> {
 ///
 /// A type this table does not name is still a write the loader makes, so it
 /// is kept, at the width of a pointer, with its computation unknown.
-fn applies(machine: u16, ntype: u32, pointer: u64) -> Option<(Applies, u64)> {
+fn applies(
+    machine: elf::Machine,
+    ntype: elf::RelocationType,
+    pointer: u64,
+) -> Option<(Applies, u64)> {
     use Applies as A;
-    if ntype == 0 {
+    if ntype.0 == 0 {
         return None;
     }
     let (applies, width) = match machine {

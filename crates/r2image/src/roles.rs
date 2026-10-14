@@ -34,14 +34,14 @@ impl Located {
             object::File::Elf64(elf) => located.elf(elf),
             _ => {}
         }
-        const SG_READ_ONLY: u32 = 0x10;
         for segment in file.segments() {
             if let object::SegmentFlags::MachO {
                 flags, initprot, ..
             } = segment.flags()
             {
                 let name = segment.name_bytes().ok().flatten().unwrap_or_default();
-                let writable = initprot & macho::VM_PROT_WRITE != 0 && flags & SG_READ_ONLY == 0;
+                let writable =
+                    initprot.contains(macho::VM_PROT_WRITE) && !flags.contains(macho::SG_READ_ONLY);
                 located.writable.push((name.to_vec(), writable));
             }
         }
@@ -82,13 +82,13 @@ impl Located {
             })
         };
         match section.flags() {
-            object::SectionFlags::Elf { .. } => {
+            object::SectionFlags::Elf { sh_type, .. } => {
                 let unwind =
                     within(&self.unwind) || self.eh_frame.is_some_and(|at| at >= start && at < end);
                 match section.kind() {
                     SectionKind::UninitializedData => SectionRole::ZeroFill,
                     SectionKind::Note | SectionKind::Metadata => SectionRole::LoaderMetadata,
-                    SectionKind::Elf(kind) => elf_kind(kind),
+                    SectionKind::Unknown => elf_kind(sh_type),
                     SectionKind::ReadOnlyString => SectionRole::Strings,
                     SectionKind::Data => SectionRole::Data,
                     SectionKind::ReadOnlyData if within(&self.interpreter) => {
@@ -99,14 +99,14 @@ impl Located {
                     _ => SectionRole::Other,
                 }
             }
-            object::SectionFlags::MachO { flags } => {
+            object::SectionFlags::MachO { flags, .. } => {
                 let segment = section
                     .segment_name_bytes()
                     .ok()
                     .flatten()
                     .unwrap_or_default();
                 let name = section.name_bytes().unwrap_or_default();
-                match flags & macho::SECTION_TYPE {
+                match flags.typ() {
                     macho::S_ZEROFILL | macho::S_GB_ZEROFILL => SectionRole::ZeroFill,
                     macho::S_CSTRING_LITERALS => SectionRole::Strings,
                     macho::S_THREAD_LOCAL_REGULAR
@@ -135,9 +135,9 @@ impl Located {
             }
             object::SectionFlags::Coff { characteristics } => {
                 use object::pe;
-                if characteristics & pe::IMAGE_SCN_CNT_UNINITIALIZED_DATA != 0 {
+                if characteristics.contains(pe::IMAGE_SCN_CNT_UNINITIALIZED_DATA) {
                     SectionRole::ZeroFill
-                } else if characteristics & pe::IMAGE_SCN_MEM_WRITE != 0 {
+                } else if characteristics.contains(pe::IMAGE_SCN_MEM_WRITE) {
                     SectionRole::Data
                 } else {
                     SectionRole::ReadOnlyData
@@ -155,16 +155,16 @@ impl Located {
 }
 
 /// What an ELF section type the `object` crate leaves unnamed holds.
-fn elf_kind(kind: u32) -> SectionRole {
-    const SHT_GNU_ATTRIBUTES: u32 = 0x6fff_fff5;
-    const SHT_GNU_HASH: u32 = 0x6fff_fff6;
-    const SHT_GNU_LIBLIST: u32 = 0x6fff_fff7;
-    const SHT_GNU_VERDEF: u32 = 0x6fff_fffd;
-    const SHT_GNU_VERNEED: u32 = 0x6fff_fffe;
-    const SHT_GNU_VERSYM: u32 = 0x6fff_ffff;
-    const SHT_ANDROID_REL: u32 = 0x6000_0001;
-    const SHT_ANDROID_RELA: u32 = 0x6000_0002;
-    const SHT_ANDROID_RELR: u32 = 0x6fff_ff00;
+fn elf_kind(kind: elf::SectionType) -> SectionRole {
+    const SHT_GNU_ATTRIBUTES: elf::SectionType = elf::SectionType(0x6fff_fff5);
+    const SHT_GNU_HASH: elf::SectionType = elf::SectionType(0x6fff_fff6);
+    const SHT_GNU_LIBLIST: elf::SectionType = elf::SectionType(0x6fff_fff7);
+    const SHT_GNU_VERDEF: elf::SectionType = elf::SectionType(0x6fff_fffd);
+    const SHT_GNU_VERNEED: elf::SectionType = elf::SectionType(0x6fff_fffe);
+    const SHT_GNU_VERSYM: elf::SectionType = elf::SectionType(0x6fff_ffff);
+    const SHT_ANDROID_REL: elf::SectionType = elf::SectionType(0x6000_0001);
+    const SHT_ANDROID_RELA: elf::SectionType = elf::SectionType(0x6000_0002);
+    const SHT_ANDROID_RELR: elf::SectionType = elf::SectionType(0x6fff_ff00);
     match kind {
         // Pointers to functions the loader or start-up calls: the program's data, which the loader writes.
         elf::SHT_INIT_ARRAY | elf::SHT_FINI_ARRAY | elf::SHT_PREINIT_ARRAY => SectionRole::Data,
