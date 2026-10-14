@@ -476,6 +476,31 @@ fn a_second_register_no_caller_reads_is_no_half_of_the_result() {
     assert!(!caller.contains("r2sleigh_residual"), "{caller}");
 }
 
+/// `PAIR`'s `f`, and a caller `call f; jmp 1f; 1: mov rax, rdx; ret` whose read of RDX is past the
+/// call's block.
+const SECOND_READ_PAST_A_JUMP: &[u8] = &[
+    0x48, 0x89, 0xf8, // 1000 mov rax, rdi
+    0x48, 0x89, 0xf2, // 1003 mov rdx, rsi
+    0xc3, // 1006 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1007 padding
+    0xe8, 0xeb, 0xff, 0xff, 0xff, // 1010 call 0x1000
+    0xeb, 0x00, // 1015 jmp 0x1017
+    0x48, 0x89, 0xd0, // 1017 mov rax, rdx
+    0xc3, // 101a ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 101b padding
+];
+
+/// A call whose scan ends before it touches the second register decides nothing of it: the half
+/// stays open, as with no call read.
+#[test]
+fn a_call_scanned_to_its_block_s_end_leaves_the_second_register_open() {
+    let functions = [("f", BASE, 7), ("caller", BASE + 0x10, 0x0b)];
+    let f = rendered(Literal::of_code(SECOND_READ_PAST_A_JUMP, &functions));
+    assert!(f.starts_with("uint64_t f("), "{f}");
+    assert!(f.contains("the result's second register is open"), "{f}");
+}
+
 /// `f` sets EDX to 1 or 2 on two paths that meet before `mov rax, rdi; ret`, and `caller` is
 /// `call f; mov rax, rdx; ret`.
 const PAIR_THROUGH_A_MERGE: &[u8] = &[

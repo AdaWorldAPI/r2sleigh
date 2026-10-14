@@ -1465,21 +1465,23 @@ fn recover_interface_inner(
         {
             let both =
                 || crate::liveout::FunctionLiveOut::compute(func, graph, &[low.slot(), high]);
-            match result_reads.map(|reads| reads.second) {
+            // A call whose scan ended before it touched the second register is no evidence either way.
+            match result_reads.map(|reads| (reads.second, reads.second_overwritten == reads.calls))
+            {
                 // One call reading the second register is evidence the value spans both: a call
                 // that reads only the first discards the high half.
-                Some(1..) => {
+                Some((1.., _)) => {
                     result = RecoveredFunctionResult::Pair {
                         low: low.slot(),
                         high,
                     };
                     candidate_live_out = both();
                 }
-                Some(0) => {}
+                Some((0, true)) => {}
                 // Read for a caller: the result stays the first register, the second is a carrier
                 // a reading call takes, and what feeds it is observed (its parameters are the
                 // call's).
-                None => {
+                Some((0, false)) | None => {
                     result_ambiguous = true;
                     result_carriers = Some(r2source::SourceResultCarriers {
                         integer: low.slot(),
