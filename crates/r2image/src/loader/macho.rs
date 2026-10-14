@@ -729,7 +729,7 @@ impl<'d> Macho<'d> {
         let Some(base) = base.map(|segment| segment.vmaddr) else {
             return;
         };
-        for (index, entry) in entries.chunks_exact(8).enumerate() {
+        for (index, entry) in entries.as_chunks::<8>().0.iter().enumerate() {
             let (Some(address), Some(info)) = (self.u32(entry, 0), self.u32(entry, 4)) else {
                 continue;
             };
@@ -1211,7 +1211,13 @@ mod tests {
         let mut found = Found::default();
         macho.stream(&stream, 0x100, Stream::Rebase, &mut found);
         assert_eq!(found.records.len(), (0x100 - 0x10) / 8);
-        assert_eq!(super::super::merged(found.ranges), [0x4010..0x4100]);
+        assert_eq!(
+            super::super::merged(found.ranges),
+            [std::ops::Range {
+                start: 0x4010,
+                end: 0x4100
+            }]
+        );
     }
 
     #[test]

@@ -1337,8 +1337,9 @@ pub(crate) fn collect_source_boundary_facts(
                 // the machine rather than from a prototype, so every argument
                 // found is a fixed one as far as anything here can tell.
                 boundary.variadic = Some(false);
-                boundary.fixed_argument_count =
-                    Some(convention.arguments.len()).filter(|_| convention.arguments_proven);
+                boundary.fixed_argument_count = convention
+                    .arguments_proven
+                    .then_some(convention.arguments.len());
                 boundary.arguments = convention.arguments;
                 // The convention's result is a guess about the caller's side; the callee's own proven
                 // result, where its statement carries one, is the callee's fact (CalleeStatement).

@@ -122,7 +122,7 @@ pub fn number_spans(body: &str) -> Vec<NumberSpan> {
         let start = at + found;
         let digits = body[start + 2..]
             .find(|c: char| !c.is_ascii_hexdigit())
-            .map_or(body.len() - start - 2, |end| end);
+            .unwrap_or(body.len() - start - 2);
         at = start + 2 + digits;
         let Ok(magnitude) = u64::from_str_radix(&body[start + 2..at], 16) else {
             continue;

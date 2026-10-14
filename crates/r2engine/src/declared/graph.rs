@@ -374,7 +374,7 @@ const fn integer_width(bits: u64) -> bool {
 
 /// The largest power of two dividing a scalar's width, and at least a byte.
 const fn natural_alignment(bits: u64) -> u64 {
-    let lowest = bits & bits.wrapping_neg();
+    let lowest = bits.isolate_lowest_one();
     if lowest < 8 { 8 } else { lowest }
 }
 

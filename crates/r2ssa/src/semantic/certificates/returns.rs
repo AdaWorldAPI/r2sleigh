@@ -61,10 +61,7 @@ pub(crate) fn collect_machine_return_control_certificates(
         // certificates giving different accounts of one instruction, and here
         // they give the same account.
         let mut absorbed = BTreeSet::new();
-        loop {
-            let Some(inst) = graph.def_inst(current) else {
-                break;
-            };
+        while let Some(inst) = graph.def_inst(current) {
             let Some(definition) = graph.inst(inst) else {
                 complete = false;
                 break;

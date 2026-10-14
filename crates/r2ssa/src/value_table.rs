@@ -102,7 +102,7 @@ impl ValueTable {
             .zip(&self.storage)
             .filter_map(|(var, storage)| Some((var, (*storage)?)))
             .collect::<Vec<_>>();
-        held.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        held.sort_unstable_by_key(|(a, _)| *a);
         held
     }
 

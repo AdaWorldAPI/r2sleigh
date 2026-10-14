@@ -53,7 +53,7 @@ pub fn enable_origin_sampling() {
 /// first, clearing what was collected.
 pub fn take_sampled_origins() -> Vec<(String, usize)> {
     let mut origins = SAMPLED.with_borrow_mut(|sampled| sampled.drain().collect::<Vec<_>>());
-    origins.sort_by(|left, right| right.1.cmp(&left.1));
+    origins.sort_by_key(|origin| std::cmp::Reverse(origin.1));
     origins
 }
 
