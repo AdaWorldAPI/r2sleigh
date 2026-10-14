@@ -1212,6 +1212,15 @@ impl SourceOwnedFunctionFacts {
         enriched.types.inferred_aggregates = (solved.aggregates.values())
             .map(|aggregate| (aggregate.tag.clone(), aggregate.definition.clone()))
             .collect();
+        enriched.types.parameter_structures = (solved.aggregates.iter())
+            .map(|(slot, aggregate)| {
+                let structure = crate::ParameterStructure {
+                    tag: aggregate.tag.clone(),
+                    fields: aggregate.fields.clone(),
+                };
+                (*slot, structure)
+            })
+            .collect();
         enriched.apply_return_type_fact(solved.returns.clone());
         // The types are final here; the projection the seal holds is built from them once.
         enriched.normalize_field_certificates_from_external_layout();

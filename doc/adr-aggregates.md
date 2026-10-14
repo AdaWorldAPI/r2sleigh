@@ -104,12 +104,27 @@ definition is emitted once before the function, as `render::tags` does for a
 declared tag. Accesses keep their byte-load spelling. That spelling is what
 the declared path renders today: `declarations.rs` asserts no `->`.
 
-Second exit (P9b): an access whose certified field matches its `(c, w)`
-lowers to `CExpr::PtrMember`, for declared and inferred aggregates alike. All
-or nothing per parameter: one access with no matching field keeps the byte
-spelling for every access through that parameter. `CExpr::PtrMember` exists
-in `ast.rs` and `codegen.rs`, and nothing lowers to it since legacy r2dec
-was deleted (doc/adr-access-syntax.md).
+Second exit (P9b, inferred aggregates, 2026-10-14): an access through a
+parameter that points to its inferred structure is spelled at the member's
+address, `r2sleigh_load_u16((void*)&arg0->f_2)`. r2types states each
+structure's member per accessed offset (`FunctionTypeFacts::parameter_structures`).
+r2dec joins it with r2ssa's `parameter_fields`, which names each access by
+its structured access id, and gives that access's canonical cell the member's
+address in place of the byte offset. The read or write stays the byte copy
+every cell uses. The address arithmetic is discharged as before, so the
+proof line does not move. All or nothing per parameter: one access with no
+member keeps the byte spelling for every access through that parameter. The
+gate is the parameter's rendered type, so a declaration that wins keeps the
+byte spelling. Declared aggregates need that check against the declared
+layout and are the next step.
+
+Aliasing and alignment: the accesses prove offsets and widths. They do not
+prove the effective type or the alignment of what the parameter points to:
+a serialized byte buffer read at the same offsets is indistinguishable. So no
+member lvalue is formed. `arg0->f_2` would assert both, and optimized C could
+then miscompile a valid program. The byte copy at the member's address
+asserts neither. Like every byte copy, it is spelled only for a
+little-endian target.
 
 ### Cost
 
@@ -150,7 +165,6 @@ became structures. Requiring two widths keeps them pointers.
 - Structures reached through a local or a global.
 - Arrays of structures (`shape_struct_array`).
 - Member spelling for locals.
-- Member spelling must stay alias-safe. A byte buffer read through
-  `arg0->f_0` is undefined behaviour under strict aliasing in the rendered
-  program, so P9b keeps the `r2sleigh_load_*` helpers under members, or
-  equivalence compiles with `-fno-strict-aliasing`.
+- Callers' declarations of an inferred structure parameter: a caller still
+  declares `uint64_t mixed_touch(uint64_t)` while the definition takes
+  `struct fcn_4017ac_arg0*`.

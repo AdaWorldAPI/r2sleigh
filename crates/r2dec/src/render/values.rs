@@ -34,6 +34,9 @@ pub(super) struct Values<'a> {
     /// The parameters declared at a type the source states other than their class's C type: a
     /// read converts it to the class.
     declared: Vec<bool>,
+    /// The structure member each cell term is, by term index: the accesses through a parameter
+    /// that points to its inferred structure.
+    members: Vec<Option<CExpr>>,
     /// The named values a statement written so far assigns: a read of any other is a residual.
     assigned: RefCell<Vec<bool>>,
     /// By instruction index: whether a statement assigns the instruction's output where it stands.
@@ -770,6 +773,7 @@ impl<'a> Values<'a> {
             readers,
             names: vec![None; graph.values.len()],
             declared: vec![false; graph.values.len()],
+            members: Vec::new(),
             assigned: RefCell::new(vec![false; graph.values.len()]),
             bound,
             frame: super::frame::Frame::of(artifact),
@@ -810,6 +814,60 @@ impl<'a> Values<'a> {
         Some(values)
     }
 
+    /// Each cell a parameter that points to its inferred structure addresses, as that member. All
+    /// or nothing per parameter: one access with no member keeps the byte spelling for every one.
+    fn members_of(
+        &self,
+        input: &RenderInput<'_>,
+        pointing: Vec<(usize, String, CExpr)>,
+    ) -> Vec<Option<CExpr>> {
+        let mut members = Vec::new();
+        // A member is read and written by a byte copy, which only a little-endian target matches.
+        if !self.little_endian {
+            return members;
+        }
+        let fields = &self.artifact.certificates().parameter_fields;
+        for (slot, tag, base) in pointing {
+            let Some(structure) = input.parameter_structures().get(&slot) else {
+                continue;
+            };
+            let (Some(definition), Ok(key)) = (
+                (structure.tag == tag)
+                    .then(|| input.inferred_aggregates().get(&tag))
+                    .flatten(),
+                u32::try_from(slot),
+            ) else {
+                continue;
+            };
+            let Some(r2ssa::ParameterFields::Constant(accesses)) = fields.get(&key) else {
+                continue;
+            };
+            let cells = accesses.iter().map(|access| {
+                let (_, name) = definition
+                    .members
+                    .get(*structure.fields.get(&access.offset)?)?;
+                let cell = self.roots.access(access.access)?.canonical;
+                let member = CExpr::PtrMember {
+                    base: Box::new(base.clone()),
+                    member: name.clone(),
+                };
+                Some((cell, CExpr::addr_of(member)))
+            });
+            let Some(cells) = cells.collect::<Option<Vec<_>>>() else {
+                continue;
+            };
+            if members.is_empty() {
+                members = vec![None; self.roots.arena().len()];
+            }
+            for (cell, address) in cells {
+                if let Some(at) = members.get_mut(cell.index()) {
+                    *at = Some(address);
+                }
+            }
+        }
+        members
+    }
+
     /// Parameters in their ABI order, then a local per bound value. A parameter the source declares
     /// a pointer is declared so, as the caller passes it, and read as the word its class is.
     fn declare(
@@ -818,6 +876,7 @@ impl<'a> Values<'a> {
         tags: &super::tags::Tags,
         parameters: Option<Vec<(u32, ValueId, MachineType)>>,
     ) {
+        let mut pointing = Vec::new();
         for (index, value, ty) in parameters.into_iter().flatten() {
             let class = terms::c_type(&ty).expect("a classed parameter has a C type");
             // A declared type is spelled as stated; an analysed one only where it is a pointer.
@@ -846,8 +905,14 @@ impl<'a> Values<'a> {
             );
             self.names[value.0 as usize] = Some((name, ty));
             self.assigned.get_mut()[value.0 as usize] = true;
+            if let CType::Pointer(pointee) = &c
+                && let CType::Struct(tag) = pointee.as_ref()
+            {
+                pointing.push((index as usize, tag.clone(), CExpr::Var(name)));
+            }
             self.params.push(CParam { ty: c, name });
         }
+        self.members = self.members_of(input, pointing);
         for inst in &self.graph.insts {
             let Some(output) = inst.output.filter(|_| self.bound[inst.id.0 as usize]) else {
                 continue;
@@ -937,6 +1002,7 @@ impl<'a> Values<'a> {
         let object = |object: ObjectId| self.object(object);
         let global = |at: u64, class: &MachineType, store: bool| self.global(at, class, store);
         let caller = |object: ObjectId, ty: &MachineType| self.caller_read(object, ty);
+        let member = |term: TermId| self.members.get(term.index()).cloned().flatten();
         read(&Spell {
             projection: &self.projection,
             arena: self.roots.arena(),
@@ -946,6 +1012,7 @@ impl<'a> Values<'a> {
             little_endian: self.little_endian,
             return_address: self.return_address.map(|object| (object, self.ptr_bits)),
             caller: &caller,
+            member: &member,
         })
     }
 
@@ -1765,7 +1832,13 @@ impl<'a> Values<'a> {
             Some(access) => {
                 let cell = arena.term(access.canonical);
                 let bytes = cell.ty.width_bits() / 8;
+                let member = self
+                    .members
+                    .get(access.canonical.index())
+                    .cloned()
+                    .flatten();
                 let address = match cell.kind {
+                    _ if member.is_some() => member?,
                     TermKind::Load { object, address } => {
                         self.spelling(|spell| spell.address(address, bytes, Some(object)))?
                     }

@@ -248,6 +248,14 @@ pub struct FunctionSignatureSpec {
     pub params: Vec<FunctionParamSpec>,
 }
 
+/// The structure a parameter points to as its accesses lay it out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParameterStructure {
+    pub tag: String,
+    /// The member each accessed offset is, by its index in the definition's members.
+    pub fields: BTreeMap<i64, usize>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CalleeArgEffect {
     pub read: bool,
@@ -474,6 +482,9 @@ pub struct FunctionTypeFacts {
     pub parameter_bases: BTreeMap<usize, r2source::Basis>,
     /// The structures this function's parameters' accesses lay out, by tag (doc/adr-aggregates.md).
     pub inferred_aggregates: BTreeMap<String, crate::AggregateDefinition>,
+    /// Each parameter that points to an inferred structure: its tag, and the member at each
+    /// accessed offset (doc/adr-aggregates.md).
+    pub parameter_structures: BTreeMap<usize, ParameterStructure>,
     pub callconv: Option<String>,
     pub noreturn: bool,
     pub known_function_signatures: HashMap<String, FunctionType>,
@@ -495,6 +506,9 @@ pub struct FunctionTypeFactInputs {
     pub merged_signature: Option<FunctionSignatureSpec>,
     pub parameter_bases: BTreeMap<usize, r2source::Basis>,
     pub inferred_aggregates: BTreeMap<String, crate::AggregateDefinition>,
+    /// Each parameter that points to an inferred structure: its tag, and the member at each
+    /// accessed offset (doc/adr-aggregates.md).
+    pub parameter_structures: BTreeMap<usize, ParameterStructure>,
     pub callconv: Option<String>,
     pub noreturn: bool,
     pub known_function_signatures: HashMap<String, FunctionType>,
@@ -544,6 +558,7 @@ impl FunctionTypeFacts {
             merged_signature: self.merged_signature,
             parameter_bases: self.parameter_bases,
             inferred_aggregates: self.inferred_aggregates,
+            parameter_structures: self.parameter_structures,
             callconv: self.callconv,
             noreturn: self.noreturn,
             known_function_signatures: self.known_function_signatures,
@@ -958,6 +973,7 @@ impl FunctionTypeFactsBuilder {
             mut merged_signature,
             parameter_bases,
             inferred_aggregates,
+            parameter_structures,
             callconv,
             noreturn,
             known_function_signatures,
@@ -985,6 +1001,7 @@ impl FunctionTypeFactsBuilder {
             merged_signature,
             parameter_bases,
             inferred_aggregates,
+            parameter_structures,
             callconv,
             noreturn,
             known_function_signatures,

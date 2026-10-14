@@ -61,7 +61,7 @@ pub use external::{ExternalField, ExternalStruct, ExternalTypeDb, normalize_exte
 pub use facts::{
     CalleeFact, CalleeLinkage, CalleeModelPolicyEvidence, CalleeReturnRelation,
     FieldAccessCertificate, FunctionParamSpec, FunctionSignatureSpec, FunctionType,
-    FunctionTypeFacts, SignatureCertificateSource,
+    FunctionTypeFacts, ParameterStructure, SignatureCertificateSource,
 };
 pub(crate) use function_facts::exact_source_return_type;
 pub use function_facts::{
