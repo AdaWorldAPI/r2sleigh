@@ -5,7 +5,9 @@ DecBench adapter (``tests/decbench/r2sleigh_raw.py``) -- ask the same question
 of the same shell: for each address, ``s <addr>; pddj``. This module is the one
 place that asks it, so the two cannot drift on how an answer is read.
 
-r2s is started once, ``r2s -q <binary>``, and fed one line per address on its
+r2s is started once, ``r2s -q <binary>``. Its first line is ``aa; ?e ANALYSED``,
+and an ``r2s:`` line before that acknowledgement declines every address. Then
+it is fed one line per address on its
 stdin, ``?e BEGIN<i>; s <addr>; pddj; ?e END<i>``, the next line only after the
 previous one's END marker has come back. r2s reads each stdin line as a script
 of its own, so one address's failed statement never touches the next, and the
@@ -52,6 +54,7 @@ from typing import Callable, Iterable
 
 BEGIN = "R2S_BATCH_BEGIN__"
 END = "R2S_BATCH_END__"
+ANALYSED = "R2S_BATCH_ANALYSED__"
 ERROR_PREFIX = "r2s: "
 
 
@@ -329,10 +332,29 @@ def _one_process(r2s, binary, addresses, first_index, command, parse, function_t
     deadline_used = startup_timeout
     ended = False
     started = time.monotonic()
-    # `aa` first, so each rendering reads its callers as an analysed session's does; it prints
-    # nothing, and its time is the startup's.
-    if not send("aa\n"):
-        ended = True
+    # `aa` first, so each rendering reads its callers as an analysed session's does. It prints
+    # nothing but its acknowledgement, and an `r2s:` line before that is a survey that failed.
+    analysed = send(f"aa; ?e {ANALYSED}\n")
+    while analysed:
+        remaining = startup_timeout - (time.monotonic() - started)
+        try:
+            if remaining <= 0:
+                raise queue.Empty
+            line = lines.get(timeout=remaining)
+        except queue.Empty:
+            timed_out = True
+            analysed = False
+            break
+        if line is None:
+            analysed = False
+            break
+        stripped = line.rstrip("\n")
+        tail = (tail + [stripped])[-6:]
+        if stripped.startswith(ERROR_PREFIX):
+            analysed = False
+        elif stripped.endswith(ANALYSED):
+            break
+    ended = not analysed
     for offset, address in enumerate(addresses if not ended else []):
         index = first_index + offset
         began = False
@@ -408,7 +430,7 @@ def _one_process(r2s, binary, addresses, first_index, command, parse, function_t
     ending = ending_of(returncode, timed_out, deadline_used)
     last = " | ".join(line for line in tail
                       if line and split_marker(line, BEGIN) is None
-                      and split_marker(line, END) is None)
+                      and split_marker(line, END) is None and not line.endswith(ANALYSED))
 
     consumed = len(answers)
     before = Answer(0, "crash")

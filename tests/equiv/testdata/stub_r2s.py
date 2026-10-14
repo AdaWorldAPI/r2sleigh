@@ -36,8 +36,9 @@ stand-in, never r2s, looks there.
 answer about another address). A fault named ``once-<kind>`` fires only in the
 first process that reaches it (tracked in ``$STUB_R2S_STATE``), so a restart
 can be told from a retry. As the whole mode, ``die-at-start`` makes the
-process abort before it runs any statement and ``cannot-open`` makes it say
-``r2s: ...`` and exit 1 the way r2s does on a file it cannot open.
+process abort before it runs any statement, ``cannot-open`` makes it say
+``r2s: ...`` and exit 1 the way r2s does on a file it cannot open, and
+``aa-fails`` makes ``aa`` fail the way a survey that cannot finish does.
 ``STUB_R2S_STARTUP_DELAY`` seconds pass before the first statement.
 """
 
@@ -166,7 +167,9 @@ class Shell:
         elif statement.startswith("s "):
             self.address = int(statement[2:], 0)
         elif statement == "aa":
-            pass
+            if os.environ.get("STUB_R2S_MODE") == "aa-fails":
+                print("r2s: the program could not be surveyed", file=sys.stderr, flush=True)
+                self.failed = True
         elif statement == "afl":
             # radare2's headerless layout: addr nbbs size name.
             for item in filter(None, os.environ.get("STUB_R2S_AFL", "").split(",")):
