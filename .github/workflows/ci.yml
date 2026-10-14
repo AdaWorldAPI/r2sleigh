@@ -93,7 +93,7 @@ jobs:
         run: |
           sudo nohup rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
             >/dev/null 2>&1 &
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install the toolchain the repository pins
         run: rustup toolchain install --profile minimal --component rustfmt,clippy
       # r2rewrite's rule proofs link Z3.
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install the toolchain the lints pin
         run: |
           channel="$(sed -n 's/^channel = "\(.*\)"/\1/p' tools/dylints/r2sleigh_lints/rust-toolchain)"
@@ -162,7 +162,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install the toolchain the repository pins
         run: rustup toolchain install --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -170,7 +170,7 @@ jobs:
           shared-key: ci-shell
       - name: Build
         run: cargo build --profile ci -p r2s --features sleigh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: r2s
           path: target/ci/r2s
@@ -182,7 +182,7 @@ jobs:
           mkdir -p target/count
           cargo build --profile ci -p r2s --features sleigh,alloc-count
           cp target/ci/r2s target/count/r2s
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: r2s-count
           path: target/count/r2s
@@ -199,8 +199,8 @@ jobs:
     needs: build
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: r2s
           path: target/ci
@@ -245,8 +245,8 @@ jobs:
     needs: build
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: r2s
           path: target/ci
@@ -284,10 +284,10 @@ jobs:
     if: needs.plan.outputs.full == 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: r2s
           path: ${{ runner.temp }}/head
@@ -308,7 +308,7 @@ jobs:
             --manifest-path "$RUNNER_TEMP/base-src/Cargo.toml"
           mkdir -p "$RUNNER_TEMP/base"
           cp target/ci/r2s "$RUNNER_TEMP/base/r2s"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: r2s-count
           path: ${{ runner.temp }}/head-count
@@ -354,8 +354,8 @@ jobs:
     needs: build
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: r2s
           path: target/ci
@@ -374,7 +374,7 @@ jobs:
             --json target/source-gold/report.json
       - name: Archive the source-gold report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: source-gold-${{ github.run_id }}-${{ github.run_attempt }}
           path: target/source-gold/report.json
@@ -389,7 +389,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: The harness's contracts, classifier, ratchet and builds
         run: |
           tests/equiv/bounded.sh 300 \
@@ -433,8 +433,8 @@ jobs:
           - name: shapes
             sources: tests/corpus/shapes.c
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: r2s
           path: target/ci
@@ -452,7 +452,7 @@ jobs:
             --opts ${{ matrix.opt }} \
             --jobs 4 \
             --out "$RUNNER_TEMP/equiv"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: equiv-shard-${{ matrix.compiler }}-${{ matrix.opt }}-${{ matrix.part.name }}
@@ -470,8 +470,8 @@ jobs:
     if: ${{ !cancelled() && needs.plan.outputs.full == 'true' }}
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: equiv-shard-*
           path: ${{ runner.temp }}/shards
@@ -483,7 +483,7 @@ jobs:
             "$RUNNER_TEMP"/shards/*/records.json
       - name: Archive the records and the proposed baseline
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: equivalence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -514,8 +514,8 @@ jobs:
           - name: shapes
             sources: tests/corpus/shapes.c
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: r2s
           path: target/ci
@@ -547,7 +547,7 @@ jobs:
             --opts ${{ matrix.opt }} \
             --jobs 4 \
             --out "$RUNNER_TEMP/equiv"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: equiv-aarch64-shard-${{ matrix.compiler }}-${{ matrix.opt }}-${{ matrix.part.name }}
@@ -565,8 +565,8 @@ jobs:
     if: ${{ !cancelled() && needs.plan.outputs.full == 'true' }}
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: equiv-aarch64-shard-*
           path: ${{ runner.temp }}/shards
@@ -578,7 +578,7 @@ jobs:
             "$RUNNER_TEMP"/shards/*/records.json
       - name: Archive the records and the proposed baseline
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: equivalence-aarch64-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -605,7 +605,7 @@ jobs:
     if: needs.plan.outputs.full == 'true'
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install the toolchain the repository pins
         run: rustup toolchain install --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -617,7 +617,7 @@ jobs:
         run: ./tests/coverage/run_coverage.sh
       - name: Archive coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: tests/coverage/artifacts/coverage.json
@@ -631,7 +631,7 @@ jobs:
     needs: [quality, capture-gate, source-gold, equivalence-harness, equivalence, equivalence-aarch64, coverage]
     if: github.ref == 'refs/heads/master'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install the toolchain the repository pins
         run: rustup toolchain install --profile minimal
       - uses: Swatinem/rust-cache@v2

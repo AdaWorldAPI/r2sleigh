@@ -43,7 +43,7 @@ cargo install --locked kani-verifier
 cargo install --locked cargo-mutants
 rustup toolchain install nightly
 rustup component add rustfmt clippy
-rustup toolchain install nightly-2026-04-16 --component rustc-dev --component llvm-tools-preview
+rustup toolchain install nightly-2026-10-01 --component rustc-dev --component llvm-tools-preview
 ```
 
 The Dylint toolchain is pinned in `tools/dylints/r2sleigh_lints/rust-toolchain`.
