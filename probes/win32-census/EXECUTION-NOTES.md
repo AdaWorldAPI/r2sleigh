@@ -252,11 +252,80 @@ in cache residency — that trade is exactly the kind that can invert.
 |---|---|
 | zero-copy state borrow | **done** — `SlabState` borrows, test-pinned |
 | RAM writable | **done** — enforced by `&mut [u8]`, not a runtime check |
-| `Custom(n)` stability | **BROKEN on x86-64** — non-deterministic per process |
-| `Ram`/`Custom` aliasing | **open** — same memory, two space ids |
-| persisted-row safety | **open** — depends on the `Custom(n)` fix |
+| `Custom(n)` stability | **fixed** — the fallback no longer bottles a host pointer; `Custom(u32)` is now name-derived by invariant, unresolvable handles become `SpaceId::Unresolved` |
+| `Ram`/`Custom` aliasing | **expressible** — `AddressSpace::aliases` declares "same memory, second identity" without merging the ids (reserve, don't claim). No lifter populates it yet |
+| persisted-row safety | **guarded** — an unresolvable space renders as the visible token `"Unresolved"` (never a plausible number) and `Varnode::is_persistable()` is the check a write path calls. Weaker than "cannot be written" — see the correction below |
 | prefetch: DECODE cache | **not needed yet** — exists as `pre_lift`; triggers named above |
 | prefetch: LANE hydration (IMAGE) | **ruled** — eager at load for a working set that fits; ahead-of-cursor walk is scale-out |
 | eager materialization of lifted IR | **no — 749x expansion, 2.2 GB from a 7 MB binary**; lifting must be a cache-miss path |
 | ontology scale (300 MB–3 GB) | **open** — needs lance-graph-ontology cache in front of lifting; inverts lower->address into address->lift-on-miss |
-| `R2ILOp` = 464 bytes | **open prerequisite** — metadata-dominated; ~3.6x reduction is arithmetic, not measured |
+| `R2ILOp` = 464 bytes | **done (Move A)** — 464 -> 144 B by boxing `VarnodeMetadata`, 3.22x measured, size pinned by a `const _` assert. (This row read "open prerequisite" for three commits after it landed — a stale row is a doc that lies about its own repo.) |
+
+### Correction — the `Custom(n)` root cause was misdiagnosed (2026-08-27)
+
+This file previously described the defect as "`Custom(n)` is non-deterministic",
+which named the symptom and left the mechanism open. Reading the lift path
+settled it, and the answer changes what the fix had to be.
+
+There are **two** producers of `SpaceId::Custom`, and only one was broken:
+
+| producer | input | verdict |
+|---|---|---|
+| `Disassembler::translate_space` | the space's **name** | **fine** — a byte-sum hash, stable across processes. Never suspected correctly before; it was cleared by reading it, not by assuming. |
+| `space_from_index` (3 impls) | LOAD/STORE **input-0** | **the defect** |
+
+Ghidra p-code encodes a LOAD/STORE's target space as its input-0 constant,
+and that constant holds the host **`AddrSpace*` pointer** — not a space index.
+So `spaces.get(ptr as usize)` always missed, and the fallback truncated the
+pointer into `Custom(ptr as u32)`. That is why the same instruction lifted to
+`Custom(1062180976)`, `Custom(2279590000)` and `Custom(1968052336)` on three
+runs: ASLR, bottled into a `Serialize`-derived field.
+
+Two consequences, which is why both open rows closed together:
+
+1. **The lift was unreproducible.** Same binary, different IR.
+2. **The row was unreproducible.** A persisted row keyed on a dead process's
+   pointer can never be matched again.
+
+The fix drops the handle instead of bottling it (`SpaceId::Unresolved`), and
+makes the drop loud: unresolvable spaces refuse to serialize and fail closed
+in `r2conc` rather than guessing RAM.
+
+**What is NOT fixed.** Resolving the pointer *properly* — mapping it back
+through libsla to a named space — is the follow-up. Until then the lift is
+honest about not knowing rather than confidently wrong, which is a strictly
+better failure but is not the capability.
+
+### The refusal was tried in `Serialize` first, and that was wrong
+
+The first cut made `SpaceId`'s `Serialize` **fail** on `Unresolved`, on the
+reasoning that a row which cannot be reproduced must not be writable at all.
+
+It broke **24 of 124** `r2sleigh-plugin` tests, on ordinary x86 fixtures.
+Baselined against a stash first, so this was measured as caused rather than
+assumed pre-existing.
+
+The cause is instructive on its own. `types.rs`'s
+`function_analysis_cache_key_parts` calls `hash_json_value(&blocks)` — serde
+is how an **in-process cache key** is computed, not only how a row is stored.
+The same is true of the plugin's diagnostic JSON export. A veto on the type
+hits every one of those.
+
+So the guarantee moved to where persistence actually happens:
+
+* `Unresolved` **serializes**, as the self-describing token `"Unresolved"` —
+  a reader can detect it; it can never be mistaken for a space id the way a
+  truncated pointer could.
+* `Varnode::is_persistable()` is the guard a write path calls.
+* `r2conc` still **fails closed** at execution (`ConcError::UnresolvedSpace`),
+  because guessing a slab there would corrupt memory silently.
+
+State it precisely: **"cannot be written unnoticed", not "cannot be written".**
+`r2il` has no row-persist entry point yet (`serialize.rs` persists `ArchSpec`,
+not lifted ops), so the guard is available for the write path when it lands
+rather than wired into one today. That is the honest boundary.
+
+**A measurement fell out of the failure.** Those 24 tests were passing before
+because the pointer serialized fine — which means they had been hashing ASLR'd
+pointers into cache keys all along. Harmless within one process, and proof that
+the unresolved path is hit constantly on ordinary x86 code, not in some corner.

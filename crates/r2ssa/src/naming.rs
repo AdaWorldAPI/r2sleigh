@@ -59,6 +59,7 @@ pub fn varnode_to_name(vn: &Varnode, reg_names: Option<&RegisterNameMap>) -> Str
             frame_slot_name(vn.offset as i64)
         }
         SpaceId::Custom(id) => format!("space{}:{:x}", id, vn.offset),
+        SpaceId::Unresolved => format!("unresolved:{:x}", vn.offset),
     }
 }
 

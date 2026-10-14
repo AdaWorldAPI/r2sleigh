@@ -462,6 +462,8 @@ pub enum MachineAddressSpace {
     Unique,
     Constant,
     Custom(u32),
+    /// The lift could not resolve the space (see `r2il::SpaceId::Unresolved`).
+    Unresolved,
 }
 
 impl From<r2il::SpaceId> for MachineAddressSpace {
@@ -472,6 +474,7 @@ impl From<r2il::SpaceId> for MachineAddressSpace {
             r2il::SpaceId::Unique => Self::Unique,
             r2il::SpaceId::Const => Self::Constant,
             r2il::SpaceId::Custom(id) => Self::Custom(id),
+            r2il::SpaceId::Unresolved => Self::Unresolved,
         }
     }
 }

@@ -70,6 +70,20 @@ impl Varnode {
         }
     }
 
+    /// Whether this varnode may be written to a persisted row.
+    ///
+    /// False exactly when its space is [`SpaceId::Unresolved`]: a handle the
+    /// lifter could not resolve, so a later run could not reproduce the row.
+    /// A write path must refuse it rather than store a fact about a dead
+    /// process.
+    ///
+    /// This is a guard to be called, not an automatic one. `Serialize` still
+    /// succeeds (it renders the token `"Unresolved"`), because serde also
+    /// backs in-process cache keys and diagnostic JSON.
+    pub fn is_persistable(&self) -> bool {
+        !self.space.is_unresolved()
+    }
+
     /// Returns true if this is a constant.
     pub fn is_const(&self) -> bool {
         self.space.is_const()

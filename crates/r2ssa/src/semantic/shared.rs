@@ -9,6 +9,7 @@ pub(crate) fn memory_space_order(space: SpaceId) -> (u8, u32) {
         SpaceId::Unique => (2, 0),
         SpaceId::Const => (3, 0),
         SpaceId::Custom(id) => (4, id),
+        SpaceId::Unresolved => (5, 0),
     }
 }
 

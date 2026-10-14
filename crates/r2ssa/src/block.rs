@@ -555,6 +555,7 @@ fn varnode_to_name(vn: &Varnode, spell: Spelling<'_>) -> &'static InternedName {
             format_args!("{}", crate::naming::frame_slot_name(vn.offset as i64)),
         ),
         SpaceId::Custom(id) => intern_fmt(format_args!("space{}:{:x}", id, vn.offset)),
+        SpaceId::Unresolved => intern_fmt(format_args!("unresolved:{:x}", vn.offset)),
     }
 }
 

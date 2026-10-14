@@ -182,7 +182,7 @@ impl<M: Mapped> State<M> {
                 self.assembled(&bytes).ok_or(Stop::Unmodelled)
             }
             SpaceId::Ram => self.load(varnode.offset, size),
-            SpaceId::Custom(_) => Err(Stop::Unmodelled),
+            SpaceId::Custom(_) | SpaceId::Unresolved => Err(Stop::Unmodelled),
         }
     }
 
@@ -203,7 +203,9 @@ impl<M: Mapped> State<M> {
             SpaceId::Register => &mut self.registers,
             SpaceId::Unique => &mut self.unique,
             SpaceId::Ram => return self.store(varnode.offset, size, value),
-            SpaceId::Const | SpaceId::Custom(_) => return Err(Stop::Unmodelled),
+            SpaceId::Const | SpaceId::Custom(_) | SpaceId::Unresolved => {
+                return Err(Stop::Unmodelled);
+            }
         };
         for (at, byte) in (0..).zip(bytes) {
             space.insert(varnode.offset.wrapping_add(at), byte);

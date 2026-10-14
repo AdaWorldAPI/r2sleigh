@@ -2189,6 +2189,7 @@ impl Disassembler {
             SpaceId::Unique => format!("tmp:0x{:x}", vn.offset),
             SpaceId::Ram => format!("[0x{:x}]:{}", vn.offset, vn.size),
             SpaceId::Custom(n) => format!("space{}:0x{:x}", n, vn.offset),
+            SpaceId::Unresolved => format!("unresolved:0x{:x}", vn.offset),
         }
     }
 

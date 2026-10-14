@@ -57,6 +57,8 @@ impl CanonicalStorageId {
             r2il::SpaceId::Unique => CanonicalStorageSpace::Unique,
             r2il::SpaceId::Const => CanonicalStorageSpace::Constant,
             r2il::SpaceId::Custom(id) => CanonicalStorageSpace::Custom(id),
+            // The lift could not name the space, so neither can the canon.
+            r2il::SpaceId::Unresolved => CanonicalStorageSpace::Unknown,
         };
         Self {
             space,

@@ -88,6 +88,11 @@ pub enum ConcError {
     /// A `Custom(n)` space with no slab registered.
     #[error("no slab registered for custom space {0}")]
     UnknownSpace(u32),
+    /// The lift could not resolve this space handle, so execution cannot
+    /// know which slab it means. See [`r2il::SpaceId::Unresolved`] — this is
+    /// deliberately an error rather than a fallback to RAM.
+    #[error("space was unresolved at lift time — no slab can be chosen")]
+    UnresolvedSpace,
     /// Unsigned or signed division / remainder by zero.
     #[error("division by zero")]
     DivByZero,
@@ -216,6 +221,10 @@ impl<'a> SlabState<'a> {
                 .find(|(i, _)| *i == n)
                 .map(|(_, s)| &mut **s)
                 .ok_or(ConcError::UnknownSpace(n)),
+            // Fail closed. An unresolved handle names no space, so there is
+            // no slab that could be the right one -- and guessing RAM would
+            // silently corrupt whichever slab it actually meant.
+            SpaceId::Unresolved => Err(ConcError::UnresolvedSpace),
             SpaceId::Const => unreachable!("Const handled before slab lookup"),
         }
     }
