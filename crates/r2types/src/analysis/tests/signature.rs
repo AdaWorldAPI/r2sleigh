@@ -144,7 +144,6 @@ fn main_name_without_signature_evidence_does_not_fabricate_signature_output() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -271,7 +270,6 @@ fn interproc_heap_alloc_summary_upgrades_pointer_sized_scalar_return() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -370,7 +368,6 @@ fn interproc_returned_arg_summary_propagates_param_type_and_callee_facts() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -409,15 +406,6 @@ fn local_inferred_scalar_param_narrows_external_wide_signature() {
         ..ParsedExternalContext::default()
     };
 
-    let vars = [RecoveredVariable {
-        name: "arg0".to_string(),
-        kind: "r".to_string(),
-        delta: 0,
-        var_type: "int32_t".to_string(),
-        isarg: true,
-        reg: Some("x0".to_string()),
-    }];
-
     let analysis = build_type_analysis(TypeAnalysisInput {
         function_name: "sym._check_secret",
         ptr_bits: 64,
@@ -432,7 +420,6 @@ fn local_inferred_scalar_param_narrows_external_wide_signature() {
             callconv: String::new(),
             arch: "aarch64".to_string(),
         },
-        recovered_vars: &vars,
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
@@ -451,106 +438,6 @@ fn local_inferred_scalar_param_narrows_external_wide_signature() {
             bits: 32,
             signedness: Signedness::Signed,
         })
-    );
-}
-
-#[test]
-fn recovered_stack_arg_binds_to_canonical_signature_slot() {
-    let current_signature = FunctionSignatureSpec {
-        ret_type: Some(CTypeLike::Int {
-            bits: 64,
-            signedness: Signedness::Signed,
-        }),
-        params: vec![FunctionParamSpec {
-            name: "arg1".to_string(),
-            ty: Some(CTypeLike::Int {
-                bits: 64,
-                signedness: Signedness::Signed,
-            }),
-        }],
-    };
-    let parsed_context = ParsedExternalContext {
-        current_signature: Some(current_signature.clone()),
-        merged_signature: Some(current_signature),
-        ..ParsedExternalContext::default()
-    };
-
-    let vars = [
-        RecoveredVariable {
-            name: "arg0".to_string(),
-            kind: "r".to_string(),
-            delta: 0,
-            var_type: "int64_t".to_string(),
-            isarg: true,
-            reg: Some("rdi".to_string()),
-        },
-        RecoveredVariable {
-            name: "arg6".to_string(),
-            kind: "s".to_string(),
-            delta: 8,
-            var_type: "int64_t".to_string(),
-            isarg: true,
-            reg: None,
-        },
-    ];
-
-    let analysis = build_type_analysis(TypeAnalysisInput {
-        function_name: "sym.stack_arg",
-        ptr_bits: 64,
-        inferred_signature: InferredSignature {
-            function_name: "sym.stack_arg".to_string(),
-            signature: "int64_t sym.stack_arg (int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6)".to_string(),
-            ret_type: "int64_t".to_string(),
-            params: (0..7)
-                .map(|slot| InferredSignatureParam {
-                    name: format!("arg{slot}"),
-                    param_type: "int64_t".to_string(),
-                })
-                .collect(),
-            callconv: String::new(),
-            arch: "x86-64".to_string(),
-        },
-        recovered_vars: &vars,
-        parsed_context,
-        local_structs: LocalStructArtifacts::default(),
-        interproc_summary_set: None,
-        diagnostics: TypeAnalysisDiagnostics::default(),
-    });
-
-    let merged = analysis
-        .type_facts
-        .merged_signature
-        .as_ref()
-        .expect("merged signature");
-    assert_eq!(merged.params.len(), 7);
-    for idx in 1..6 {
-        assert_eq!(
-            merged.params[idx].ty,
-            Some(CTypeLike::Int {
-                bits: 64,
-                signedness: Signedness::Signed,
-            })
-        );
-    }
-    assert_eq!(merged.params[6].name, "arg6");
-    assert_eq!(
-        merged.params[6].ty,
-        Some(CTypeLike::Int {
-            bits: 64,
-            signedness: Signedness::Signed,
-        })
-    );
-    assert!(
-        analysis.type_facts.visible_bindings.iter().any(|binding| {
-            binding.name == "arg6"
-                && binding.param_index == Some(6)
-                && binding.stack_slot
-                    == Some(StackSlotKey {
-                        base: ExternalStackBase::StackPointer,
-                        offset: 8,
-                    })
-        }),
-        "recovered stack-arg binding should use the canonical C parameter name"
     );
 }
 
@@ -592,15 +479,6 @@ fn exact_named_external_size_signature_blocks_local_byte_narrowing() {
         ..ParsedExternalContext::default()
     };
 
-    let vars = [RecoveredVariable {
-        name: "arg1".to_string(),
-        kind: "r".to_string(),
-        delta: 0,
-        var_type: "uint8_t".to_string(),
-        isarg: true,
-        reg: Some("rsi".to_string()),
-    }];
-
     let analysis = build_type_analysis(TypeAnalysisInput {
         function_name: "dbg.scan_example",
         ptr_bits: 64,
@@ -630,7 +508,6 @@ fn exact_named_external_size_signature_blocks_local_byte_narrowing() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &vars,
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
@@ -709,7 +586,6 @@ fn authoritative_external_signature_keeps_param_count_over_longer_local_signatur
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context,
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
@@ -719,28 +595,6 @@ fn authoritative_external_signature_keeps_param_count_over_longer_local_signatur
     assert_eq!(spelled_signature(&analysis).params.len(), 2);
     assert_eq!(spelled_signature(&analysis).params[0].name, "src");
     assert_eq!(spelled_signature(&analysis).params[1].name, "len");
-    assert!(
-        analysis
-            .type_facts
-            .visible_bindings
-            .iter()
-            .any(|binding| matches!(binding.kind, VisibleBindingKind::Param)
-                && binding.param_index == Some(0)
-                && binding.name == "src"),
-        "expected visible param binding for src, got {:?}",
-        analysis.type_facts.visible_bindings
-    );
-    assert!(
-        analysis
-            .type_facts
-            .visible_bindings
-            .iter()
-            .any(|binding| matches!(binding.kind, VisibleBindingKind::Param)
-                && binding.param_index == Some(1)
-                && binding.name == "len"),
-        "expected visible param binding for len, got {:?}",
-        analysis.type_facts.visible_bindings
-    );
     assert_eq!(
         analysis
             .type_facts
@@ -851,7 +705,6 @@ fn inferred_signature_certificate_records_local_source() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: None,
@@ -961,7 +814,6 @@ fn interproc_heap_alloc_summary_upgrades_generic_return_type() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1023,7 +875,6 @@ fn interproc_void_return_summary_replaces_weak_scalar_return_type() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1133,7 +984,6 @@ fn interproc_escape_only_does_not_certify_out_param() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1180,7 +1030,6 @@ fn interproc_arg_write_out_param_certificate_records_write_evidence() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1246,7 +1095,6 @@ fn interproc_memory_write_out_param_certificate_records_memory_write_evidence() 
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1291,7 +1139,6 @@ fn interproc_summary_name_does_not_project_role_signature() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(semantic_role_summary_set("limfield", Some(3))),
@@ -1334,7 +1181,6 @@ fn semantic_role_signature_hint_does_not_truncate_named_authoritative_signature(
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext {
             merged_signature: Some(FunctionSignatureSpec {
                 ret_type: Some(CTypeLike::Int {
@@ -1392,7 +1238,6 @@ fn interproc_summary_name_does_not_truncate_weak_entry_signature() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(semantic_role_summary_set("entry.init0", Some(1))),
@@ -1464,7 +1309,6 @@ fn interproc_summary_name_does_not_replace_weak_scalar_return() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(semantic_role_summary_set("dbg.verror_at_line", Some(6))),
@@ -1665,7 +1509,6 @@ fn interproc_returned_arg_summary_exports_callee_facts() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1765,7 +1608,6 @@ fn interproc_summary_name_does_not_export_role_callee_type_facts() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),
@@ -1885,7 +1727,6 @@ fn interproc_memory_effect_summary_upgrades_generic_pointer_like_params() {
             callconv: "amd64".to_string(),
             arch: "x86-64".to_string(),
         },
-        recovered_vars: &[],
         parsed_context: ParsedExternalContext::default(),
         local_structs: LocalStructArtifacts::default(),
         interproc_summary_set: Some(summary_set),

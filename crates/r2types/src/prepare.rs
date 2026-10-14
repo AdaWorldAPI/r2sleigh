@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use r2ssa::SSAVar;
 
-use crate::analysis::RecoveredVariable;
 use crate::signature_infer::RecoveredSignatureParam;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -143,86 +142,6 @@ fn source_parameter_has_certified_memory_use(prepared: &r2ssa::SsaArtifact, inde
 /// The lifted machine's identity, where the lift was made under one.
 pub(crate) fn prepared_arch_display_name(prepared: &r2ssa::SsaArtifact) -> Option<&str> {
     Some(prepared.machine_context().architecture()).filter(|name| !name.is_empty())
-}
-
-fn prepared_register_name(prepared: &r2ssa::SsaArtifact, index: usize) -> Option<String> {
-    let slot = prepared
-        .machine_context()
-        .abi_model()
-        .argument_registers()
-        .iter()
-        .find(|slot| slot.index() as usize == index)?;
-    prepared
-        .machine_context()
-        .register_storages_by_name()
-        .iter()
-        .filter(|(_, storage)| **storage == slot.storage())
-        .map(|(name, _)| name)
-        .min_by_key(|name| (name.len(), *name))
-        .cloned()
-}
-
-pub(crate) fn recover_vars_from_prepared_ssa(
-    prepared: &r2ssa::SsaArtifact,
-    ptr_bits: u32,
-) -> Vec<RecoveredVariable> {
-    let mut vars = recover_signature_params_from_prepared_ssa(prepared, ptr_bits)
-        .into_iter()
-        .map(|parameter| RecoveredVariable {
-            name: parameter.name,
-            kind: "r".to_string(),
-            delta: 0,
-            var_type: match parameter.initial_ty {
-                crate::CTypeLike::Pointer(_) => "void *".to_string(),
-                _ => crate::analysis::storage_type_spelling(
-                    parameter.ssa_var.size,
-                    crate::Signedness::Signed,
-                )
-                .unwrap_or_default(),
-            },
-            isarg: true,
-            reg: prepared_register_name(prepared, parameter.arg_index),
-        })
-        .collect::<Vec<_>>();
-
-    let mut stack_slots = prepared
-        .certificates()
-        .stack_slots
-        .values()
-        .map(|slot| {
-            // The certified extent alone; a slot nothing sizes has none (doc/adr-frame-model.md, one extent rule).
-            let size = slot.size.unwrap_or(0);
-            RecoveredVariable {
-                name: if slot.offset < 0 {
-                    format!("var_{:x}", slot.offset.unsigned_abs())
-                } else {
-                    format!("var_{}", slot.offset)
-                },
-                kind: "v".to_string(),
-                delta: slot.offset,
-                // A slot nothing reads or writes a width of has no type.
-                var_type: crate::analysis::storage_type_spelling(size, crate::Signedness::Signed)
-                    .unwrap_or_default(),
-                isarg: false,
-                reg: None,
-            }
-        })
-        .collect::<Vec<_>>();
-    vars.append(&mut stack_slots);
-    vars.sort_by(|left, right| {
-        left.isarg
-            .cmp(&right.isarg)
-            .reverse()
-            .then_with(|| left.delta.cmp(&right.delta))
-            .then_with(|| left.name.cmp(&right.name))
-    });
-    vars.dedup_by(|left, right| {
-        left.isarg == right.isarg
-            && left.delta == right.delta
-            && left.reg == right.reg
-            && left.name == right.name
-    });
-    vars
 }
 
 fn size_to_neutral_int_type_like(size: u32) -> crate::CTypeLike {

@@ -1,13 +1,11 @@
 mod arrays;
 mod assumptions;
-mod bindings;
 mod shared;
 mod signature;
 mod structs;
 
 pub(crate) use arrays::*;
 pub(crate) use assumptions::*;
-pub(crate) use bindings::*;
 pub(crate) use shared::*;
 pub(crate) use signature::*;
 pub(crate) use structs::*;
@@ -17,14 +15,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use r2ssa::{
-    FunctionSemanticSummary, InterprocSummarySet, SSAOp, SsaArtifact, SummaryArgEffect,
+    FunctionSemanticSummary, InterprocSummarySet, SsaArtifact, SummaryArgEffect,
     SummaryMemoryEffect, SummaryMemoryEffectKind, SummaryMemoryRegion, SummaryReturnRelation,
 };
 
 use crate::context::{
-    ExternalRegisterParamSpec, ExternalStackBase, ParsedExternalContext, StackSlotKey,
-    apply_main_signature_override, canonical_main_signature_spec, is_generic_arg_name,
-    sanitize_c_identifier,
+    ExternalRegisterParamSpec, ParsedExternalContext, apply_main_signature_override,
+    is_generic_arg_name,
 };
 use crate::convert::{CTypeLike, parse_c_type_like, render_c_type_like};
 use crate::external::{
@@ -38,15 +35,12 @@ use crate::facts::{
     CalleeSyncEffect, CalleeSyncOp, CalleeTransferEffect, CalleeTransferLength, FunctionParamSpec,
     FunctionSignatureSpec, FunctionTypeFactInputs, FunctionTypeFacts, InterprocFactDiagnostics,
     OutParamCertificate, OutParamCertificateEvidence, OutParamCertificateSource,
-    ScalarArrayRenderCandidate, SignatureCertificate, SignatureCertificateSource, VisibleBinding,
-    VisibleBindingKind,
+    ScalarArrayRenderCandidate, SignatureCertificate, SignatureCertificateSource,
 };
 use crate::function_facts::{
     FunctionFacts, InterprocSummaryView, ProjectedFacts, SourceOwnedFunctionFacts,
 };
 use crate::model::Signedness;
-use crate::signedness::ScalarSignednessEvidence;
-use r2ssa::dense::IdMap;
 
 #[derive(Debug)]
 pub struct TypeAnalysis {
@@ -302,7 +296,6 @@ struct DerivedTypeAnalysisInput<'a> {
     function_name: &'a str,
     ptr_bits: u32,
     inferred_signature: InferredSignature,
-    recovered_vars: &'a [RecoveredVariable],
     parsed_context: ParsedExternalContext,
     local_structs: LocalStructArtifacts,
     interproc_summary_set: Option<InterprocSummarySet>,
@@ -649,7 +642,6 @@ fn merged_context_and_summary_callee_facts(
 
 fn build_type_analysis_inner(
     mut input: DerivedTypeAnalysisInput<'_>,
-    stack: &StackAccesses,
     registers: &crate::RegisterIdentity,
     callee_facts: BTreeMap<u64, CalleeFact>,
 ) -> DerivedTypeAnalysis {
@@ -778,36 +770,11 @@ fn build_type_analysis_inner(
         merged_signature.as_ref(),
         input.ptr_bits,
     );
-    let current_context_maps =
-        signature_context_maps(merged_signature.as_ref(), input.ptr_bits, &type_db);
     apply_signature_context_overrides(
         &mut input.inferred_signature,
         merged_signature.as_ref(),
         input.ptr_bits,
         &type_db,
-    );
-    let is_main_signature = merged_signature
-        .as_ref()
-        .is_some_and(is_canonical_main_signature_spec);
-    let var_type_ctx = VarTypeCandidateContext {
-        current_context_maps: &current_context_maps,
-        merged_signature: merged_signature.as_ref(),
-        stack_access_widths: &stack.widths,
-        stack_access_signedness: &stack.signedness,
-        ptr_bits: input.ptr_bits,
-        is_main_signature,
-    };
-    let var_type_candidates =
-        build_var_type_candidates(input.recovered_vars, &var_type_ctx, &mut diagnostics);
-    let var_rename_candidates =
-        build_var_rename_candidates(input.recovered_vars, &current_context_maps.param_names);
-    let visible_bindings = build_visible_bindings(
-        merged_signature.as_ref(),
-        &input.parsed_context.register_params,
-        input.recovered_vars,
-        &var_type_candidates,
-        &var_rename_candidates,
-        input.ptr_bits,
     );
     let type_facts = FunctionTypeFacts::builder(FunctionTypeFactInputs {
         merged_signature: merged_signature.clone(),
@@ -819,7 +786,6 @@ fn build_type_analysis_inner(
         noreturn: input.parsed_context.noreturn,
         known_function_signatures: input.parsed_context.known_function_signatures.clone(),
         register_params: input.parsed_context.register_params.clone(),
-        visible_bindings,
         callee_facts,
         external_type_db: type_db,
         program_data_objects: input.parsed_context.program_data_objects.clone(),
@@ -898,19 +864,11 @@ fn x86_64_register_identity() -> crate::RegisterIdentity {
 
 #[cfg(test)]
 fn build_type_analysis(input: DerivedTypeAnalysisInput<'_>) -> DerivedTypeAnalysis {
-    build_type_analysis_with_stack_accesses(input, &StackAccesses::default())
-}
-
-#[cfg(test)]
-fn build_type_analysis_with_stack_accesses(
-    input: DerivedTypeAnalysisInput<'_>,
-    stack: &StackAccesses,
-) -> DerivedTypeAnalysis {
     let callee_facts = merged_context_and_summary_callee_facts(
         &input.parsed_context.callee_facts,
         input.interproc_summary_set.as_ref(),
     );
-    build_type_analysis_inner(input, stack, &x86_64_register_identity(), callee_facts)
+    build_type_analysis_inner(input, &x86_64_register_identity(), callee_facts)
 }
 
 #[cfg(test)]
@@ -969,7 +927,6 @@ pub fn build_source_owned_type_analysis(
     );
     let solved = calls.solve(source.as_ref());
     let inferred_signature = crate::infer_signature_from_prepared_ssa(source.as_ref(), &solved);
-    let recovered_vars = crate::prepare::recover_vars_from_prepared_ssa(source.as_ref(), ptr_bits);
     let diagnostics = TypeAnalysisDiagnostics::default();
     let local_structs = infer_local_struct_artifacts_from_prepared_ssa(source.as_ref());
     // The exact certificates own member naming: one name per (parameter, offset) they certify.
@@ -978,16 +935,13 @@ pub fn build_source_owned_type_analysis(
         function_name: &function_name,
         ptr_bits,
         inferred_signature,
-        recovered_vars: &recovered_vars,
         parsed_context,
         local_structs,
         interproc_summary_set: interproc_report,
         diagnostics,
     };
-    let stack = StackAccesses::of(source.as_ref(), &solved.signedness);
     let derived = build_type_analysis_inner(
         derived_input,
-        &stack,
         &crate::RegisterIdentity::from_prepared(source.as_ref()),
         callee_facts,
     );
@@ -1387,81 +1341,6 @@ fn out_param_certificates_from_projection(
     certificates.sort();
     certificates.dedup();
     certificates
-}
-
-/// What the frame's stack slots are accessed as: every width, and the signedness each accessed
-/// value shows, over the graph's memory operations.
-#[derive(Debug, Default)]
-pub(crate) struct StackAccesses {
-    pub(crate) widths: BTreeMap<StackSlotKey, BTreeSet<u32>>,
-    pub(crate) signedness: BTreeMap<StackSlotKey, BTreeSet<ScalarSignednessEvidence>>,
-}
-
-impl StackAccesses {
-    pub(crate) fn of(
-        source: &SsaArtifact,
-        signedness: &IdMap<r2ssa::ValueId, BTreeSet<ScalarSignednessEvidence>>,
-    ) -> Self {
-        let graph = source.graph();
-        let mut out = Self::default();
-        for inst in &graph.insts {
-            let (addr, value) = match &inst.payload {
-                r2ssa::InstPayload::Op(SSAOp::Load {
-                    dst,
-                    space: r2il::SpaceId::Ram,
-                    addr,
-                }) => (*addr, *dst),
-                r2ssa::InstPayload::Op(SSAOp::Store {
-                    space: r2il::SpaceId::Ram,
-                    addr,
-                    val,
-                }) => (*addr, *val),
-                _ => continue,
-            };
-            let Some(root) = source.decompile_prep_facts().stack_address_root_of(addr) else {
-                continue;
-            };
-            if let Some(size) = graph.value(value).map(|value| value.var.size)
-                && size != 0
-            {
-                out.widths.entry(*root).or_default().insert(size);
-            }
-            if let Some(observed) = signedness.get(value) {
-                let slot = out.signedness.entry(*root).or_default();
-                slot.extend(observed.iter().copied());
-            }
-        }
-        out
-    }
-}
-
-fn is_canonical_main_signature_spec(signature: &FunctionSignatureSpec) -> bool {
-    signature == &canonical_main_signature_spec()
-}
-
-fn signature_context_maps(
-    signature: Option<&FunctionSignatureSpec>,
-    ptr_bits: u32,
-    type_db: &ExternalTypeDb,
-) -> SignatureContextMaps {
-    let mut maps = SignatureContextMaps::default();
-    let Some(signature) = signature else {
-        return maps;
-    };
-    for (idx, param) in signature.params.iter().enumerate() {
-        if let Some(ty) = param.ty.as_ref() {
-            let ty_str = render_signature_type(ty, ptr_bits);
-            if !type_name_is_generic(&ty_str)
-                || param_has_authoritative_named_scalar_role(param, ptr_bits, type_db)
-            {
-                maps.param_types.insert(idx, ty_str);
-            }
-        }
-        if !is_generic_arg_name(&param.name) {
-            maps.param_names.insert(idx, param.name.clone());
-        }
-    }
-    maps
 }
 
 fn dedup_struct_decls(mut decls: Vec<StructDeclCandidate>) -> Vec<StructDeclCandidate> {

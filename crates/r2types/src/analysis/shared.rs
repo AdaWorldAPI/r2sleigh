@@ -3,23 +3,6 @@
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TypeFactSource {
-    LocalInferred,
-    SignatureRegistry,
-    DataflowRanked,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TypeEvidence {
-    SsaVarRecovery,
-    CanonicalStackAccessWidth,
-    CanonicalStackSignedness,
-    ExternalSignatureCurrent,
-    CanonicalMainSignature,
-    ExternalParamName,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StructDeclSource {
     LocalInferred,
     ExternalTypeDb,
@@ -41,18 +24,6 @@ pub(crate) struct InferredSignature {
     pub arch: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct RecoveredVariable {
-    pub name: String,
-    pub kind: String,
-    pub delta: i64,
-    #[serde(rename = "type")]
-    pub var_type: String,
-    pub isarg: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reg: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StructFieldCandidate {
     pub name: String,
@@ -68,22 +39,6 @@ pub(crate) struct StructDeclCandidate {
     pub confidence: u8,
     pub source: StructDeclSource,
     pub fields: Vec<StructFieldCandidate>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct VarTypeCandidate {
-    pub name: String,
-    pub kind: String,
-    pub delta: i64,
-    /// The type this variable is being given, as a type.
-    ///
-    /// Rendered only where it leaves for radare2 or a JSON payload.
-    pub var_type: CTypeLike,
-    pub isarg: bool,
-    pub reg: Option<String>,
-    pub size: u32,
-    pub source: TypeFactSource,
-    pub evidence: Vec<TypeEvidence>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -283,47 +238,6 @@ pub(crate) fn semantic_hints_compatible(
     )
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct RecoveredVarKey {
-    pub(crate) name: String,
-    pub(crate) kind: String,
-    pub(crate) delta: i64,
-    pub(crate) isarg: bool,
-    pub(crate) reg: Option<String>,
-}
-
-impl RecoveredVarKey {
-    fn new(name: &str, kind: &str, delta: i64, isarg: bool, reg: Option<&str>) -> Self {
-        Self {
-            name: name.to_ascii_lowercase(),
-            kind: kind.to_ascii_lowercase(),
-            delta,
-            isarg,
-            reg: reg.map(str::to_ascii_lowercase),
-        }
-    }
-
-    pub(crate) fn for_recovered_var(var: &RecoveredVariable) -> Self {
-        Self::new(
-            &var.name,
-            &var.kind,
-            var.delta,
-            var.isarg,
-            var.reg.as_deref(),
-        )
-    }
-
-    pub(crate) fn for_type_candidate(candidate: &VarTypeCandidate) -> Self {
-        Self::new(
-            &candidate.name,
-            &candidate.kind,
-            candidate.delta,
-            candidate.isarg,
-            candidate.reg.as_deref(),
-        )
-    }
-}
-
 pub(crate) fn summary_suggests_pointer_param(
     summary: &FunctionSemanticSummary,
     idx: usize,
@@ -417,21 +331,6 @@ pub(crate) fn inferred_signature_to_spec(
         return None;
     }
     Some(FunctionSignatureSpec { ret_type, params })
-}
-
-pub(crate) fn stack_base_for_recovered_var_kind(kind: &str) -> Option<ExternalStackBase> {
-    match kind {
-        "b" => Some(ExternalStackBase::FramePointer),
-        "s" => Some(ExternalStackBase::StackPointer),
-        _ => None,
-    }
-}
-
-pub(crate) fn stack_slot_key_for_recovered_var(var: &RecoveredVariable) -> Option<StackSlotKey> {
-    Some(StackSlotKey {
-        base: stack_base_for_recovered_var_kind(&var.kind)?,
-        offset: var.delta,
-    })
 }
 
 pub(crate) fn is_generic_signature_type(ty: Option<&CTypeLike>) -> bool {
@@ -593,34 +492,4 @@ pub(crate) fn type_name_is_generic(ty: &str) -> bool {
             | "long"
             | "unsigned long"
     )
-}
-
-pub(crate) fn is_low_quality_stack_name(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.starts_with("var_")
-        || lower.starts_with("local_")
-        || lower.starts_with("stack_")
-        || lower == "saved_fp"
-        || is_generic_arg_name(&lower)
-}
-
-/// What `bytes` bytes of storage are when nothing but an access of that width
-/// says anything about them: an integer of `signedness` where C has one that
-/// wide, and otherwise the carrier [`CTypeLike::machine_storage`] names. No
-/// bytes are no type.
-///
-/// This was a string, from one of two copies of a table that spelled every
-/// width but one, two, four and eight bytes `byte[N]`. That is not C -- `byte`
-/// names no type, so `(byte[16]*)` is not a cast -- and it reached the
-/// rendering as the element type of every sixteen- and thirty-two-byte vector
-/// access. Which widths C has an integer for is `CTypeLike`'s to state, so
-/// this states none of its own.
-pub(crate) fn storage_type(bytes: u32, signedness: Signedness) -> Option<CTypeLike> {
-    let bits = bytes.checked_mul(8).filter(|bits| *bits > 0)?;
-    Some(CTypeLike::machine_storage(bits, signedness))
-}
-
-/// [`storage_type`] spelled, where the analysis still keeps a type as text.
-pub(crate) fn storage_type_spelling(bytes: u32, signedness: Signedness) -> Option<String> {
-    storage_type(bytes, signedness).map(|ty| render_c_type_like(&ty))
 }
