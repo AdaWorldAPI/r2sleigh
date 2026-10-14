@@ -1,8 +1,9 @@
 //! The golden tests: radare2's r2r format, run against the shell this build produced.
 //!
 //! Each file under `tests/db/` holds tests as r2r writes them (tests/db/README.md). A test runs
-//! `r2s -q -c CMDS ARGS FILE`; its stdout must be `EXPECT`, and its stderr `EXPECT_ERR` where one
-//! is stated. `R2S_BLESS=1` writes what ran into the files, and a bless is a judged diff.
+//! `r2s -q -c CMDS ARGS FILE`; its stdout must be `EXPECT` and its stderr `EXPECT_ERR`, empty where
+//! none is stated. A nonzero exit passes only where the test states what r2s printed to stderr.
+//! `R2S_BLESS=1` writes what ran into the files, and a bless is a judged diff.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -222,7 +223,11 @@ fn check(
     }
     let expected = |block: &Option<Block>| block.as_ref().map(|block| block.text.clone());
     let out_ok = expected(&golden.expect).unwrap_or_default() == stdout;
-    let err_ok = expected(&golden.expect_err).is_none_or(|expect| expect == stderr);
+    let err_ok = expected(&golden.expect_err).unwrap_or_default() == stderr;
+    // A failed statement exits 1 and says why on stderr, so a test that states it may exit so.
+    if !done.status.success() && stderr.is_empty() {
+        return Err(format!("r2s exited {} and printed nothing to stderr", done.status).into());
+    }
     if out_ok && err_ok {
         return Ok(());
     }
@@ -296,7 +301,7 @@ fn write(db: &Path, blessed: Vec<Blessing>) {
         } in blessings
         {
             let mut edits = vec![(&golden.expect, "EXPECT", stdout)];
-            if golden.expect_err.is_some() {
+            if golden.expect_err.is_some() || !stderr.is_empty() {
                 edits.push((&golden.expect_err, "EXPECT_ERR", stderr));
             }
             let at = |block: &Option<Block>| {
