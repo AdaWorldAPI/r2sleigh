@@ -16,7 +16,7 @@ use rustc_lint::{LateContext, LateLintPass, LintContext};
 
 dylint_linting::dylint_library!();
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `DisplayNames` is read outside a rendering path.
@@ -55,7 +55,7 @@ rustc_session::declare_lint!(
     "display spellings may only be read where output is rendered"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when semantic storage/address classification is encoded as
@@ -90,7 +90,7 @@ rustc_session::declare_lint!(
     "semantic classification should use typed contracts, not string prefixes"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when internal Rust code embeds radare2 JSON command strings that
@@ -114,7 +114,7 @@ rustc_session::declare_lint!(
     "internal radare2 data seams should use typed collectors, not command JSON"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` indexes `known_function_signatures` directly.
@@ -139,7 +139,7 @@ rustc_session::declare_lint!(
     "r2dec should query signatures through typed callee identity, not the raw signature map"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` analysis code reconstructs imported-callee or
@@ -167,7 +167,7 @@ rustc_session::declare_lint!(
     "r2dec analysis should use typed callee resolution for import policy"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` op-lowering code parses call-target addresses through
@@ -195,7 +195,7 @@ rustc_session::declare_lint!(
     "r2dec op-lowering should use typed callee resolution or the shared address parser"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` op-lowering code reconstructs call-target policy from
@@ -225,7 +225,7 @@ rustc_session::declare_lint!(
     "r2dec op-lowering should consume typed callee target policy instead of recomputing it"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` builds or reconstructs callee resolution
@@ -253,7 +253,7 @@ rustc_session::declare_lint!(
     "r2dec must not synthesize CalleeResolutionFacts; r2engine owns callee resolution"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` call-argument rendering policy authorizes a nested
@@ -283,7 +283,7 @@ rustc_session::declare_lint!(
     "r2dec call arguments must not authorize nested calls from rendered callee policy"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` call-argument render authorization treats
@@ -309,7 +309,7 @@ rustc_session::declare_lint!(
     "r2dec call-argument rendering must not treat source_var_name as standalone authority"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` call-argument render authorization treats
@@ -334,7 +334,7 @@ rustc_session::declare_lint!(
     "r2dec call-argument rendering must not treat source_call as standalone authority"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` call-argument rendering can fall through
@@ -362,7 +362,7 @@ rustc_session::declare_lint!(
     "certified r2dec call arguments must come from FunctionFacts, not local raw arg fallback"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified call proof validation compares rendered argument
@@ -387,7 +387,7 @@ rustc_session::declare_lint!(
     "certified r2dec call argument proofs must match the full FunctionFacts callsite vector"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when generic `r2dec` SSA-op statement lowering emits a direct
@@ -413,7 +413,7 @@ rustc_session::declare_lint!(
     "r2dec direct call lowering must residualize instead of emitting zero-arg fallback calls"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` call-result replay can use cached
@@ -441,7 +441,7 @@ rustc_session::declare_lint!(
     "certified r2dec call-result replay must use certified synthesized calls before cached fallback"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` accepts prepared rendered call-argument
@@ -468,7 +468,7 @@ pub R2DEC_CERTIFIED_PREPARED_CALL_ARG_EXPR_PROOF,
     "certified r2dec call arguments must not use prepared argument expression text as authority"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified executable lowering repairs post-call values from
@@ -495,7 +495,7 @@ rustc_session::declare_lint!(
     "certified r2dec executable lowering must not repair post-call values from local renderer state"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified rendered-call proof collection discovers source
@@ -521,7 +521,7 @@ rustc_session::declare_lint!(
     "certified rendered-call proof must not be recovered from local cached call-expression equality"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` return rendering can choose local semantic
@@ -547,7 +547,7 @@ rustc_session::declare_lint!(
     "certified r2dec returns must render from prepared return evidence before local expression fallback"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` return-call rendering treats a prepared
@@ -574,7 +574,7 @@ rustc_session::declare_lint!(
     "certified r2dec return-call rendering must require FunctionFacts call-result evidence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` local post-call source recovery can scan
@@ -600,7 +600,7 @@ rustc_session::declare_lint!(
     "certified r2dec local post-call source recovery must not scan local SSA adjacency"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` analysis defines helpers that infer
@@ -627,7 +627,7 @@ rustc_session::declare_lint!(
     "r2dec must not infer authoritative call arguments outside FunctionFacts"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when summary-only `r2dec` rendering paths emit executable-looking
@@ -655,7 +655,7 @@ rustc_session::declare_lint!(
     "summary routes must render comments/facts, not executable C"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when summary-only `r2dec` renderer files construct executable
@@ -682,7 +682,7 @@ rustc_session::declare_lint!(
     "summary/VM renderers must not construct executable CStmt bodies"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` code owns semantic route selection,
@@ -711,7 +711,7 @@ rustc_session::declare_lint!(
     "r2dec must consume engine route decisions, not own route/refusal policy"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` treats a missing `FunctionFacts::decompile_route` as
@@ -735,7 +735,7 @@ rustc_session::declare_lint!(
     "r2dec must residualize missing FunctionFacts::decompile_route without synthesizing a route"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec::Decompiler` exposes the removed raw
@@ -765,7 +765,7 @@ rustc_session::declare_lint!(
     "r2dec must not expose raw SSAFunction build_function; prepared input must require FunctionFacts::decompile_route"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when public `r2dec` semantic-summary render entrypoints accept
@@ -792,7 +792,7 @@ rustc_session::declare_lint!(
     "r2dec summary rendering must require exact source-owned DecompilerInput"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` expands or repairs a certified external/header
@@ -817,7 +817,7 @@ rustc_session::declare_lint!(
     "r2dec must not repair certified headers from local recovery or inference"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2engine` applies decompile-route or
@@ -843,7 +843,7 @@ rustc_session::declare_lint!(
     "r2engine must carry decompile policy through exact source-owned finalization"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2engine` passes, converts, or exposes renderer-local route
@@ -869,7 +869,7 @@ rustc_session::declare_lint!(
     "r2engine must not pass decompile routes beside source-owned DecompilerInput"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2engine` directly mutates raw `FunctionFacts`
@@ -894,7 +894,7 @@ rustc_session::declare_lint!(
     "r2engine must not mutate detached FunctionFacts authority"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when summary decompile route/refusal state is carried in
@@ -923,7 +923,7 @@ rustc_session::declare_lint!(
     "r2engine summary decompile route/refusal state must come from source-owned finalization"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `crates/r2engine/src/lib.rs` exposes or calls the
@@ -950,7 +950,7 @@ rustc_session::declare_lint!(
     "r2engine must not expose/use summary-only decompile APIs as production decompile paths"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `crates/r2engine/src/lib.rs` exposes the
@@ -980,7 +980,7 @@ rustc_session::declare_lint!(
     "r2engine must not expose lower-level EngineDecompileRequest decompile APIs publicly"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2engine` mutates `FunctionFacts` semantics during render
@@ -1006,7 +1006,7 @@ rustc_session::declare_lint!(
     "r2engine must not clear FunctionFacts semantics during decompile rendering"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when the production `r2engine` decompile path writes
@@ -1035,7 +1035,7 @@ rustc_session::declare_lint!(
     "r2engine decompile type overrides must precede source-owned analysis"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when the production `r2engine` decompile render request carries a
@@ -1064,7 +1064,7 @@ rustc_session::declare_lint!(
     "r2engine fallback comments must be sealed by source-owned finalization"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production code reintroduces whole-analysis cache mutation
@@ -1089,7 +1089,7 @@ rustc_session::declare_lint!(
     "whole-analysis cache mutation APIs are forbidden"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2engine::EngineArtifacts` carries decompile route or
@@ -1117,7 +1117,7 @@ rustc_session::declare_lint!(
     "r2engine EngineArtifacts must not duplicate FunctionFacts semantic or route evidence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when decompile route planning in `r2engine` accepts
@@ -1142,7 +1142,7 @@ rustc_session::declare_lint!(
     "r2engine decompile route planning must read type evidence through FunctionFacts"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2engine` reconstructs decompile authority from raw facts or
@@ -1167,7 +1167,7 @@ rustc_session::declare_lint!(
     "r2engine decompiler input must consume exact source-owned type analysis"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2engine` directly assembles prepared decompile
@@ -1196,7 +1196,7 @@ rustc_session::declare_lint!(
     "r2engine must derive prepared decompile evidence through source-owned analysis"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec::DecompilerContext` defines decompile-route
@@ -1223,7 +1223,7 @@ rustc_session::declare_lint!(
     "r2dec must carry decompile routes through source-owned DecompilerInput"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec::DecompilerContext` defines a callee
@@ -1250,7 +1250,7 @@ rustc_session::declare_lint!(
     "r2dec must carry callee resolution through source-owned DecompilerInput"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` exposes APIs that mutate decompiler type
@@ -1277,7 +1277,7 @@ rustc_session::declare_lint!(
     "r2dec production code must carry type evidence through SourceOwnedFunctionFacts"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` enriches known function signatures from
@@ -1309,7 +1309,7 @@ rustc_session::declare_lint!(
     "r2dec must consume known callee signatures from FunctionFacts, not enrich them from names locally"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` code mutates switch case labels from
@@ -1334,7 +1334,7 @@ rustc_session::declare_lint!(
     "r2dec must render canonical switch case values without downstream display bias"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified switch selector rendering falls back to local
@@ -1359,7 +1359,7 @@ rustc_session::declare_lint!(
     "r2dec certified switch rendering must require FunctionFacts control evidence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified switch selector rendering accepts
@@ -1386,7 +1386,7 @@ rustc_session::declare_lint!(
     "certified r2dec switch selectors must require FunctionFacts control proof before prepared selector text"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` treats "there is exactly one switch selector fact"
@@ -1412,7 +1412,7 @@ rustc_session::declare_lint!(
     "r2dec switch selector rendering must require a block-matching FunctionFacts control fact"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` reconstructs a prepared direct call target from
@@ -1441,7 +1441,7 @@ rustc_session::declare_lint!(
     "r2dec must consume FunctionFacts direct-target evidence instead of reparsing prepared SSA"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` op-lowering reads prepared
@@ -1470,7 +1470,7 @@ rustc_session::declare_lint!(
     "certified r2dec call rendering must consume FunctionFacts callsite evidence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` output validation reads raw prepared
@@ -1498,7 +1498,7 @@ rustc_session::declare_lint!(
     "certified r2dec render validation must consume FunctionFacts render evidence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` call-result ownership logic derives a
@@ -1525,7 +1525,7 @@ rustc_session::declare_lint!(
     "r2dec must not derive call-result owners from stack-local fallback logic"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` call-result ownership logic derives a
@@ -1553,7 +1553,7 @@ rustc_session::declare_lint!(
     "r2dec must not derive call-result owners from matching rendered call expressions"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` return-register call-result fallback can
@@ -1579,7 +1579,7 @@ rustc_session::declare_lint!(
     "certified r2dec rendering must not derive call-result owners from return-register fallback"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` call-result alias fallback can derive a
@@ -1606,7 +1606,7 @@ rustc_session::declare_lint!(
     "certified r2dec rendering must not derive call-result owners from local alias fallback"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` call-result ownership consults
@@ -1634,7 +1634,7 @@ rustc_session::declare_lint!(
     "certified r2dec call-result ownership must not trust renderer-local ownership maps"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` call-result preservation treats the
@@ -1661,7 +1661,7 @@ rustc_session::declare_lint!(
     "certified r2dec call-result preservation must not trust renderer-local ownership maps"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` duplicate-call pruning uses rendered-call
@@ -1688,7 +1688,7 @@ rustc_session::declare_lint!(
     "certified r2dec duplicate-call pruning must require FunctionFacts callsite proof"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified visible-owner lookup returns a prepared source
@@ -1714,7 +1714,7 @@ rustc_session::declare_lint!(
     "certified r2dec visible owner lookup must require stable FunctionFacts result ownership"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` call-result ownership accepts arbitrary
@@ -1741,7 +1741,7 @@ rustc_session::declare_lint!(
     "certified r2dec call-result ownership must accept only stable prepared owner names"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` accepts a prepared call-result owner name
@@ -1767,7 +1767,7 @@ rustc_session::declare_lint!(
     "certified r2dec call-result owners must be backed by FunctionFacts call-result owner facts"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` appended stack-return recovery reads
@@ -1785,7 +1785,7 @@ rustc_session::declare_lint!(
     "certified r2dec stack-return recovery must require FunctionFacts render evidence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` local declaration validation or retention
@@ -1803,7 +1803,7 @@ rustc_session::declare_lint!(
     "certified r2dec local declarations must require exact typed stack identity"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` stack owner authorization calls
@@ -1824,7 +1824,7 @@ rustc_session::declare_lint!(
     "certified r2dec stack owner authorization must use a FunctionFacts-owned predicate"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` local declaration types can still come
@@ -1840,7 +1840,7 @@ rustc_session::declare_lint!(
     "certified r2dec stack local types must come from FunctionTypeFacts"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` fold setup passes renderer-local type
@@ -1857,7 +1857,7 @@ rustc_session::declare_lint!(
     "certified r2dec fold inputs must not consume local type hints or local type oracle"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` reads local stable stack/local-store
@@ -1884,7 +1884,7 @@ rustc_session::declare_lint!(
     "certified r2dec must not consume local stable stack/local-store recovery directly"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` analysis reads prepared SSA call-result
@@ -1910,7 +1910,7 @@ rustc_session::declare_lint!(
     "r2dec analysis must consume FunctionFacts call-result facts instead of prepared certificate maps"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` reads prepared SSA predicate or switch
@@ -1942,7 +1942,7 @@ rustc_session::declare_lint!(
     "r2dec analysis must consume FunctionFacts control facts instead of prepared predicate maps"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` tests assert source-shaped C snippets such as
@@ -1970,7 +1970,7 @@ rustc_session::declare_lint!(
     "r2dec tests must not bless source-shaped C from raw SSAFunction decompile output"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` falls back from a missing extracted branch condition
@@ -1995,7 +1995,7 @@ rustc_session::declare_lint!(
     "r2dec must not default missing branch predicates to true"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` branch condition extraction can fall back
@@ -2025,7 +2025,7 @@ rustc_session::declare_lint!(
     "certified r2dec branch conditions must come from FunctionFacts control facts"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` switch structuring emits `switch` syntax
@@ -2052,7 +2052,7 @@ rustc_session::declare_lint!(
     "certified r2dec switch rendering must require FunctionFacts switch structure proof"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` loop structuring emits `while`/`do while`
@@ -2080,7 +2080,7 @@ rustc_session::declare_lint!(
     "certified r2dec loop rendering must require FunctionFacts loop structure proof"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2dec` structures `Region::IfThenElse` into executable
@@ -2106,7 +2106,7 @@ rustc_session::declare_lint!(
     "r2dec certified branch rendering must record FunctionFacts branch proof identity"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` uses broad local analysis presence, such
@@ -2135,7 +2135,7 @@ rustc_session::declare_lint!(
     "r2dec must not synthesize stack locals from broad local analysis presence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2dec` defines fallback helpers that manufacture
@@ -2163,7 +2163,7 @@ rustc_session::declare_lint!(
     "r2dec must not manufacture aggregate field placeholders without layout proof"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when certified `r2dec` memory lowering can construct member
@@ -2180,7 +2180,7 @@ rustc_session::declare_lint!(
     "certified r2dec structured memory rendering must require direction-exact FunctionRenderFacts evidence"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2engine` constructs `r2dec::VariableRecovery` to infer
@@ -2207,7 +2207,7 @@ rustc_session::declare_lint!(
     "r2engine must not use r2dec VariableRecovery for signature inference"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when `r2engine` calls `r2dec` fallback-comment helpers.
@@ -2231,7 +2231,7 @@ rustc_session::declare_lint!(
     "r2engine must own refusal comments instead of calling r2dec helpers"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2types` code outside `role_registry` calls the
@@ -2256,7 +2256,7 @@ rustc_session::declare_lint!(
     "r2types consumers must not project signatures directly from role names"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when production `r2engine` or `r2dec` assigns directly to canonical
@@ -2283,7 +2283,7 @@ rustc_session::declare_lint!(
     "FunctionFacts owner fields must be mutated through r2types methods"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when a facts type answers a rendering decision rather than a fact.
@@ -2320,7 +2320,7 @@ rustc_session::declare_lint!(
     "a facts type states what is true; deciding what to render belongs to a renderer"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when a `CStmt::Observed` or `CExpr::Observed` render-observation
@@ -2357,7 +2357,7 @@ rustc_session::declare_lint!(
     "an observation node is built only by the fusing constructors in r2dec::ast"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// ### What it does
     ///
     /// Warns when a `BTreeMap`, `HashMap`, `BTreeSet` or `HashSet` is keyed
@@ -2395,7 +2395,7 @@ rustc_session::declare_lint!(
     "a fact about a function's entities is an index over their dense ids, not a map keyed by them"
 );
 
-rustc_session::declare_lint!(
+rustc_lint::declare_lint!(
     /// A cell in an r2engine field, static or signature outside `query::db` is a memo invalidated by hand;
     /// a computed fact is a `Query` (doc/adr-query-database.md, ROADMAP D11). A cell that is no cache says so with `allow`.
     pub CACHE_OUTSIDE_QUERY_DATABASE,
@@ -2403,7 +2403,7 @@ rustc_session::declare_lint!(
     "a computed program fact lives only in the query database"
 );
 
-rustc_session::declare_lint_pass!(R2sleighLintPass => [
+rustc_lint::declare_lint_pass!(R2sleighLintPass => [
     DISPLAY_NAMES_OUTSIDE_RENDERING,
     STRING_PREFIX_SEMANTIC_CLASSIFICATION,
     R2_JSON_COMMAND_INTERNAL_SEAM,
@@ -2587,7 +2587,7 @@ pub fn register_lints(sess: &rustc_session::Session, lint_store: &mut rustc_lint
         ENTITY_KEYED_MAP,
         CACHE_OUTSIDE_QUERY_DATABASE,
     ]);
-    lint_store.register_late_pass(|_| Box::new(R2sleighLintPass));
+    lint_store.register_late_lint_pass(Box::new(|_| Box::new(R2sleighLintPass)));
 }
 
 impl<'tcx> LateLintPass<'tcx> for R2sleighLintPass {
@@ -6351,7 +6351,9 @@ fn inferred_entity_keyed_collection(
 /// Whether a key is a function entity, a reference to one, or a tuple holding one.
 fn is_entity_key(cx: &LateContext<'_>, key: rustc_middle::ty::Ty<'_>) -> bool {
     match key.kind() {
-        rustc_middle::ty::Adt(key, _) => FUNCTION_ENTITIES.contains(&cx.tcx.item_name(key.did()).as_str()),
+        rustc_middle::ty::Adt(key, _) => {
+            FUNCTION_ENTITIES.contains(&cx.tcx.item_name(key.did()).as_str())
+        }
         rustc_middle::ty::Ref(_, key, _) => is_entity_key(cx, *key),
         rustc_middle::ty::Tuple(keys) => keys.iter().any(|key| is_entity_key(cx, key)),
         _ => false,
