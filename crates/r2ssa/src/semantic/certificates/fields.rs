@@ -23,6 +23,8 @@ pub enum ParameterFieldRefusal {
     Indexed,
     /// Its address is not affine in the parameter, as through a merge of two offsets.
     NotAffine,
+    /// A linked, guarded, atomic or block access, which a layout of plain fields does not model.
+    Unmodelled,
 }
 
 /// Every memory operation a parameter's value reaches, as constant fields, or the first one that
@@ -72,12 +74,21 @@ pub(crate) fn collect_parameter_fields(
     out
 }
 
-/// The RAM loads and stores whose address the parameter's value reaches.
+/// How a memory operation the parameter's value reaches uses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Reached {
+    Read,
+    Write,
+    Unmodelled,
+}
+
+/// The memory operations the parameter's value reaches: RAM loads and stores by their address, and
+/// any other memory operation it feeds at all.
 fn reached_memory_operations(
     graph: &SsaGraph,
     reloads_of: &crate::dense::IdMap<ValueId, Vec<ValueId>>,
     parameter: ValueId,
-) -> BTreeSet<(InstId, bool)> {
+) -> BTreeSet<(InstId, Reached)> {
     let mut operations = BTreeSet::new();
     let mut reached = crate::dense::IdSet::default();
     let mut pending = vec![parameter];
@@ -96,14 +107,14 @@ fn reached_memory_operations(
                     addr,
                     ..
                 }) if *addr == value => {
-                    operations.insert((inst.id, false));
+                    operations.insert((inst.id, Reached::Read));
                 }
                 InstPayload::Op(SSAOp::Store {
                     space: SpaceId::Ram,
                     addr,
                     ..
                 }) if *addr == value => {
-                    operations.insert((inst.id, true));
+                    operations.insert((inst.id, Reached::Write));
                 }
                 // A spilled value comes back through its home's reloads; anything else a load,
                 // store or call does with it leaves the pointee alone.
@@ -114,6 +125,10 @@ fn reached_memory_operations(
                     | SSAOp::CallInd { .. }
                     | SSAOp::CallOther { .. },
                 ) => {}
+                // What a linked, guarded or atomic load returns is memory's, never the parameter.
+                InstPayload::Op(op) if op.is_memory_read() || op.is_memory_write() => {
+                    operations.insert((inst.id, Reached::Unmodelled));
+                }
                 _ => pending.extend(inst.output),
             }
         }
@@ -123,14 +138,19 @@ fn reached_memory_operations(
 
 fn fields_of(
     slot: u32,
-    operations: &BTreeSet<(InstId, bool)>,
+    operations: &BTreeSet<(InstId, Reached)>,
     addresses: &crate::AddressProvenanceFacts,
     memory_accesses: &BTreeMap<StructuredAccessId, MemoryAccessCertificate>,
     memory_accesses_by_inst: &crate::dense::IdMap<InstId, ByDirection<Vec<StructuredAccessId>>>,
 ) -> ParameterFields {
     let mut fields = Vec::new();
-    for &(inst, is_write) in operations {
+    for &(inst, reached) in operations {
         let refused = |reason| ParameterFields::Refused { inst, reason };
+        let is_write = match reached {
+            Reached::Read => false,
+            Reached::Write => true,
+            Reached::Unmodelled => return refused(ParameterFieldRefusal::Unmodelled),
+        };
         let ids =
             (memory_accesses_by_inst.get(inst)).map_or(&[][..], |ids| ids.get(is_write).as_slice());
         let certified = ids.iter().filter_map(|id| memory_accesses.get(id));

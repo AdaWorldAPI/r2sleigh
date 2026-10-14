@@ -168,3 +168,31 @@ fn a_walked_parameter_has_no_fields() {
         artifact.certificates().parameter_fields
     );
 }
+
+/// A linked load beside two plain fields of different widths is a parameter access the layout
+/// does not model: no layout, and its loaded value is not followed as the parameter.
+#[test]
+fn a_linked_load_from_the_parameter_refuses_its_fields() {
+    let mut block = R2ILBlock::new(0x1000, 4);
+    let first = at(test_reg(RDI), 0, 0x10, &mut block);
+    store(&mut block, first, 8, 1);
+    let second = at(test_reg(RDI), 8, 0x18, &mut block);
+    store(&mut block, second, 4, 2);
+    let linked = at(test_reg(RDI), 16, 0x20, &mut block);
+    block.push(R2ILOp::LoadLinked {
+        dst: Varnode::unique(0x28, 8),
+        space: SpaceId::Ram,
+        addr: linked,
+        ordering: r2il::MemoryOrdering::SeqCst,
+    });
+    returned(&mut block);
+    let artifact = parameter_artifact(vec![block]);
+
+    assert!(matches!(
+        artifact.certificates().parameter_fields.get(&0),
+        Some(ParameterFields::Refused {
+            reason: ParameterFieldRefusal::Unmodelled,
+            ..
+        })
+    ));
+}
