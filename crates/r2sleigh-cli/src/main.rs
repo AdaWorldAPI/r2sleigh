@@ -921,6 +921,43 @@ fn get_disassembler_with_spec(arch: &str) -> Result<(Disassembler, r2il::ArchSpe
             .map_err(|e| e.to_string())?;
             Ok((disasm, spec))
         }
+        // The 8-bit family. Both parts share one pspec (Ghidra ships only
+        // 6502.pspec) but NOT one .sla: the 65C02 adds opcodes the NMOS part
+        // leaves undefined and fixes NMOS bugs a conformance corpus exercises,
+        // so aliasing them would grade an NMOS test against CMOS semantics and
+        // pass.
+        #[cfg(feature = "m6502")]
+        "6502" | "mos6502" | "nmos6502" => {
+            let spec = build_arch_spec(
+                sleigh_config::processor_6502::SLA_6502,
+                sleigh_config::processor_6502::PSPEC_6502,
+                "6502",
+            )
+            .map_err(|e| e.to_string())?;
+            let disasm = Disassembler::from_sla(
+                sleigh_config::processor_6502::SLA_6502,
+                sleigh_config::processor_6502::PSPEC_6502,
+                "6502",
+            )
+            .map_err(|e| e.to_string())?;
+            Ok((disasm, spec))
+        }
+        #[cfg(feature = "m6502")]
+        "65c02" | "cmos6502" => {
+            let spec = build_arch_spec(
+                sleigh_config::processor_6502::SLA_65C02,
+                sleigh_config::processor_6502::PSPEC_6502,
+                "65c02",
+            )
+            .map_err(|e| e.to_string())?;
+            let disasm = Disassembler::from_sla(
+                sleigh_config::processor_6502::SLA_65C02,
+                sleigh_config::processor_6502::PSPEC_6502,
+                "65c02",
+            )
+            .map_err(|e| e.to_string())?;
+            Ok((disasm, spec))
+        }
         _ => {
             let mut supported: Vec<&str> = vec![];
             #[cfg(feature = "x86")]
@@ -931,10 +968,12 @@ fn get_disassembler_with_spec(arch: &str) -> Result<(Disassembler, r2il::ArchSpe
             supported.extend(["mips32be", "mips32le", "mips64be", "mips64le"]);
             #[cfg(feature = "riscv")]
             supported.extend(["riscv64", "riscv32"]);
+            #[cfg(feature = "m6502")]
+            supported.extend(["6502", "65c02"]);
 
             if supported.is_empty() {
                 Err(
-                    "No architectures enabled. Build with --features x86, arm, mips, or riscv"
+                    "No architectures enabled. Build with --features x86, arm, mips, riscv, or m6502"
                         .to_string(),
                 )
             } else {
