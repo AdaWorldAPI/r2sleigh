@@ -938,13 +938,10 @@ fn inst_combine(func: &mut SSAFunction, stats: &mut OptimizationStats) -> bool {
         };
         for (id, original) in block.sited() {
             let mut op = original.clone();
-            loop {
-                let Some(new_op) = substitute_constant_temporaries(&op, &defs, &mut values)
-                    .or_else(|| fold_through_definition(&op, &defs, &mut values))
-                    .or_else(|| simplify_op(&op, &mut values))
-                else {
-                    break;
-                };
+            while let Some(new_op) = substitute_constant_temporaries(&op, &defs, &mut values)
+                .or_else(|| fold_through_definition(&op, &defs, &mut values))
+                .or_else(|| simplify_op(&op, &mut values))
+            {
                 if new_op == op {
                     break;
                 }

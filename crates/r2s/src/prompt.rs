@@ -131,6 +131,8 @@ pub(crate) fn interactive(session: &mut Session, reader: &mut Reader) -> Ended {
             // A line given up, as a shell gives it up.
             Ok(Signal::CtrlC) => {}
             Ok(Signal::CtrlD) => return Ended::Left,
+            // No host command or external break is bound, so neither arrives.
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("r2s: line editing is unavailable here ({error}); reading lines plainly");
                 return Ended::EditorFailed;

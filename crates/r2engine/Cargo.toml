@@ -23,7 +23,7 @@ arm = ["r2sleigh-lift/arm"]
 riscv = ["r2sleigh-lift/riscv"]
 
 [dev-dependencies]
-proptest = "1.6"
+proptest = "1.12"
 r2sleigh-lift = { path = "../r2sleigh-lift", default-features = false, features = [
     "x86",
     "arm",

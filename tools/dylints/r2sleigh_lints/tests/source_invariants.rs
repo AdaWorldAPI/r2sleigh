@@ -159,7 +159,7 @@ fn r2engine_decompile_response_carries_function_facts_not_a_route_decision() {
     let engine = production("crates/r2engine/src");
     let response = engine.view().item("pub struct EngineDecompileResponse ");
     assert!(
-        response.contains("pub function_facts: FunctionFacts"),
+        response.contains("pub function_facts: std::sync::Arc<FunctionFacts>"),
         "EngineDecompileResponse must carry the sealed FunctionFacts:\n{response}"
     );
     for forbidden in [

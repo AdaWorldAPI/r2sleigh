@@ -41,16 +41,12 @@ pub(crate) fn normalize_instruction_local_control(
     // as they say, or is a bit scan, and computes a count. A loop that is
     // neither is left for the guard below.
     resolve_local_loops(block);
-    loop {
-        let Some((branch_index, branch, target_index)) = block
-            .ops
-            .iter()
-            .enumerate()
-            .find_map(|(index, op)| local_branch(block, index, op))
-        else {
-            break;
-        };
-
+    while let Some((branch_index, branch, target_index)) = block
+        .ops
+        .iter()
+        .enumerate()
+        .find_map(|(index, op)| local_branch(block, index, op))
+    {
         if target_index <= branch_index || target_index > block.ops.len() {
             block.ops[branch_index] = R2ILOp::Unimplemented;
             continue;

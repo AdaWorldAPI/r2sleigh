@@ -57,7 +57,7 @@ struct Segment {
 struct Section {
     addr: u64,
     size: u64,
-    flags: u32,
+    flags: macho::SectionFlags,
     /// `reserved1`: its first entry in the indirect symbol table.
     first_indirect: u32,
     /// `reserved2`: a stub's size, for a section of stubs.
@@ -178,7 +178,7 @@ impl<'d> Macho<'d> {
             vmaddr: segment.vmaddr(endian).into(),
             fileoff: segment.fileoff(endian).into(),
             filesize: segment.filesize(endian).into(),
-            writable: segment.initprot(endian) & macho::VM_PROT_WRITE != 0,
+            writable: segment.initprot(endian).contains(macho::VM_PROT_WRITE),
         });
         for section in segment.sections(endian, sections).unwrap_or_default() {
             let (first_indirect, stride) = reserved(section);
@@ -336,7 +336,7 @@ impl<'d> Macho<'d> {
         self.sections
             .iter()
             .filter(|section| {
-                let kind = section.flags & macho::SECTION_TYPE;
+                let kind = section.flags.typ();
                 let pointers = matches!(
                     kind,
                     macho::S_NON_LAZY_SYMBOL_POINTERS
@@ -345,7 +345,7 @@ impl<'d> Macho<'d> {
                         | macho::S_THREAD_LOCAL_VARIABLE_POINTERS
                 );
                 let rewritten = kind == macho::S_SYMBOL_STUBS
-                    && section.flags & macho::S_ATTR_SELF_MODIFYING_CODE != 0;
+                    && section.flags.contains(macho::S_ATTR_SELF_MODIFYING_CODE);
                 pointers || rewritten
             })
             .map(|section| written(section.addr, section.size))
@@ -600,7 +600,7 @@ impl<'d> Macho<'d> {
 
     fn rebase(&self, state: &mut Opcodes<'_>, byte: u8, found: &mut Found) -> Option<()> {
         let (opcode, immediate) = (
-            byte & macho::REBASE_OPCODE_MASK,
+            macho::RebaseOpcode(byte & macho::REBASE_OPCODE_MASK),
             byte & macho::REBASE_IMMEDIATE_MASK,
         );
         let pointer = self.pointer;
@@ -642,7 +642,7 @@ impl<'d> Macho<'d> {
 
     fn bind(&self, state: &mut Opcodes<'_>, byte: u8, found: &mut Found) -> Option<()> {
         let (opcode, immediate) = (
-            byte & macho::BIND_OPCODE_MASK,
+            macho::BindOpcode(byte & macho::BIND_OPCODE_MASK),
             byte & macho::BIND_IMMEDIATE_MASK,
         );
         let pointer = self.pointer;
@@ -654,7 +654,8 @@ impl<'d> Macho<'d> {
             }
             macho::BIND_OPCODE_SET_ADDEND_SLEB => state.addend = state.sleb()?,
             macho::BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM => {
-                let weak = immediate & macho::BIND_SYMBOL_FLAGS_WEAK_IMPORT != 0;
+                let weak = macho::BindSymbolFlags(immediate)
+                    .contains(macho::BIND_SYMBOL_FLAGS_WEAK_IMPORT);
                 state.symbol = Some((state.string()?, weak));
             }
             macho::BIND_OPCODE_SET_TYPE_IMM => {
@@ -689,7 +690,7 @@ impl<'d> Macho<'d> {
 
     /// A threaded bind: a table size to skip, or an arm64e chain from the current address.
     fn threaded(&self, state: &mut Opcodes<'_>, immediate: u8, found: &mut Found) -> Option<()> {
-        match immediate {
+        match macho::BindSubopcodeThreaded(immediate) {
             macho::BIND_SUBOPCODE_THREADED_SET_BIND_ORDINAL_TABLE_SIZE_ULEB => {
                 state.uleb()?;
             }
@@ -729,7 +730,7 @@ impl<'d> Macho<'d> {
         let Some(base) = base.map(|segment| segment.vmaddr) else {
             return;
         };
-        for (index, entry) in entries.chunks_exact(8).enumerate() {
+        for (index, entry) in entries.as_chunks::<8>().0.iter().enumerate() {
             let (Some(address), Some(info)) = (self.u32(entry, 0), self.u32(entry, 4)) else {
                 continue;
             };
@@ -780,15 +781,16 @@ impl<'d> Macho<'d> {
     fn indirect_entries(&self) -> (Vec<ImportStub>, Vec<Relocation>) {
         let (mut stubs, mut pointers) = (Vec::new(), Vec::new());
         for section in &self.sections {
-            let kind = section.flags & macho::SECTION_TYPE;
+            let kind = section.flags.typ();
             let stride = match kind {
                 macho::S_SYMBOL_STUBS => u64::from(section.stride),
                 macho::S_NON_LAZY_SYMBOL_POINTERS | macho::S_LAZY_SYMBOL_POINTERS => self.pointer,
                 _ => 0,
             };
             for (vaddr, at, index) in self.indirect_of(section, stride) {
-                let local = index & (macho::INDIRECT_SYMBOL_LOCAL | macho::INDIRECT_SYMBOL_ABS);
-                let name = (local == 0).then(|| self.symbol_name(index)).flatten();
+                let name = macho::IndirectSymbol(index)
+                    .index()
+                    .and_then(|index| self.symbol_name(index));
                 match kind {
                     macho::S_SYMBOL_STUBS => stubs.extend(name.map(|symbol| ImportStub {
                         vaddr,
@@ -839,7 +841,7 @@ fn pointer_entry(vaddr: u64, entry: (u64, u32), width: u64, name: Option<String>
         applies: match name {
             Some(_) => Applies::Symbol,
             // A local entry is rebased where it is not absolute.
-            None if index & macho::INDIRECT_SYMBOL_ABS != 0 => Applies::Unknown,
+            None if macho::IndirectSymbol(index).is_abs() => Applies::Unknown,
             None => Applies::Relative,
         },
         symbol: name.map(|name| Box::new(imported(&name, false))),
@@ -848,7 +850,7 @@ fn pointer_entry(vaddr: u64, entry: (u64, u32), width: u64, name: Option<String>
 
 /// How many bytes a rebase or bind of this type writes.
 fn typed_width(typ: u8, pointer: u64) -> u64 {
-    match typ {
+    match macho::RebaseType(typ) {
         macho::REBASE_TYPE_TEXT_ABSOLUTE32 | macho::REBASE_TYPE_TEXT_PCREL32 => 4,
         _ => pointer,
     }
@@ -1211,7 +1213,13 @@ mod tests {
         let mut found = Found::default();
         macho.stream(&stream, 0x100, Stream::Rebase, &mut found);
         assert_eq!(found.records.len(), (0x100 - 0x10) / 8);
-        assert_eq!(super::super::merged(found.ranges), [0x4010..0x4100]);
+        assert_eq!(
+            super::super::merged(found.ranges),
+            [std::ops::Range {
+                start: 0x4010,
+                end: 0x4100
+            }]
+        );
     }
 
     #[test]

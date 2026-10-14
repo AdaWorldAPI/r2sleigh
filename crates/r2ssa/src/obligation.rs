@@ -429,7 +429,7 @@ impl ObligationTable {
     /// The table of these obligations, whose identities are distinct: sorted in place, since a
     /// stable sort's scratch was the inventory's peak (doc/adr-memory-model.md, MM.10).
     fn of(mut obligations: Vec<SemanticObligation>) -> Self {
-        obligations.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+        obligations.sort_unstable_by_key(|left| left.id);
         debug_assert!(obligations.windows(2).all(|pair| pair[0].id != pair[1].id));
         Self(obligations)
     }

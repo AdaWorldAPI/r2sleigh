@@ -449,10 +449,10 @@ fn needed_through_dynamic<Elf: object::read::elf::FileHeader>(
     else {
         return Vec::new();
     };
-    let tagged = |tag: u32| {
+    let tagged = |tag: object::elf::DynamicTag| {
         entries
             .iter()
-            .filter(move |entry| entry.d_tag(endian).into() == u64::from(tag))
+            .filter(move |entry| entry.d_tag(endian) == tag)
             .map(move |entry| entry.d_val(endian).into())
     };
     // Where `DT_STRTAB`'s address lies in the file: the `PT_LOAD` that maps it, which also bounds

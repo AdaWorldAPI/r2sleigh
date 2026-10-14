@@ -33,17 +33,17 @@ libsla = "=1.2.0"
 sleigh-config = "=1.0.1"
 serde_json = "1"
 hex = "0.4"
-object = { version = "0.37", default-features = false, features = ["read", "std"] }
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
 z3 = "0.21.0"
 insta = "1"
 # The golden tests' harness (crates/r2s/tests/golden.rs) and its diffs.
 libtest-mimic = "0.8"
-similar = "2"
-ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
-crossterm = "0.28"
-# 0.43 is the last on crossterm 0.28, which ratatui 0.29 is built on: one
-# terminal library in the shell, not two.
-reedline = "0.43"
+similar = "3"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+crossterm = "0.29"
+# reedline and ratatui are on the one crossterm: one terminal library in the
+# shell, not two (`cargo tree -i crossterm` shows one version).
+reedline = "0.52"
 
 [profile.dev]
 # Line tables rather than full debug info. A backtrace still names the file and

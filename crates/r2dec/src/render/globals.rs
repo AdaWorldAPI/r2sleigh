@@ -146,10 +146,7 @@ pub(crate) fn string_literal_serves(required: &CType, _ptr_bits: u32) -> bool {
 pub(crate) fn c_identifier_for_data_symbol(flag: &str) -> String {
     const SPACES: [&str; 6] = ["obj.", "reloc.", "segment.", "section.", "str.", "sym."];
     let mut name = flag;
-    loop {
-        let Some(stripped) = SPACES.iter().find_map(|space| name.strip_prefix(space)) else {
-            break;
-        };
+    while let Some(stripped) = SPACES.iter().find_map(|space| name.strip_prefix(space)) {
         name = stripped;
     }
     let cleaned: String = name

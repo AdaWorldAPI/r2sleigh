@@ -7,7 +7,7 @@
 //! the names, and is tested as one.
 
 use crate::commands::{Arguments, VERBS};
-use reedline::{Span, Suggestion};
+use reedline::{CompletionResult, Span, Suggestion};
 use std::sync::{Arc, Mutex};
 
 /// One completion: the text that replaces the word, and what it is.
@@ -91,23 +91,25 @@ pub(crate) struct Completer {
 }
 
 impl reedline::Completer for Completer {
-    fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
+    fn complete(&mut self, line: &str, pos: usize) -> CompletionResult {
         let names = self
             .names
             .lock()
             .map(|names| names.clone())
             .unwrap_or_default();
         let (start, found) = candidates(line, pos, &names);
-        found
-            .into_iter()
-            .map(|candidate| Suggestion {
-                value: candidate.value,
-                description: candidate.description,
-                span: Span::new(start, pos),
-                append_whitespace: true,
-                ..Suggestion::default()
-            })
-            .collect()
+        CompletionResult::fresh(
+            found
+                .into_iter()
+                .map(|candidate| Suggestion {
+                    value: candidate.value,
+                    description: candidate.description,
+                    span: Span::new(start, pos),
+                    append_whitespace: true,
+                    ..Suggestion::default()
+                })
+                .collect::<Vec<_>>(),
+        )
     }
 }
 

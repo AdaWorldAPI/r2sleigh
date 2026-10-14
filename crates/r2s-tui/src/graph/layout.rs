@@ -532,7 +532,7 @@ fn crossings(layers: &[Vec<usize>], pos: &[usize], succs: &[Vec<usize>]) -> usiz
             let mut index = lower + 1;
             while index <= size {
                 tree[index] += 1;
-                index += index & index.wrapping_neg();
+                index += index.isolate_lowest_one();
             }
         }
     }

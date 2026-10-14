@@ -17,7 +17,7 @@ serde.workspace = true
 default = []
 
 [dev-dependencies]
-proptest = "1.6"
+proptest = "1.12"
 serde_json.workspace = true
 
 [lints]
