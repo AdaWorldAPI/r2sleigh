@@ -290,8 +290,9 @@ impl<'a> InterfaceQuestions<'a> {
         match self.convention {
             Some(convention) => convention
                 .result_slot()
-                .filter(|slot| slot.space == CanonicalStorageSpace::Register)
                 .into_iter()
+                .chain(convention.second_result_slot())
+                .filter(|slot| slot.space == CanonicalStorageSpace::Register)
                 .collect(),
             None => self
                 .for_return_boundary()

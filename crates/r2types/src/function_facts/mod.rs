@@ -1515,6 +1515,11 @@ impl FunctionFacts {
                 r2ssa::SourceFunctionReturn::Pair { .. }
             );
             let return_type = match (site_result, &signature.signature.return_type) {
+                // A declaration's own type for the value wins (doc/adr-language-profile.md).
+                (
+                    Some(r2ssa::SourceCallResult::Pair { .. }),
+                    declared @ (CTypeLike::Struct(_) | CTypeLike::Union(_)),
+                ) => Some(declared.clone()),
                 (Some(result @ r2ssa::SourceCallResult::Pair { .. }), _) => {
                     call_result_type(&signature.interface, result)
                 }

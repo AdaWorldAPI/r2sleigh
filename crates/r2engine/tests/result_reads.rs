@@ -476,6 +476,34 @@ fn a_second_register_no_caller_reads_is_no_half_of_the_result() {
     assert!(!caller.contains("r2sleigh_residual"), "{caller}");
 }
 
+/// `f` sets EDX to 1 or 2 on two paths that meet before `mov rax, rdi; ret`, and `caller` is
+/// `call f; mov rax, rdx; ret`.
+const PAIR_THROUGH_A_MERGE: &[u8] = &[
+    0x48, 0x85, 0xff, // 1000 test rdi, rdi
+    0x74, 0x07, // 1003 je 0x100c
+    0xba, 0x01, 0x00, 0x00, 0x00, // 1005 mov edx, 1
+    0xeb, 0x05, // 100a jmp 0x1011
+    0xba, 0x02, 0x00, 0x00, 0x00, // 100c mov edx, 2
+    0x48, 0x89, 0xf8, // 1011 mov rax, rdi
+    0xc3, // 1014 ret
+    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // 1015 padding
+    0xe8, 0xdb, 0xff, 0xff, 0xff, // 1020 call 0x1000
+    0x48, 0x89, 0xd0, // 1025 mov rax, rdx
+    0xc3, // 1028 ret
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+    0xcc, // 1029 padding
+];
+
+/// A high half that reaches the return through a merge of two constants is still written on every
+/// return: the merge keeps its sources, as the first register's does.
+#[test]
+fn a_high_half_merged_from_two_paths_is_half_of_the_result() {
+    let functions = [("f", BASE, 0x15), ("caller", BASE + 0x20, 9)];
+    let f = rendered(Literal::of_code(PAIR_THROUGH_A_MERGE, &functions));
+    assert!(f.starts_with("__uint128_t f("), "{f}");
+    assert!(!f.contains("r2sleigh_residual"), "{f}");
+}
+
 /// AArch64: `f` is `add x1, x0, #2; add x0, x0, #1; ret`, a value in X1:X0, and `caller` is
 /// `bl f; mov x0, x1; ret`, which returns the high half.
 const A64_PAIR: &[u8] = &[
