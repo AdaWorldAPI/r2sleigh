@@ -99,6 +99,8 @@ pub fn forward_on_edges<S: Clone + PartialEq>(
     // Each entry moves at most `height` times past its first value, so a block is taken at most
     // once more per move of a predecessor's exit: `B + E · (height + 1)` visits, checked per move.
     let mut moves = vec![0usize; order.len()];
+    // A transfer moves its exit only when its entry moved, so at most `height + 1` times.
+    let mut exits = vec![0usize; order.len()];
     let mut entry = BTreeMap::<u64, S>::new();
     let mut exit = BTreeMap::<u64, S>::new();
     let mut work = rank
@@ -137,6 +139,14 @@ pub fn forward_on_edges<S: Clone + PartialEq>(
         }
         if exit.get(&block) == Some(&out) {
             continue;
+        }
+        exits[index] += 1;
+        if exits[index] > height + 1 {
+            r2il::refusal_evidence!(
+                "fixpoint",
+                "{pass}: block {block:#x}'s exit moved past its entry"
+            );
+            return Err(Exhausted { pass, height });
         }
         exit.insert(block, out);
         work.extend(
@@ -316,6 +326,32 @@ mod tests {
             solved,
             Err(Exhausted {
                 pass: "runaway",
+                height: 1
+            })
+        );
+    }
+
+    /// A transfer whose exit moves while its entry does not is no function of its entry, refused.
+    #[test]
+    fn an_exit_that_moves_while_its_entry_holds_is_refused() {
+        let function = looping();
+        let mut count = 0u64;
+        let solved = forward_on_edges(
+            &function,
+            "churn",
+            1,
+            Passed(BTreeSet::new()),
+            |_, _| {},
+            |_, _, state: &Passed| state.clone(),
+            |_, _| {
+                count += 1;
+                Passed(BTreeSet::from([count]))
+            },
+        );
+        assert_eq!(
+            solved,
+            Err(Exhausted {
+                pass: "churn",
                 height: 1
             })
         );
