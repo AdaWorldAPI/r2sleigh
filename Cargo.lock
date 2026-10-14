@@ -1284,6 +1284,14 @@ name = "r2abi"
 version = "0.1.0"
 
 [[package]]
+name = "r2conc"
+version = "0.1.0"
+dependencies = [
+ "r2il",
+ "thiserror",
+]
+
+[[package]]
 name = "r2dec"
 version = "0.1.0"
 dependencies = [

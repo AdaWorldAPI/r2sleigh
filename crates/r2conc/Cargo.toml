@@ -1,0 +1,12 @@
+[package]
+name = "r2conc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Concrete slab executor for R2IL: zero-copy machine state (one flat slab per address space, borrowed), realtime op-at-a-time interpretation of the concrete subset. The realtime sibling of r2sym's symbolic executor."
+
+[dependencies]
+r2il = { path = "../r2il" }
+thiserror.workspace = true
